@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Smart Talent Matcher Invoice</title>
+  <style>
+    /* 인보이스 디자인에 필요한 스타일을 인라인 스타일로 변환할 수 있도록 작성 */
+    table {
+      border-collapse: collapse;
+      margin: 0 auto;
+      width: 80%;
+    }
+    th, td {
+      border: 1px solid #ffffff;
+      padding: 8px;
+      text-align: center;
+    }
+    .group-header {
+      background-color: #f8f8f8;
+    }
+    .receipt-line {
+      display: flex;
+      justify-content: space-between;
+      margin: 4px 0;
+    }
+    .receipt-desc {
+      text-align: left;
+    }
+    .receipt-price {
+      text-align: right;
+      margin-left: 10px;
+    }
+    .cost-summary {
+      max-width: 600px;
+      margin: 20px auto;
+    }
+    .summary-line {
+      display: flex;
+      justify-content: space-between;
+      margin: 4px 0;
+    }
+    .final-cost {
+      font-weight: bold;
+      font-size: 1.1em;
+      margin-top: 10px;
+    }
+    .discount-note {
+      font-size: 0.85em;
+      color: #666;
+      display: block;
+      margin-top: 2px;
+    }
+  </style>
+</head>
+<body style="margin:0; padding:0; background-color:#ffffff; font-family: Roboto, sans-serif;">
+  <!-- 로고 영역 (인라인 스타일 적용, 테두리에 청록색 적용) -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;">
+    <tr>
+      <td align="center" style="padding:20px 0;">
+        <div style="
+          background-color: #001f3f;
+          width: 220px;
+          height: 220px;
+          margin: 0 auto 15px auto;
+          border-radius: 8px;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          border: 4px solid #00BCD4;
+          box-shadow: 0 8px 15px rgba(0,0,0,0.3);
+          transform: perspective(500px) rotateX(3deg);
+        ">
+          <p style="
+            margin: 0 3px;
+            font-size: 2.3rem;
+            font-weight: bold;
+            font-style: italic;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+          ">
+            <span style="color:#FFFFFF;">SMART</span>
+            <span style="color:#FF69B4;">TALENT</span>
+            <span style="color:#00BCD4;">MATCHER</span>
+          </p>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- 로고 아래 문구 -->
+  <div style="text-align: center; margin-bottom: 20px; font-size: 1.2rem; font-style: italic;">
+    Thank you for trusting our service. We are committed to helping you find the right people.
+  </div>
+
+  <!-- 인보이스 영역: 서버에서 {{invoice}} 플레이스홀더를 실제 인보이스 HTML로 치환 -->
+  <div style="max-width: 800px; margin: 0 auto;">
+    {{invoice}}
+  </div>
+
+  <!-- Venmo 정보 및 참고사항 -->
+  <div style="max-width: 800px; margin: 30px auto; padding: 20px; border-top: 2px solid #ccc; text-align: center;">
+    <div style="font-size: 1.4rem; font-weight: bold; color: #000; margin-bottom: 10px;">
+      Venmo: <span style="color:#FF0000;">@smarttalentmatcher</span>
+    </div>
+    <div style="font-size: 1rem; color: #555; text-align: left; max-width: 600px; margin: 0 auto;">
+      <p>💡 A reminder email will be sent 12 hours after your invoice is issued.</p>
+      <p>💡 After 24 hours, a cancellation email will be sent and your submitted information will be discarded.</p>
+      <p>💡 Once payment is confirmed, work will commence immediately; refunds (including partial payments) are not available.</p>
+      <p>💡 Please ensure that you send your payment from the same Venmo account matching your provided name and username, as discrepancies may delay verification and processing.</p>
+      <p>💡 If the payment amount is incorrect, the work will not proceed. Please transfer the exact amount.</p>
+    </div>
+  </div>
+
+  <!-- What's Next? 섹션 -->
+<div style="max-width: 800px; margin: 30px auto; padding: 20px; border-top: 2px solid #ccc; text-align: center;">
+  <h3 style="font-size: 1.6rem; font-weight: bold; margin-bottom: 15px;">What's Next?</h3>
+  <p style="font-size: 1rem; color: #555; margin-bottom: 10px;">
+    &#10003; Payment is confirmed within 24 hours, and our automated email service will start immediately.
+  </p>
+  <p style="font-size: 1rem; color: #555;">
+    &#10003; Once the email is sent, a detailed report will be delivered to you.
+  </p>
+</div>
+
+  <!-- 푸터 -->
+  <footer style="text-align: center; margin-top: 40px; color: #777; font-size: 0.9rem;">
+    <p>© Smart Talent Matcher. All rights reserved.</p>
+  </footer>
+</body>
+</html>
