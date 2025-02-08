@@ -59,8 +59,13 @@ loadOrdersData();
 const upload = multer({ dest: "uploads/" });
 const uploadResume = multer({ dest: "uploads/resume/" });
 
-// 정적 파일 제공
-app.use(express.static("public"));
+// ──────────────────────────────────────────────
+// 정적 파일 제공 경로 수정
+// 기존: app.use(express.static("public"));
+// 수정: 모든 파일이 최상위에 있으므로 __dirname (현재 디렉토리)에서 정적 파일 제공
+// ──────────────────────────────────────────────
+app.use(express.static(__dirname));
+
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -82,7 +87,6 @@ const transporter = nodemailer.createTransport({
 
 // ordersData.json 정리: 어드민에 보이는 주문(finalOrders)만 남기고 업데이트
 function cleanUpOrdersData() {
-  // finalOrders에 있는 주문만 저장하도록 함.
   const dataToSave = { finalOrders: finalOrders };
   try {
     fs.writeFileSync(DATA_FILE, JSON.stringify(dataToSave, null, 2), "utf-8");
@@ -94,7 +98,6 @@ function cleanUpOrdersData() {
 
 // uploads 폴더 정리 (재귀적): ordersData.json(finalOrders)에 사용되지 않는 파일 삭제
 function cleanUpUnusedUploads() {
-  // usedFiles: ordersData.json에 기록된 주문에서 사용 중인 파일(예: headshot)의 절대 경로를 집합에 저장
   const usedFiles = new Set();
   finalOrders.forEach(order => {
     if (order.headshot) {
@@ -103,7 +106,6 @@ function cleanUpUnusedUploads() {
     // 필요 시, order.resume 등 다른 파일 경로도 여기에 추가
   });
 
-  // 지정한 폴더를 재귀적으로 탐색하여, usedFiles에 없는 파일 삭제
   function cleanDirectory(directory) {
     fs.readdir(directory, (err, files) => {
       if (err) {
@@ -118,7 +120,6 @@ function cleanUpUnusedUploads() {
             return;
           }
           if (stats.isDirectory()) {
-            // 하위 폴더가 있으면 재귀적으로 청소
             cleanDirectory(filePath);
           } else {
             if (!usedFiles.has(filePath)) {
@@ -136,18 +137,15 @@ function cleanUpUnusedUploads() {
     });
   }
 
-  // uploads 폴더 (및 하위 폴더들) 정리 시작
   const uploadsDir = path.join(__dirname, "uploads");
   cleanDirectory(uploadsDir);
 }
 
-// 주기적으로(1시간마다) 자동 정리 실행
 setInterval(() => {
   cleanUpOrdersData();
   cleanUpUnusedUploads();
 }, 60 * 60 * 1000); // 1시간마다 실행
 
-// 서버 시작 시 한 번 즉시 실행
 cleanUpOrdersData();
 cleanUpUnusedUploads();
 
@@ -188,16 +186,15 @@ function scheduleAutoCancel(order) {
 /** 리마인드 이메일 발송 */
 function sendReminder(order) {
   if (order.paid || order.reminderSent) return;
-  const templatePath = path.join(__dirname, "public", "email.html");
+  // 이메일 템플릿 경로 수정: 이제 최상위에 있으므로 "public" 제거
+  const templatePath = path.join(__dirname, "email.html");
   let reminderEmailHtml = "";
   if (fs.existsSync(templatePath)) {
     reminderEmailHtml = fs.readFileSync(templatePath, "utf-8");
   } else {
     reminderEmailHtml = `<html><body><p>Invoice details not available.</p></body></html>`;
   }
-  // Juice를 사용하여 CSS 인라인화 적용
   reminderEmailHtml = juice(reminderEmailHtml);
-  
   const invoiceHtml = order.invoice || "<p>Invoice details not available.</p>";
   reminderEmailHtml = reminderEmailHtml.replace(/{{\s*invoice\s*}}/g, invoiceHtml);
   const mailOptions = {
@@ -245,9 +242,9 @@ function autoCancelOrder(order) {
     });
 }
 
-// 테스트 페이지 (resume.html)
+// 테스트 페이지 (resume.html) 경로 수정: 최상위에 resume.html 있음
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "resume.html"));
+  res.sendFile(path.join(__dirname, "resume.html"));
 });
 
 /** (★) Test email - Headshot → Reel → Resume → Intro */
@@ -300,10 +297,7 @@ app.post("/submit-order", (req, res) => {
   const { emailAddress, invoice, subtotal, discount, finalCost } = req.body;
   const orderId = generateDateTimeOrderId();
   const createdAt = Date.now();
-
-  // 인보이스 데이터가 없으면 기본 메시지 사용
   const invoiceData = invoice && invoice.trim() !== "" ? invoice : "<p>Invoice details not available.</p>";
-
   const newDraft = {
     orderId,
     emailAddress: emailAddress || "",
@@ -313,11 +307,9 @@ app.post("/submit-order", (req, res) => {
     finalCost: finalCost || "",
     createdAt
   };
-
   draftOrders.push(newDraft);
   console.log("✅ Draft order received:", newDraft);
   saveOrdersData();
-
   res.json({
     success: true,
     message: "Draft order received",
@@ -355,11 +347,9 @@ app.post("/update-order", uploadResume.single("headshot"), (req, res) => {
 /** (C) /final-submit -> submit.html (Yes, Submit Now) */
 app.post("/final-submit", multer().none(), async (req, res) => {
   try {
-    // venmoId 필드 추가 (submit.html에서 hidden input을 통해 전달됨)
     const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice, venmoId } = req.body;
     console.log("Final submit received:", req.body);
     
-    // 기존 주문 삭제 (중복 인보이스 제거)
     const oldFinals = finalOrders.filter(o => o.emailAddress === emailAddress);
     if (oldFinals.length > 0) {
       console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Canceling them...`);
@@ -392,15 +382,12 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       finalOrders = finalOrders.filter(o => o.emailAddress !== emailAddress);
     }
     
-    // 기존 draft 주문(있다면) 업데이트 (invoice 업데이트)
     const existingDraft = draftOrders.find(o => o.orderId === orderId);
     if (existingDraft && invoice) {
       existingDraft.invoice = invoice;
     }
     
-    // 새 finalOrder 생성 (venmoId 포함)
     const newFinalOrderId = generateDateTimeOrderId();
-    // 여기서는 draftOrders에서 가져온 invoice 데이터를 사용
     const finalInvoice = (existingDraft && existingDraft.invoice) ? existingDraft.invoice : (invoice || "<p>Invoice details not available.</p>");
     
     const newFinal = {
@@ -410,8 +397,8 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       actingReel: actingReel || "",
       resumeLink: resumeLink || "",
       introduction: introduction || "",
-      invoice: finalInvoice,  // admin에 저장된(또는 draft에 저장된) invoice 데이터를 사용
-      venmoId: venmoId || "",  // Venmo 계정 정보 저장
+      invoice: finalInvoice,
+      venmoId: venmoId || "",
       createdAt: Date.now(),
       paid: false,
       reminderSent: false
@@ -459,7 +446,8 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     
     // (2) 클라이언트(인보이스) 이메일 발송
     if (emailAddress) {
-      const templatePath = path.join(__dirname, "public", "email.html");
+      // 이메일 템플릿 경로 수정: 이제 최상위에 있으므로 "public" 제거
+      const templatePath = path.join(__dirname, "email.html");
       console.log("Looking for email template at:", templatePath);
       let clientEmailHtml = "";
       if (fs.existsSync(templatePath)) {
@@ -467,9 +455,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       } else {
         clientEmailHtml = `<html><body><p>Invoice details not available.</p></body></html>`;
       }
-      // Juice로 CSS 인라인화 처리
       clientEmailHtml = juice(clientEmailHtml);
-      // admin 또는 draft에 저장된 invoice 데이터를 사용
       clientEmailHtml = clientEmailHtml.replace(/{{\s*invoice\s*}}/g, finalInvoice);
       const clientMailOptions = {
         from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
@@ -498,7 +484,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
 /** 관리자 주문 조회 */
 app.get("/admin/orders", (req, res) => {
   const processedOrders = finalOrders.map(order => {
-    // 24시간 = 24 * 60 * 60 * 1000 밀리초
     const expired = (!order.paid && (Date.now() - order.createdAt >= 24 * 60 * 60 * 1000));
     return { ...order, expired };
   });
