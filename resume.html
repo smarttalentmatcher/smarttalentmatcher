@@ -215,7 +215,7 @@
       return email && subject && acting && resume && intro;
     }
 
-    // "Test Email to Yourself" 버튼 클릭 이벤트
+    // "Test Email to Yourself" 버튼 클릭 이벤트 (절대경로 사용)
     testEmailBtn.addEventListener("click", async () => {
       if (!validateForm()) {
         alert("Please fill out all required fields.");
@@ -223,11 +223,10 @@
       }
       statusMsg.textContent = "Sending test email...";
       statusMsg.style.color = "blue";
-
       const formData = new FormData(resumeForm);
       try {
-        const response = await fetch("/send-test-email", {
-          method: "POST",
+        const response = await fetch(window.location.origin + "/send-test-email", {
+          method: "POST",  // POST 메서드 사용
           body: formData
         });
         const result = await response.json();
@@ -239,51 +238,42 @@
           statusMsg.style.color = "red";
         }
       } catch (err) {
-        console.error(err);
+        console.error("Error sending test email:", err);
         statusMsg.textContent = "Error sending test email.";
         statusMsg.style.color = "red";
       }
     });
 
-    // "Ready to Submit" 버튼 클릭 이벤트 (파일 포함 전송)
+    // "Ready to Submit" 버튼 클릭 이벤트 (절대경로 사용)
     readyBtn.addEventListener("click", async (e) => {
       e.preventDefault();
-
       if (!validateForm()) {
         alert("Please fill out all required fields.");
         return;
       }
-
-      // localStorage에서 orderId 가져오기
       const orderId = localStorage.getItem("orderId");
-      console.log("Order ID from localStorage:", orderId); // 디버깅 로그
-
+      console.log("Order ID from localStorage:", orderId);
       if (!orderId) {
         alert("No order found. Please go back to the previous page.");
         return;
       }
-
-      // FormData 생성 (파일 포함 전송)
       const formData = new FormData(resumeForm);
       formData.append("orderId", orderId);
-
       try {
-        // /update-order 엔드포인트 호출 (multipart/form-data로 전송)
-        const resp = await fetch("/update-order", {
-          method: "POST",
+        const resp = await fetch(window.location.origin + "/update-order", {
+          method: "POST",  // POST 메서드 사용
           body: formData
         });
         const result = await resp.json();
         if (result.success) {
           console.log("Order updated:", result.updatedOrder);
-          // 저장된 최신 입력값들을 localStorage에 업데이트
+          // (선택사항) 최신 값들을 localStorage에 업데이트
           localStorage.setItem("emailAddress", document.getElementById("emailAddress").value);
           localStorage.setItem("emailSubject", document.getElementById("emailSubject").value);
           localStorage.setItem("actingReel", document.getElementById("actingReel").value);
           localStorage.setItem("resumeLink", document.getElementById("resumeLink").value);
           localStorage.setItem("introduction", document.getElementById("introduction").value);
-          // 바로 submit.html로 이동 (알림 없이)
-          window.location.href = "/submit.html";
+          window.location.href = window.location.origin + "/submit.html";
         } else {
           alert("Order update failed: " + (result.message || "Unknown error"));
         }
