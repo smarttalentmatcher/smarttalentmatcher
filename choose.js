@@ -130,7 +130,8 @@ document.getElementById("next-button").addEventListener("click", (e) => {
     finalCost: finalCostEl.textContent
   };
 
-  fetch("/submit-order", {
+  // 서버가 로컬에서 실행 중이라면 절대 URL을 사용합니다.
+  fetch("http://localhost:3000/submit-order", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data)
@@ -142,8 +143,7 @@ document.getElementById("next-button").addEventListener("click", (e) => {
         // 서버가 발급한 orderId와 emailAddress를 localStorage에 저장 후 다음 단계(resume.html)로 이동
         localStorage.setItem("orderId", res.orderId);
         localStorage.setItem("emailAddress", emailAddress);
-        // 절대경로 대신 상대경로로 변경하여 같은 폴더 내 resume.html 로 이동합니다.
-        window.location.href = "resume.html";
+        window.location.href = "resume.html"; // 상대경로로 이동
       } else {
         alert("Order submission failed.");
       }
