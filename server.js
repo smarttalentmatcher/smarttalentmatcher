@@ -238,6 +238,10 @@ function autoCancelOrder(order) {
     });
 }
 
+// ──────────────────────────────────────────────
+// 라우트 설정
+// ──────────────────────────────────────────────
+
 // 테스트 페이지 (resume.html) 제공
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "resume.html"));
@@ -351,6 +355,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice, venmoId } = req.body;
     console.log("Final submit received:", req.body);
     
+    // 기존 최종 주문(이메일 기준) 취소
     const oldFinals = finalOrders.filter(o => o.emailAddress === emailAddress);
     if (oldFinals.length > 0) {
       console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Canceling them...`);
