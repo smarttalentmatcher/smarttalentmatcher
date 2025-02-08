@@ -16,9 +16,6 @@
       padding: 8px;
       text-align: center;
     }
-    .group-header {
-      background-color: #f8f8f8;
-    }
     .receipt-line {
       display: flex;
       justify-content: space-between;
@@ -109,10 +106,16 @@
           </td>
         </tr>
 
-        <!-- For English Speakers 그룹 -->
-        <tr class="group-header">
-          <td><strong>For English Speakers</strong></td>
-          <td></td><td></td><td></td><td></td><td></td>
+        <!-- For English Speakers 그룹 (인덱스와 동일한 디자인) -->
+        <tr class="group-header" style="background-color: #f8f8f8;">
+          <td class="group-header-cell" style="background-color: #001f3f; color: #fff; text-align: center; font-size: 1.1rem; font-weight: 600; border: 4px solid #ccc; padding: 5px 8px; white-space: nowrap;">
+            <strong>For English Speakers</strong>
+          </td>
+          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
+          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
+          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
+          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
+          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
         </tr>
         <tr>
           <td><strong>United Kingdom (+EU)</strong></td>
@@ -147,10 +150,16 @@
           </td>
         </tr>
 
-        <!-- For Bilinguals 그룹 -->
-        <tr class="group-header">
-          <td><strong>For Bilinguals</strong></td>
-          <td></td><td></td><td></td><td></td><td></td>
+        <!-- For Bilinguals 그룹 (인덱스와 동일한 디자인) -->
+        <tr class="group-header" style="background-color: #f8f8f8;">
+          <td class="group-header-cell" style="background-color: #001f3f; color: #fff; text-align: center; font-size: 1.1rem; font-weight: 600; border: 4px solid #ccc; padding: 5px 8px; white-space: nowrap;">
+            <strong>For Bilinguals</strong>
+          </td>
+          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
+          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
+          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
+          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
+          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
         </tr>
         <tr>
           <td><strong>Asia</strong></td>
@@ -208,7 +217,7 @@
     <em>***We grouped countries that share the same entertainment industry, organizing them by market rather than by nation.</em>
   </p>
 
-  <!-- 비용 요약 및 영수증 영역 (인라인 스타일 적용, cost-summary 클래스를 추가함) -->
+  <!-- 비용 요약 및 영수증 영역 -->
   <section class="cost-summary" style="max-width:900px; margin:20px auto; padding:15px; background-color:#f1f1f1; border-radius:8px; font-size:1.1rem; line-height:1.5;">
     <div id="selected-items" style="margin-bottom:20px;"></div>
 
