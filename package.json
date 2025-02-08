@@ -3,17 +3,27 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
+    "cors": "^2.8.5",
     "express": "^4.21.2",
     "juice": "^11.0.0",
     "multer": "^1.4.5-lts.1",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.10.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smarttalentmatcher/smarttalentmatcher.git"
+  },
+  "bugs": {
+    "url": "https://github.com/smarttalentmatcher/smarttalentmatcher/issues"
+  },
+  "homepage": "https://github.com/smarttalentmatcher/smarttalentmatcher#readme",
+  "description": ""
 }
