@@ -76,7 +76,7 @@ const transporter = nodemailer.createTransport({
   secure: true,
   auth: {
     user: "letsspeak01@naver.com",  // 본인 계정
-    pass: "ESLUTHE53P6L"            // 앱 비번 또는 실제 비번
+    pass: "ESLUTHE53P6L"            // 앱 비밀번호 또는 실제 비밀번호
   }
 });
 
