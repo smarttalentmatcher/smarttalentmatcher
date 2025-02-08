@@ -1,18 +1,3 @@
 {
-  "finalOrders": [
-    {
-      "orderId": "02070334",
-      "emailAddress": "letsspeak01@naver.com",
-      "emailSubject": "If you're on the hunt for Asian talent, don't miss this.",
-      "actingReel": "https://youtu.be/FBdB4nj5JKE",
-      "resumeLink": "https://resumes.actorsaccess.com/2470742-6805753",
-      "introduction": "💡 Tips for Introduction:\r\n💡 Begin with a friendly greeting and briefly introduce yourself (your name, location, or nationality).\r\n💡 Highlight what makes you unique or what you want to convey to the recipient.\r\n💡 3-4 sentences are enough.",
-      "invoice": "<section class=\"cost-summary\" style=\"max-width:900px; margin:20px auto; padding:15px; background-color:#f1f1f1; border-radius:8px; font-size:1.1rem; line-height:1.5;\">\n    <div id=\"selected-items\" style=\"margin-bottom:20px;\"><div class=\"receipt-line\"><span class=\"receipt-desc\">[Base Package] United States (+Canada)</span><span class=\"receipt-price\">$445.85 ($0.005 per email)</span></div><div class=\"receipt-line\"><span class=\"receipt-desc\">[For English Speakers] United Kingdom (+EU)</span><span class=\"receipt-price\">$269.95 ($0.005 per email)</span></div><div class=\"receipt-line\"><span class=\"receipt-desc\">[For English Speakers] Australia</span><span class=\"receipt-price\">$36.40 ($0.005 per email)</span></div><div class=\"receipt-line\"><span class=\"receipt-desc\">[For Bilinguals] Asia</span><span class=\"receipt-price\">$57.75 ($0.005 per email)</span></div><div class=\"receipt-line\"><span class=\"receipt-desc\">[For Bilinguals] South America</span><span class=\"receipt-price\">$20.10 ($0.005 per email)</span></div><div class=\"receipt-line\"><span class=\"receipt-desc\">[For Bilinguals] Africa</span><span class=\"receipt-price\">$10.95 ($0.005 per email)</span></div></div>\n\n    <div style=\"display:flex; justify-content:space-between; border-bottom:1px dashed #ccc; padding:5px 0; font-size:1rem; margin-bottom:3px;\">\n      <span>Subtotal:</span>\n      <span><span id=\"subtotal\">841.00</span> USD</span>\n    </div>\n\n    <div style=\"display:flex; justify-content:space-between; border-bottom:1px dashed #ccc; padding:5px 0; font-size:1rem; margin-bottom:3px;\">\n      <span>\n        Discount: -10%\n        <span style=\"font-size:0.85em; color:#666; display:block; margin-top:2px;\">\n          (for invalid/long-targeting emails adjustment)\n        </span>\n      </span>\n      <span><span id=\"base-discount\">84.10</span> USD</span>\n    </div>\n\n    <div id=\"promo-discount-line\" style=\"display: flex; justify-content: space-between; border-bottom-width: 1px; border-bottom-style: dashed; border-bottom-color: rgb(204, 204, 204); padding: 5px 0px; font-size: 1rem; margin-bottom: 3px;\">\n      <span id=\"promo-discount-label\">Promo Discount: -10%</span>\n      <span><span id=\"promo-discount\">84.10</span> USD</span>\n    </div>\n\n    <hr style=\"border: 0; border-top: 1px solid #ccc; margin:10px 0;\">\n\n    <div style=\"display:flex; justify-content:space-between; font-weight:bold; font-size:1.1em; margin-top:10px;\">\n      <span>Final Cost:</span>\n      <span><span id=\"final-cost\">672.80</span> USD</span>\n    </div>\n  </section>",
-      "venmoId": "smarttalentmatcher",
-      "createdAt": 1738917250701,
-      "paid": false,
-      "reminderSent": true,
-      "headshot": "/uploads/resume/8f6e74781e19d80f93d5742cc0b3f9b7"
-    }
-  ]
+  "finalOrders": []
 }
