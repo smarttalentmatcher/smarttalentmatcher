@@ -1,4 +1,3 @@
-
 // 선택된 패키지(체크박스) 관련 요소들
 const checkboxes = document.querySelectorAll(".package-checkbox");
 const selectedItemsDiv = document.getElementById("selected-items");
@@ -109,6 +108,7 @@ function updateCost() {
 // Next 버튼 클릭 시 – 드래프트 주문을 서버로 전송 (invoice HTML 포함)
 document.getElementById("next-button").addEventListener("click", (e) => {
   e.preventDefault();
+  console.log("Next 버튼 클릭됨");
 
   // 예시로 고정 이메일 (실제 서비스에서는 사용자가 입력한 값을 사용)
   const emailAddress = "no-email@example.com";
@@ -142,7 +142,8 @@ document.getElementById("next-button").addEventListener("click", (e) => {
         // 서버가 발급한 orderId와 emailAddress를 localStorage에 저장 후 다음 단계(resume.html)로 이동
         localStorage.setItem("orderId", res.orderId);
         localStorage.setItem("emailAddress", emailAddress);
-        window.location.href = "/resume.html";
+        // 절대경로 대신 상대경로로 변경하여 같은 폴더 내 resume.html 로 이동합니다.
+        window.location.href = "resume.html";
       } else {
         alert("Order submission failed.");
       }
@@ -152,4 +153,3 @@ document.getElementById("next-button").addEventListener("click", (e) => {
       alert("Order submission failed. Please try again.");
     });
 });
-
