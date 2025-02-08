@@ -7,12 +7,18 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const juice = require("juice");
-const cors = require("cors"); // CORS 모듈 추가
+const cors = require("cors");
 
 const app = express();
 const PORT = 3000;
 
-/** 날짜 기반 오더ID (MMDDHHmm). 예: "09182010" */
+// 요청 로그 미들웨어 (디버깅용)
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
+});
+
+/** 날짜 기반 오더ID 생성 (MMDDHHmm). 예: "09182010" */
 function generateDateTimeOrderId() {
   const now = new Date();
   const mm = String(now.getMonth() + 1).padStart(2, "0");
@@ -26,7 +32,7 @@ const DATA_FILE = path.join(__dirname, "ordersData.json");
 let draftOrders = [];
 let finalOrders = [];
 
-/** 서버 시작 시 파일 불러오기 */
+/** 서버 시작 시 주문 데이터 불러오기 */
 function loadOrdersData() {
   if (fs.existsSync(DATA_FILE)) {
     try {
@@ -56,11 +62,11 @@ function saveOrdersData() {
 }
 loadOrdersData();
 
-// Multer 설정
+// Multer 설정 (파일 업로드용)
 const upload = multer({ dest: "uploads/" });
 const uploadResume = multer({ dest: "uploads/resume/" });
 
-// 정적 파일 제공: 모든 파일이 최상위에 있으므로 __dirname에서 제공
+// 정적 파일 제공 (모든 파일이 최상위에 있으므로 __dirname 사용)
 app.use(express.static(__dirname));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use(express.json());
@@ -75,8 +81,8 @@ const transporter = nodemailer.createTransport({
   port: 465,
   secure: true,
   auth: {
-    user: "letsspeak01@naver.com",  // 본인 계정
-    pass: "ESLUTHE53P6L"            // 앱 비밀번호 또는 실제 비밀번호
+    user: "letsspeak01@naver.com", // 본인 계정
+    pass: "ESLUTHE53P6L"           // 앱 비밀번호 또는 실제 비밀번호
   }
 });
 
@@ -84,7 +90,6 @@ const transporter = nodemailer.createTransport({
 // 자동 정리 기능: ordersData.json 및 uploads 폴더 정리 (재귀적)
 // ──────────────────────────────────────────────
 
-// ordersData.json 정리: 어드민에 보이는 주문(finalOrders)만 남김
 function cleanUpOrdersData() {
   const dataToSave = { finalOrders: finalOrders };
   try {
@@ -95,7 +100,6 @@ function cleanUpOrdersData() {
   }
 }
 
-// uploads 폴더 정리 (재귀적): ordersData.json에 사용되지 않는 파일 삭제
 function cleanUpUnusedUploads() {
   const usedFiles = new Set();
   finalOrders.forEach(order => {
@@ -152,7 +156,6 @@ const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 const reminderTimers = {};
 const autoCancelTimers = {};
 
-/** 리마인드 타이머 등록 */
 function scheduleReminder(order) {
   const timeLeft = order.createdAt + TWELVE_HOURS - Date.now();
   if (timeLeft > 0 && !order.paid && !order.reminderSent) {
@@ -166,7 +169,6 @@ function scheduleReminder(order) {
   }
 }
 
-/** 자동취소 타이머 등록 */
 function scheduleAutoCancel(order) {
   const timeLeft = order.createdAt + TWENTY_FOUR_HOURS - Date.now();
   if (timeLeft > 0 && !order.paid) {
@@ -180,7 +182,6 @@ function scheduleAutoCancel(order) {
   }
 }
 
-/** 리마인드 이메일 발송 */
 function sendReminder(order) {
   if (order.paid || order.reminderSent) return;
   const templatePath = path.join(__dirname, "email.html");
@@ -210,7 +211,6 @@ function sendReminder(order) {
     });
 }
 
-/** 자동취소 이메일 발송 */
 function autoCancelOrder(order) {
   if (order.paid) return;
   const cancelHtml = `
@@ -242,7 +242,7 @@ function autoCancelOrder(order) {
 // 라우트 설정
 // ──────────────────────────────────────────────
 
-// 테스트 페이지 (resume.html) 제공
+// resume.html 제공 (테스트 페이지)
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "resume.html"));
 });
