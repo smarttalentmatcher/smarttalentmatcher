@@ -6,7 +6,8 @@ const nodemailer = require("nodemailer");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
-const juice = require("juice"); // Juice 모듈 추가
+const juice = require("juice");
+const cors = require("cors"); // CORS 모듈 추가
 
 const app = express();
 const PORT = 3000;
@@ -14,10 +15,10 @@ const PORT = 3000;
 /** 날짜 기반 오더ID (MMDDHHmm). 예: "09182010" */
 function generateDateTimeOrderId() {
   const now = new Date();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  const hh = String(now.getHours()).padStart(2, '0');
-  const min = String(now.getMinutes()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  const hh = String(now.getHours()).padStart(2, "0");
+  const min = String(now.getMinutes()).padStart(2, "0");
   return mm + dd + hh + min;
 }
 
@@ -59,16 +60,14 @@ loadOrdersData();
 const upload = multer({ dest: "uploads/" });
 const uploadResume = multer({ dest: "uploads/resume/" });
 
-// ──────────────────────────────────────────────
-// 정적 파일 제공 경로 수정
-// 기존: app.use(express.static("public"));
-// 수정: 모든 파일이 최상위에 있으므로 __dirname (현재 디렉토리)에서 정적 파일 제공
-// ──────────────────────────────────────────────
+// 정적 파일 제공: 모든 파일이 최상위에 있으므로 __dirname에서 제공
 app.use(express.static(__dirname));
-
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// CORS 설정 (모든 도메인 허용)
+app.use(cors());
 
 // Nodemailer 설정 (네이버 SMTP)
 const transporter = nodemailer.createTransport({
@@ -77,15 +76,15 @@ const transporter = nodemailer.createTransport({
   secure: true,
   auth: {
     user: "letsspeak01@naver.com",  // 본인 계정
-    pass: "ESLUTHE53P6L"           // 앱 비번 또는 실제 비번
+    pass: "ESLUTHE53P6L"            // 앱 비번 또는 실제 비번
   }
 });
 
 // ──────────────────────────────────────────────
-// 자동 정리 기능 추가: ordersData.json 및 uploads 폴더 정리 (재귀적)
+// 자동 정리 기능: ordersData.json 및 uploads 폴더 정리 (재귀적)
 // ──────────────────────────────────────────────
 
-// ordersData.json 정리: 어드민에 보이는 주문(finalOrders)만 남기고 업데이트
+// ordersData.json 정리: 어드민에 보이는 주문(finalOrders)만 남김
 function cleanUpOrdersData() {
   const dataToSave = { finalOrders: finalOrders };
   try {
@@ -96,14 +95,13 @@ function cleanUpOrdersData() {
   }
 }
 
-// uploads 폴더 정리 (재귀적): ordersData.json(finalOrders)에 사용되지 않는 파일 삭제
+// uploads 폴더 정리 (재귀적): ordersData.json에 사용되지 않는 파일 삭제
 function cleanUpUnusedUploads() {
   const usedFiles = new Set();
   finalOrders.forEach(order => {
     if (order.headshot) {
       usedFiles.add(path.join(__dirname, order.headshot));
     }
-    // 필요 시, order.resume 등 다른 파일 경로도 여기에 추가
   });
 
   function cleanDirectory(directory) {
@@ -136,7 +134,6 @@ function cleanUpUnusedUploads() {
       });
     });
   }
-
   const uploadsDir = path.join(__dirname, "uploads");
   cleanDirectory(uploadsDir);
 }
@@ -186,7 +183,6 @@ function scheduleAutoCancel(order) {
 /** 리마인드 이메일 발송 */
 function sendReminder(order) {
   if (order.paid || order.reminderSent) return;
-  // 이메일 템플릿 경로 수정: 이제 최상위에 있으므로 "public" 제거
   const templatePath = path.join(__dirname, "email.html");
   let reminderEmailHtml = "";
   if (fs.existsSync(templatePath)) {
@@ -242,12 +238,12 @@ function autoCancelOrder(order) {
     });
 }
 
-// 테스트 페이지 (resume.html) 경로 수정: 최상위에 resume.html 있음
+// 테스트 페이지 (resume.html) 제공
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "resume.html"));
 });
 
-/** (★) Test email - Headshot → Reel → Resume → Intro */
+// Test email - Headshot → Reel → Resume → Intro
 const uploadHeadshot = multer({ dest: "uploads/" });
 app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res) => {
   try {
@@ -294,27 +290,32 @@ app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res)
 
 /** (A) /submit-order -> choose.html (드래프트 주문 생성) */
 app.post("/submit-order", (req, res) => {
-  const { emailAddress, invoice, subtotal, discount, finalCost } = req.body;
-  const orderId = generateDateTimeOrderId();
-  const createdAt = Date.now();
-  const invoiceData = invoice && invoice.trim() !== "" ? invoice : "<p>Invoice details not available.</p>";
-  const newDraft = {
-    orderId,
-    emailAddress: emailAddress || "",
-    invoice: invoiceData,
-    subtotal: subtotal || "",
-    discount: discount || "",
-    finalCost: finalCost || "",
-    createdAt
-  };
-  draftOrders.push(newDraft);
-  console.log("✅ Draft order received:", newDraft);
-  saveOrdersData();
-  res.json({
-    success: true,
-    message: "Draft order received",
-    orderId
-  });
+  try {
+    const { emailAddress, invoice, subtotal, discount, finalCost } = req.body;
+    const orderId = generateDateTimeOrderId();
+    const createdAt = Date.now();
+    const invoiceData = invoice && invoice.trim() !== "" ? invoice : "<p>Invoice details not available.</p>";
+    const newDraft = {
+      orderId,
+      emailAddress: emailAddress || "",
+      invoice: invoiceData,
+      subtotal: subtotal || "",
+      discount: discount || "",
+      finalCost: finalCost || "",
+      createdAt
+    };
+    draftOrders.push(newDraft);
+    console.log("✅ Draft order received:", newDraft);
+    saveOrdersData();
+    res.json({
+      success: true,
+      message: "Draft order received",
+      orderId
+    });
+  } catch (err) {
+    console.error("Error in /submit-order:", err);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
 });
 
 /** (B) /update-order -> resume.html (파일 업로드, draft 갱신) */
@@ -344,7 +345,7 @@ app.post("/update-order", uploadResume.single("headshot"), (req, res) => {
   });
 });
 
-/** (C) /final-submit -> submit.html (Yes, Submit Now) */
+/** (C) /final-submit -> submit.html (최종 제출) */
 app.post("/final-submit", multer().none(), async (req, res) => {
   try {
     const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice, venmoId } = req.body;
@@ -446,7 +447,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     
     // (2) 클라이언트(인보이스) 이메일 발송
     if (emailAddress) {
-      // 이메일 템플릿 경로 수정: 이제 최상위에 있으므로 "public" 제거
       const templatePath = path.join(__dirname, "email.html");
       console.log("Looking for email template at:", templatePath);
       let clientEmailHtml = "";
