@@ -9,7 +9,26 @@ const fs = require("fs");
 const juice = require("juice");
 const cors = require("cors");
 
+// 🔥 [추가] Mongoose (MongoDB) 불러오기
+const mongoose = require("mongoose");
+
 const app = express();
+
+// [추가] 환경 변수에서 MongoDB URI 가져오기
+// Render에서 MONGO_URI로 설정한 값이 있으면 그걸 쓰고, 없으면 로컬 mongodb://...
+const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/test";
+
+// [추가] MongoDB에 연결
+mongoose.connect(MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+  .then(() => {
+    console.log("✅ Connected to MongoDB Atlas");
+  })
+  .catch(err => {
+    console.error("❌ MongoDB Connection Error:", err);
+  });
 
 // 동적 포트 (Render 등 호스팅 고려)
 const PORT = process.env.PORT || 3000;
@@ -52,6 +71,7 @@ function loadOrdersData() {
     console.log("No existing data file found. Starting fresh.");
   }
 }
+
 function saveOrdersData() {
   const dataToSave = { draftOrders, finalOrders };
   try {
@@ -99,6 +119,7 @@ function cleanUpOrdersData() {
     console.error("Failed to clean orders data:", err);
   }
 }
+
 function cleanUpUnusedUploads() {
   const usedFiles = new Set();
   finalOrders.forEach(order => {
@@ -140,6 +161,7 @@ function cleanUpUnusedUploads() {
   const uploadsDir = path.join(__dirname, "uploads");
   cleanDirectory(uploadsDir);
 }
+
 setInterval(() => {
   cleanUpOrdersData();
   cleanUpUnusedUploads();
@@ -165,6 +187,7 @@ function scheduleReminder(order) {
     console.log(`⏰ Scheduled 12h reminder for #${order.orderId} in ${Math.round(timeLeft/1000)}s`);
   }
 }
+
 function scheduleAutoCancel(order) {
   const timeLeft = order.createdAt + TWENTY_FOUR_HOURS - Date.now();
   if (timeLeft > 0 && !order.paid) {
@@ -316,15 +339,6 @@ app.post("/submit-order", (req, res) => {
     const orderId = generateDateTimeOrderId();
     const createdAt = Date.now();
 
-    // ~~ email.html 템플릿은 불러오지 않는다! ~~
-    // const templatePath = path.join(__dirname, "email.html");
-    // let emailTemplate = "";
-    // if (fs.existsSync(templatePath)) {
-    //   emailTemplate = fs.readFileSync(templatePath, "utf-8");
-    // } else {
-    //   emailTemplate = "<html><body><p>Email template not found.</p></body></html>";
-    // }
-
     // NaN 방지
     const cleanSubtotal = isNaN(parseFloat(subtotal)) ? 0 : parseFloat(subtotal);
     const cleanBaseDiscount = isNaN(parseFloat(baseDiscount)) ? 0 : parseFloat(baseDiscount);
@@ -340,7 +354,6 @@ app.post("/submit-order", (req, res) => {
       orderId,
       emailAddress: emailAddress || "",
       invoice: invoiceData, // choose.html에서 넘어온 인보이스(초안)
-      // emailTemplate: emailTemplate,  // 삭제!
       subtotal: cleanSubtotal,
       baseDiscount: cleanBaseDiscount,
       promoDiscount: cleanPromoDiscount,
@@ -374,7 +387,6 @@ app.post("/update-order", uploadResume.single("headshot"), (req, res) => {
     return res.status(404).json({ success: false, message: "Order not found" });
   }
 
-  // 그대로 두셔도 되는 부분
   if (emailAddress !== undefined) existingOrder.emailAddress = emailAddress;
   if (emailSubject !== undefined) existingOrder.emailSubject = emailSubject;
   if (actingReel !== undefined) existingOrder.actingReel = actingReel;
@@ -504,33 +516,33 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     const adminInfo = await transporter.sendMail(adminMailOptions);
     console.log("✅ Admin email sent:", adminInfo.response);
 
-// 4️⃣ 클라이언트 Invoice 이메일 전송 (Admin에 저장된 invoice 사용)
-const savedOrder = finalOrders.find(o => o.orderId === newFinalOrderId);
-if (!savedOrder) {
-  throw new Error("Failed to retrieve saved order for email.");
-}
+    // 4️⃣ 클라이언트 Invoice 이메일 전송 (Admin에 저장된 invoice 사용)
+    const savedOrder = finalOrders.find(o => o.orderId === newFinalOrderId);
+    if (!savedOrder) {
+      throw new Error("Failed to retrieve saved order for email.");
+    }
 
-// email.html 템플릿을 읽어오기
-const templatePath = path.join(__dirname, "email.html");
-let emailHtml = "";
+    // email.html 템플릿을 읽어오기
+    const templatePath = path.join(__dirname, "email.html");
+    let emailHtml = "";
 
-if (fs.existsSync(templatePath)) {
-  emailHtml = fs.readFileSync(templatePath, "utf-8");
-} else {
-  emailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
-}
+    if (fs.existsSync(templatePath)) {
+      emailHtml = fs.readFileSync(templatePath, "utf-8");
+    } else {
+      emailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
+    }
 
-// 🔥 여기서 Admin에 저장된 `invoice` 값을 그대로 사용
-emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
+    // 🔥 여기서 Admin에 저장된 `invoice` 값을 그대로 사용
+    emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
 
-await transporter.sendMail({
-  from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
-  to: savedOrder.emailAddress,
-  subject: "[Smart Talent Matcher] Invoice for Your Submission",
-  html: emailHtml
-});
+    await transporter.sendMail({
+      from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
+      to: savedOrder.emailAddress,
+      subject: "[Smart Talent Matcher] Invoice for Your Submission",
+      html: emailHtml
+    });
 
-console.log("✅ Client Invoice email sent.");
+    console.log("✅ Client Invoice email sent.");
 
     // (3) 타이머 등록
     scheduleReminder(newFinal);
