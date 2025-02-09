@@ -148,7 +148,7 @@ cleanUpOrdersData();
 cleanUpUnusedUploads();
 
 // 12h/24h 타이머
-const TWELVE_HOURS = 1 * 60 * 1000;
+const TWELVE_HOURS = 1 * 60 * 1000; // 테스트용 1분
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 const reminderTimers = {};
 const autoCancelTimers = {};
@@ -181,24 +181,22 @@ function scheduleAutoCancel(order) {
 function sendReminder(order) {
   if (order.paid || order.reminderSent) return;
 
-  // Admin에 저장된 invoice를 사용하도록 변경
+  // Admin에 저장된 invoice 사용
   const savedOrder = finalOrders.find(o => o.orderId === order.orderId);
   if (!savedOrder) {
     console.error(`❌ Order #${order.orderId} not found in finalOrders.`);
     return;
   }
 
-  // email.html 템플릿 읽기
   const templatePath = path.join(__dirname, "email.html");
   let reminderEmailHtml = "";
-
   if (fs.existsSync(templatePath)) {
     reminderEmailHtml = fs.readFileSync(templatePath, "utf-8");
   } else {
     reminderEmailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
   }
 
-  // 🔥 Admin에 저장된 invoice 값으로 email.html의 {{invoice}} 치환
+  // 단순히 admin에 저장된 invoice 값으로 치환 (중복 제거 로직은 final-submit에서 처리하므로 여기서는 그대로 사용)
   reminderEmailHtml = reminderEmailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
 
   const mailOptions = {
@@ -316,10 +314,9 @@ app.post("/submit-order", (req, res) => {
     const orderId = generateDateTimeOrderId();
     const createdAt = Date.now();
 
-    // **이메일 템플릿도 저장하기 위해 email.html을 불러옴**
+    // 이메일 템플릿도 저장하기 위해 email.html을 불러옴
     const templatePath = path.join(__dirname, "email.html");
     let emailTemplate = "";
-
     if (fs.existsSync(templatePath)) {
       emailTemplate = fs.readFileSync(templatePath, "utf-8");
     } else {
@@ -341,7 +338,7 @@ app.post("/submit-order", (req, res) => {
       orderId,
       emailAddress: emailAddress || "",
       invoice: invoiceData, // 기존 영수증 HTML
-      emailTemplate: emailTemplate, // 💾 이메일 템플릿까지 같이 저장!
+      emailTemplate: emailTemplate, // 이메일 템플릿까지 같이 저장
       subtotal: cleanSubtotal,
       baseDiscount: cleanBaseDiscount,
       promoDiscount: cleanPromoDiscount,
@@ -440,9 +437,10 @@ app.post("/final-submit", multer().none(), async (req, res) => {
 
     // 새 파이널 ID 생성
     const newFinalOrderId = generateDateTimeOrderId();
-    const finalInvoice = (existingDraft && existingDraft.invoice)
-      ? existingDraft.invoice
-      : (invoice || "<p>Invoice details not available.</p>");
+    // 기존 draft invoice를 사용하지 않고, 요청으로 전달된 invoice만 사용합니다.
+    const finalInvoice = invoice && invoice.trim() !== ""
+      ? invoice
+      : "<p>Invoice details not available.</p>";
 
     // 최종 오더
     const newFinal = {
@@ -452,7 +450,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       actingReel: actingReel || "",
       resumeLink: resumeLink || "",
       introduction: introduction || "",
-      invoice: finalInvoice,
+      invoice: finalInvoice,  // 요청된 invoice만 저장됨.
       venmoId: venmoId || "",
       createdAt: Date.now(),
       paid: false,
@@ -499,41 +497,40 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     const adminInfo = await transporter.sendMail(adminMailOptions);
     console.log("✅ Admin email sent:", adminInfo.response);
 
-// 4️⃣ 클라이언트 Invoice 이메일 전송 (Admin에 저장된 invoice 사용)
-const savedOrder = finalOrders.find(o => o.orderId === newFinalOrderId);
-if (!savedOrder) {
-  throw new Error("Failed to retrieve saved order for email.");
-}
-
-// ✅ Admin에서 저장된 invoice 값만 사용 (기존 방식 제거됨)
-console.log("✅ Admin Stored Invoice:", savedOrder.invoice);
-
-// email.html 템플릿을 읽어오기
-const templatePath = path.join(__dirname, "email.html");
-let emailHtml = "";
-if (fs.existsSync(templatePath)) {
-  emailHtml = fs.readFileSync(templatePath, "utf-8");
-} else {
-  emailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
-}
-
-// ✅ 기존 방식 제거: 불필요한 invoice 불러오지 않음
-emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
-
-// ✅ 최종 이메일 전송
-await transporter.sendMail({
-  from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
-  to: savedOrder.emailAddress,
-  subject: "[Smart Talent Matcher] Invoice for Your Submission",
-  html: emailHtml
-});
-
-console.log("✅ Client Invoice email sent.");
-
+    // (4) 클라이언트 Invoice 이메일 전송 (Admin에 저장된 invoice 사용)
+    const savedOrder = finalOrders.find(o => o.orderId === newFinalOrderId);
+    if (!savedOrder) {
+      throw new Error("Failed to retrieve saved order for email.");
+    }
+    
+    // 어드민에 저장된 invoice 값만 사용 (기존 방식 제거됨)
+    console.log("✅ Admin Stored Invoice:", savedOrder.invoice);
+    
+    // email.html 템플릿을 읽어오기
+    const clientTemplatePath = path.join(__dirname, "email.html");
+    let clientEmailHtml = "";
+    if (fs.existsSync(clientTemplatePath)) {
+      clientEmailHtml = fs.readFileSync(clientTemplatePath, "utf-8");
+    } else {
+      clientEmailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
+    }
+    
+    // admin에 저장된 invoice 값으로 템플릿 내의 {{invoice}} 플레이스홀더를 치환
+    clientEmailHtml = clientEmailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
+    
+    await transporter.sendMail({
+      from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
+      to: savedOrder.emailAddress,
+      subject: "[Smart Talent Matcher] Invoice for Your Submission",
+      html: clientEmailHtml
+    });
+    
+    console.log("✅ Client Invoice email sent.");
+    
     // (3) 타이머 등록
     scheduleReminder(newFinal);
     scheduleAutoCancel(newFinal);
-
+    
     res.json({
       success: true,
       message: "Final submission complete! Emails sent and timers set."
@@ -579,7 +576,7 @@ app.post("/admin/delete-order", (req, res) => {
   transporter.sendMail(cancelOptions)
     .then(info => {
       console.log("✅ Cancel email sent:", info.response);
-
+    
       if (reminderTimers[orderId]) {
         clearTimeout(reminderTimers[orderId]);
         delete reminderTimers[orderId];
@@ -590,7 +587,7 @@ app.post("/admin/delete-order", (req, res) => {
       }
       finalOrders.splice(idx, 1);
       saveOrdersData();
-
+    
       res.json({ success: true, message: `Order #${orderId} deleted. Cancel email sent.` });
     })
     .catch(err => {
