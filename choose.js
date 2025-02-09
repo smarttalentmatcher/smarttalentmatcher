@@ -122,43 +122,70 @@ function updateCost() {
   finalCostEl.textContent = finalAfterPercent.toFixed(2);
 }
 
+// Next 버튼 클릭 시 서버에 주문 데이터 전송 후 resume.html로 이동
 document.getElementById("next-button").addEventListener("click", () => {
-    console.log("Next 버튼 클릭됨");
-  
-    const subtotalVal = parseFloat(subtotalEl.textContent || "0");
-    const baseDiscountVal = parseFloat(baseDiscountEl.textContent || "0");
-    const promoDiscountVal = parseFloat(promoDiscountEl.textContent || "0");
-    const finalCostVal = parseFloat(finalCostEl.textContent || "0");
-  
-    // ✅ 인보이스(영수증) HTML을 현재 보여지는 디자인 그대로 저장
-    const invoiceHTML = document.querySelector(".cost-summary").outerHTML;
-  
-    // ✅ 서버로 전송할 데이터
-    const orderData = {
-      invoice: invoiceHTML,  // 디자인 포함된 HTML 전송
-      subtotal: subtotalVal.toFixed(2),
-      baseDiscount: baseDiscountVal.toFixed(2),
-      promoDiscount: promoDiscountVal.toFixed(2),
-      finalCost: finalCostVal.toFixed(2)
-    };
-  
-    fetch(window.location.origin + "/submit-order", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(orderData)
+  console.log("Next 버튼 클릭됨");
+
+  const subtotal = parseFloat(subtotalEl.textContent || "0");
+  const baseDiscount = parseFloat(baseDiscountEl.textContent || "0");
+  const finalCost = parseFloat(finalCostEl.textContent || "0");
+  const promoDiscountVal = parseFloat(promoDiscountEl.textContent || "0");
+
+  // 인보이스(영수증) HTML 생성
+  const invoiceHTML = `
+    <div>
+      <h3>Selected Packages:</h3>
+      <div>${selectedItemsDiv.innerHTML}</div>
+      <hr>
+      <div class="receipt-line">
+        <span class="receipt-desc">Subtotal:</span>
+        <span class="receipt-price">$${subtotal.toFixed(2)}</span>
+      </div>
+      <div class="receipt-line">
+        <span class="receipt-desc">Base Discount (10%):</span>
+        <span class="receipt-price">-$${baseDiscount.toFixed(2)}</span>
+      </div>
+      ${
+        (promoDiscountLine.style.display === "flex")
+          ? `<div class="receipt-line">
+               <span class="receipt-desc">Promo Discount:</span>
+               <span class="receipt-price">-$${promoDiscountVal.toFixed(2)}</span>
+             </div>`
+          : ""
+      }
+      <hr>
+      <div class="receipt-line" style="font-weight:bold;">
+        <span class="receipt-desc">Final Cost:</span>
+        <span class="receipt-price">$${finalCost.toFixed(2)}</span>
+      </div>
+    </div>
+  `;
+
+  // 서버로 전송할 데이터 객체 구성
+  const orderData = {
+    invoice: invoiceHTML,
+    subtotal: subtotal.toFixed(2),
+    discount: (baseDiscount + promoDiscountVal).toFixed(2),
+    finalCost: finalCost.toFixed(2)
+  };
+
+  fetch(window.location.origin + "/submit-order", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(orderData)
+  })
+    .then(response => response.json())
+    .then(result => {
+      console.log("Order submitted:", result);
+      if (result.success) {
+        localStorage.setItem("orderId", result.orderId);
+        window.location.href = window.location.origin + "/resume.html";
+      } else {
+        alert("Order submission failed.");
+      }
     })
-      .then(response => response.json())
-      .then(result => {
-        console.log("Order submitted:", result);
-        if (result.success) {
-          localStorage.setItem("orderId", result.orderId);
-          window.location.href = window.location.origin + "/resume.html";
-        } else {
-          alert("Order submission failed.");
-        }
-      })
-      .catch(err => {
-        console.error("Error submitting order:", err);
-        alert("Order submission failed. Please try again.");
-      });
-  });
+    .catch(err => {
+      console.error("Error submitting order:", err);
+      alert("Order submission failed. Please try again.");
+    });
+});
