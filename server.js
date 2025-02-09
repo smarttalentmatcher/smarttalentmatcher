@@ -498,9 +498,9 @@ if (emailAddress) {
     emailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
   }
 
-  // 2) DB 또는 draftOrders/ finalOrders에서 기존 저장된 invoice 가져오기
-  //    예: const storedInvoice = existingOrder.invoice;
-  const storedInvoice = existingOrder.invoice || "<p>No invoice data</p>";
+  // ✅ 2) 어드민(Admin)에 최종 저장된 데이터에서 invoice 가져오기
+  const finalOrder = finalOrders.find(o => o.orderId === orderId);
+  const storedInvoice = finalOrder ? finalOrder.invoice : "<p>No invoice data</p>";
 
   // 3) 템플릿 안의 {{invoice}} 부분을 storedInvoice로 치환
   emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, storedInvoice);
