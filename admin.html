@@ -2,20 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-<<<<<<< HEAD
-  <title>Admin Panel - Orders</title><!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-=======
->>>>>>> 7d5a5ea (Save local changes before pull)
   <title>Admin Panel - Orders</title>
   <link rel="stylesheet" href="style.css">
+
   <style>
     /* Admin 페이지 전용 스타일 */
     .orders-container {
       width: 90%;         
-      max-width: 1800px;   
+      max-width: 1800px;  
       margin: 40px auto;
       max-height: 250px;  
       overflow-y: auto;   
@@ -58,6 +52,7 @@
     .orders-table td:nth-child(9) {
       width: 300px;
     }
+
     header.admin-header {
       text-align: center;
       padding: 20px 0;
@@ -70,6 +65,7 @@
       margin: 0;
       font-weight: bold;
     }
+
     .delete-button {
       background-color: red;
       color: #fff;
@@ -79,6 +75,7 @@
       padding: 6px 10px;
       border-radius: 4px;
     }
+
     /* 스크롤이 필요한 셀: Introduction, Invoice */
     .scroll-cell {
       max-height: 100px;
@@ -86,6 +83,7 @@
     }
   </style>
 </head>
+
 <body>
   <header class="admin-header">
     <h1>Admin Panel - Orders</h1>
@@ -114,6 +112,7 @@
   </div>
 
   <script>
+    // 관리자 주문 목록 불러오기
     fetch('/admin/orders')
       .then(response => response.json())
       .then(orders => {
@@ -122,27 +121,27 @@
         orders.forEach(order => {
           const tr = document.createElement('tr');
 
-          // Column 1: Order ID
+          // 1. Order ID
           const idTd = document.createElement('td');
           idTd.textContent = order.orderId || "";
           tr.appendChild(idTd);
 
-          // Column 2: Venmo Account
+          // 2. Venmo Account
           const venmoTd = document.createElement('td');
           venmoTd.textContent = order.venmoId || "";
           tr.appendChild(venmoTd);
 
-          // Column 3: Email Address
+          // 3. Email Address
           const emailTd = document.createElement('td');
           emailTd.textContent = order.emailAddress || "";
           tr.appendChild(emailTd);
 
-          // Column 4: Email Subject
+          // 4. Email Subject
           const subjectTd = document.createElement('td');
           subjectTd.textContent = order.emailSubject || "";
           tr.appendChild(subjectTd);
 
-          // Column 5: Acting Reel (링크)
+          // 5. Acting Reel (링크)
           const actingTd = document.createElement('td');
           if (order.actingReel) {
             actingTd.innerHTML = `<a href="${order.actingReel}" target="_blank">${order.actingReel}</a>`;
@@ -151,7 +150,7 @@
           }
           tr.appendChild(actingTd);
 
-          // Column 6: Resume Link (링크)
+          // 6. Resume Link (링크)
           const resumeTd = document.createElement('td');
           if (order.resumeLink) {
             resumeTd.innerHTML = `<a href="${order.resumeLink}" target="_blank">${order.resumeLink}</a>`;
@@ -160,13 +159,13 @@
           }
           tr.appendChild(resumeTd);
 
-          // Column 7: Introduction (스크롤 적용)
+          // 7. Introduction (스크롤 가능)
           const introTd = document.createElement('td');
           introTd.classList.add("scroll-cell");
           introTd.textContent = order.introduction || "";
           tr.appendChild(introTd);
 
-          // Column 8: Headshot
+          // 8. Headshot (이미지)
           const headshotTd = document.createElement('td');
           if (order.headshot) {
             const img = document.createElement('img');
@@ -179,14 +178,15 @@
           }
           tr.appendChild(headshotTd);
 
-          // Column 9: Invoice (스크롤 적용)
+          // 9. Invoice (스크롤 가능)
           const invoiceTd = document.createElement('td');
           invoiceTd.classList.add("scroll-cell");
           invoiceTd.innerHTML = order.invoice || "";
           tr.appendChild(invoiceTd);
 
-          // Column 10: Payment / Delete
+          // 10. Payment / Delete
           const paymentTd = document.createElement('td');
+
           if (order.expired) {
             // 주문이 24시간 이상 경과한 경우
             paymentTd.innerHTML = `<span style="color:red; font-weight:bold;">24hrs</span>`;
@@ -207,14 +207,14 @@
               <button class="delete-button" data-order-id="${order.orderId}">Delete</button>
             `;
           }
-          tr.appendChild(paymentTd);
 
+          tr.appendChild(paymentTd);
           tbody.appendChild(tr);
         });
 
-        // Payment 체크박스 이벤트 바인딩
+        // Payment 체크박스 이벤트
         document.querySelectorAll(".payment-checkbox").forEach(checkbox => {
-          checkbox.addEventListener("change", (e) => {
+          checkbox.addEventListener("change", e => {
             const isPaid = e.target.checked;
             const orderId = e.target.getAttribute("data-order-id");
             fetch("/admin/update-payment", {
@@ -236,270 +236,7 @@
           });
         });
 
-        // Delete 버튼 이벤트 바인딩
-        document.querySelectorAll(".delete-button").forEach(deleteBtn => {
-          deleteBtn.addEventListener("click", () => {
-            const orderId = deleteBtn.getAttribute("data-order-id");
-            if (confirm(`Delete order #${orderId}? This will send a cancellation email.`)) {
-              fetch("/admin/delete-order", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ orderId })
-              })
-                .then(r => r.json())
-                .then(res => {
-                  if (res.success) {
-                    alert(res.message);
-                    const row = deleteBtn.closest("tr");
-                    if (row) row.remove();
-                  } else {
-                    alert("Error: " + (res.message || "Unknown error"));
-                  }
-                })
-                .catch(err => {
-                  console.error(err);
-                  alert("Failed to delete order. See console.");
-                });
-            }
-          });
-        });
-      })
-      .catch(error => {
-        console.error("Error fetching orders:", error);
-        const tbody = document.getElementById('orders-tbody');
-        tbody.innerHTML = "<tr><td colspan='10'>Failed to load orders.</td></tr>";
-      });
-  </script>
-</body>
-<<<<<<< HEAD
-</html>
-  <link rel="stylesheet" href="style.css">
-  <style>
-    /* Admin 페이지 전용 스타일 */
-    .orders-container {
-      width: 90%;         
-      max-width: 1800px;   
-      margin: 40px auto;
-      max-height: 250px;  
-      overflow-y: auto;   
-    }
-    .orders-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 0 auto;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      border-radius: 8px;
-      overflow: hidden;
-      table-layout: fixed;
-    }
-    .orders-table th,
-    .orders-table td {
-      padding: 10px 8px;
-      border: 1px solid #ccc;
-      text-align: center;
-      font-size: 0.95rem;
-      vertical-align: top;
-      word-wrap: break-word;
-      overflow-wrap: break-word;
-    }
-    .orders-table th {
-      background-color: #FFFF00;
-      color: #000;
-      font-weight: bold;
-    }
-    .orders-table tbody tr {
-      background-color: #ffffff;
-    }
-    /* 열 너비 지정 */
-    /* Headshot 열: 8번째 열 */
-    .orders-table th:nth-child(8),
-    .orders-table td:nth-child(8) {
-      width: 200px;
-    }
-    /* Invoice 열: 9번째 열 */
-    .orders-table th:nth-child(9),
-    .orders-table td:nth-child(9) {
-      width: 300px;
-    }
-    header.admin-header {
-      text-align: center;
-      padding: 20px 0;
-      background-color: #001f3f;
-      color: #fff;
-      margin-bottom: 20px;
-    }
-    header.admin-header h1 {
-      font-size: 2rem;
-      margin: 0;
-      font-weight: bold;
-    }
-    .delete-button {
-      background-color: red;
-      color: #fff;
-      border: none;
-      cursor: pointer;
-      margin-top: 5px;
-      padding: 6px 10px;
-      border-radius: 4px;
-    }
-    /* 스크롤이 필요한 셀: Introduction, Invoice */
-    .scroll-cell {
-      max-height: 100px;
-      overflow-y: auto;
-    }
-  </style>
-</head>
-<body>
-  <header class="admin-header">
-    <h1>Admin Panel - Orders</h1>
-  </header>
-
-  <div class="orders-container">
-    <table class="orders-table">
-      <thead>
-        <tr>
-          <th>Order ID</th>
-          <th>Venmo Account</th>
-          <th>Email Address</th>
-          <th>Email Subject</th>
-          <th>Acting Reel</th>
-          <th>Resume Link</th>
-          <th>Introduction</th>
-          <th>Headshot</th>
-          <th>Invoice</th>
-          <th>Payment / Delete</th>
-        </tr>
-      </thead>
-      <tbody id="orders-tbody">
-        <!-- 주문 데이터가 동적으로 추가됩니다 -->
-      </tbody>
-    </table>
-  </div>
-
-  <script>
-    fetch('/admin/orders')
-      .then(response => response.json())
-      .then(orders => {
-        const tbody = document.getElementById('orders-tbody');
-
-        orders.forEach(order => {
-          const tr = document.createElement('tr');
-
-          // Column 1: Order ID
-          const idTd = document.createElement('td');
-          idTd.textContent = order.orderId || "";
-          tr.appendChild(idTd);
-
-          // Column 2: Venmo Account
-          const venmoTd = document.createElement('td');
-          venmoTd.textContent = order.venmoId || "";
-          tr.appendChild(venmoTd);
-
-          // Column 3: Email Address
-          const emailTd = document.createElement('td');
-          emailTd.textContent = order.emailAddress || "";
-          tr.appendChild(emailTd);
-
-          // Column 4: Email Subject
-          const subjectTd = document.createElement('td');
-          subjectTd.textContent = order.emailSubject || "";
-          tr.appendChild(subjectTd);
-
-          // Column 5: Acting Reel (링크)
-          const actingTd = document.createElement('td');
-          if (order.actingReel) {
-            actingTd.innerHTML = `<a href="${order.actingReel}" target="_blank">${order.actingReel}</a>`;
-          } else {
-            actingTd.textContent = "";
-          }
-          tr.appendChild(actingTd);
-
-          // Column 6: Resume Link (링크)
-          const resumeTd = document.createElement('td');
-          if (order.resumeLink) {
-            resumeTd.innerHTML = `<a href="${order.resumeLink}" target="_blank">${order.resumeLink}</a>`;
-          } else {
-            resumeTd.textContent = "";
-          }
-          tr.appendChild(resumeTd);
-
-          // Column 7: Introduction (스크롤 적용)
-          const introTd = document.createElement('td');
-          introTd.classList.add("scroll-cell");
-          introTd.textContent = order.introduction || "";
-          tr.appendChild(introTd);
-
-          // Column 8: Headshot
-          const headshotTd = document.createElement('td');
-          if (order.headshot) {
-            const img = document.createElement('img');
-            img.src = order.headshot;
-            img.alt = "Headshot Preview";
-            img.style.width = "100px";
-            headshotTd.appendChild(img);
-          } else {
-            headshotTd.textContent = "N/A";
-          }
-          tr.appendChild(headshotTd);
-
-          // Column 9: Invoice (스크롤 적용)
-          const invoiceTd = document.createElement('td');
-          invoiceTd.classList.add("scroll-cell");
-          invoiceTd.innerHTML = order.invoice || "";
-          tr.appendChild(invoiceTd);
-
-          // Column 10: Payment / Delete
-          const paymentTd = document.createElement('td');
-          if (order.expired) {
-            // 주문이 24시간 이상 경과한 경우
-            paymentTd.innerHTML = `<span style="color:red; font-weight:bold;">24hrs</span>`;
-          } else {
-            let finalCost = order.finalCost || "";
-            if (finalCost !== "") {
-              finalCost = "$" + parseFloat(finalCost).toFixed(2);
-            }
-            const checkedAttr = order.paid ? "checked" : "";
-            paymentTd.innerHTML = `
-              ${finalCost}
-              <br>
-              <label>
-                <input type="checkbox" class="payment-checkbox" data-order-id="${order.orderId}" ${checkedAttr}>
-                Paid
-              </label>
-              <br>
-              <button class="delete-button" data-order-id="${order.orderId}">Delete</button>
-            `;
-          }
-          tr.appendChild(paymentTd);
-
-          tbody.appendChild(tr);
-        });
-
-        // Payment 체크박스 이벤트 바인딩
-        document.querySelectorAll(".payment-checkbox").forEach(checkbox => {
-          checkbox.addEventListener("change", (e) => {
-            const isPaid = e.target.checked;
-            const orderId = e.target.getAttribute("data-order-id");
-            fetch("/admin/update-payment", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ orderId, paid: isPaid })
-            })
-              .then(r => r.json())
-              .then(res => {
-                if (res.success) {
-                  console.log("Payment updated:", res.message);
-                } else {
-                  alert("Error updating payment status: " + (res.message || ""));
-                }
-              })
-              .catch(err => {
-                console.error("Error updating payment:", err);
-              });
-          });
-        });
-
-        // Delete 버튼 이벤트 바인딩
+        // Delete 버튼 이벤트
         document.querySelectorAll(".delete-button").forEach(deleteBtn => {
           deleteBtn.addEventListener("click", () => {
             const orderId = deleteBtn.getAttribute("data-order-id");
@@ -535,6 +272,3 @@
   </script>
 </body>
 </html>
-=======
-</html>
->>>>>>> 7d5a5ea (Save local changes before pull)
