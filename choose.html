@@ -16,10 +16,14 @@
       padding: 8px;
       text-align: center;
     }
+    /* 선택된 항목(영수증 라인) 스타일 */
     .receipt-line {
       display: flex;
       justify-content: space-between;
-      margin: 4px 0;
+      border-bottom: 1px dashed #ccc;
+      padding: 5px 0;
+      font-size: 1rem;
+      margin-bottom: 3px;
     }
     .receipt-desc {
       text-align: left;
@@ -28,15 +32,17 @@
       text-align: right;
       margin-left: 10px;
     }
+
     .cost-summary {
-      max-width: 600px;
+      max-width: 900px;
       margin: 20px auto;
+      padding: 15px;
+      background-color: #f1f1f1;
+      border-radius: 8px;
+      font-size: 1.1rem;
+      line-height: 1.5;
     }
-    .summary-line {
-      display: flex;
-      justify-content: space-between;
-      margin: 4px 0;
-    }
+
     .final-cost {
       font-weight: bold;
       font-size: 1.1em;
@@ -49,7 +55,7 @@
       margin-top: 2px;
     }
 
-    /* 추가 스타일 */
+    /* 추가 스타일 (헤더 등) */
     header.choose-header {
       text-align: center;
       padding: 20px 0;
@@ -72,7 +78,7 @@
       vertical-align: middle;
     }
 
-    /* 그룹 헤더 높이 감소 (index.html과 동일) */
+    /* 그룹 헤더 높이 감소 */
     .group-header-cell {
       background-color: #001f3f;
       color: #fff;
@@ -80,15 +86,15 @@
       font-size: 1.1rem;
       font-weight: 600;
       border: 4px solid #ccc;
-      padding: 2px 5px;   /* 줄여서 높이 조절 */
-      line-height: 1.2;  /* 줄여서 높이 조절 */
+      padding: 2px 5px; /* 줄여서 높이 조절 */
+      line-height: 1.2; 
       white-space: nowrap;
     }
   </style>
 </head>
 <body>
 
-  <header class="choose-header" style="text-align:center;">
+  <header class="choose-header">
     <h1><span class="step-indicator">1</span> Choose Your Target Locations</h1>
   </header>
 
@@ -191,11 +197,11 @@
           <td class="group-header-cell">
             <strong>For Bilinguals</strong>
           </td>
-          <td style="background-color: #FFFFFF;"></td>
-          <td style="background-color: #FFFFFF;"></td>
-          <td style="background-color: #FFFFFF;"></td>
-          <td style="background-color: #FFFFFF;"></td>
-          <td style="background-color: #FFFFFF;"></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
         </tr>
         <tr>
           <td><strong>Asia</strong></td>
@@ -254,32 +260,46 @@
   </p>
 
   <!-- 비용 요약 및 영수증 영역 -->
-  <section class="cost-summary" style="max-width:900px; margin:20px auto; padding:15px; background-color:#f1f1f1; border-radius:8px; font-size:1.1rem; line-height:1.5;">
-    <div id="selected-items" style="margin-bottom:20px;"></div>
-
-    <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #ccc; padding:5px 0; font-size:1rem; margin-bottom:3px;">
-      <span>Subtotal:</span>
-      <span>$<span id="subtotal">0</span> USD</span>
+  <section class="cost-summary">
+    <!-- (1) 선택된 아이템 표시 영역 -->
+    <div id="selected-items" style="margin-bottom:20px;">
+      <!-- 예시 아이템 (Placeholder) -->
+      <!-- 실제로는 choose.js에서 체크박스 선택 시 아래 형태로 추가됨 -->
+      <!--
+      <div class="receipt-line">
+        <span class="receipt-desc">[Base Package] United States (+Canada)</span>
+        <span class="receipt-price">$445.85 USD</span>
+      </div>
+      -->
     </div>
 
-    <div style="display:flex; justify-content:space-between; border-bottom:1px dashed #ccc; padding:5px 0; font-size:1rem; margin-bottom:3px;">
+    <!-- (2) Subtotal 라인 -->
+    <div class="receipt-line">
+      <span>Subtotal:</span>
+      <span><span id="subtotal">0</span> USD</span>
+    </div>
+
+    <!-- (3) 기본 Discount(10%) 라인 -->
+    <div class="receipt-line">
       <span>
         Discount: -10%
-        <span style="font-size:0.85em; color:#666; display:block; margin-top:2px;">
+        <span class="discount-note">
           (for invalid/long-targeting emails adjustment)
         </span>
       </span>
-      <span>$<span id="base-discount">0</span> USD</span>
+      <span><span id="base-discount">0</span> USD</span>
     </div>
 
-    <div id="promo-discount-line" style="display:none; justify-content:space-between; border-bottom:1px dashed #ccc; padding:5px 0; font-size:1rem; margin-bottom:3px;">
+    <!-- (4) 프로모 할인 라인 (기본은 숨김) -->
+    <div id="promo-discount-line" class="receipt-line" style="display:none;">
       <span id="promo-discount-label"></span>
-      <span>$<span id="promo-discount">0</span> USD</span>
+      <span><span id="promo-discount">0</span> USD</span>
     </div>
 
     <hr style="border: 0; border-top: 1px solid #ccc; margin:10px 0;">
 
-    <div style="display:flex; justify-content:space-between; font-weight:bold; font-size:1.1em; margin-top:10px;">
+    <!-- (5) 최종 비용 -->
+    <div class="receipt-line" style="font-weight:bold; font-size:1.1em; margin-top:10px;">
       <span>Final Cost:</span>
       <span><span id="final-cost">0</span> USD</span>
     </div>
