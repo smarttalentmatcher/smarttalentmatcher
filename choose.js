@@ -124,7 +124,7 @@ function updateCost() {
   }
 
   finalCostEl.textContent = finalAfterPercent.toFixed(2);
-}
+
 
 // Next 버튼 클릭 시 서버에 주문 데이터 전송 후 resume.html로 이동
 document.getElementById("next-button").addEventListener("click", () => {
