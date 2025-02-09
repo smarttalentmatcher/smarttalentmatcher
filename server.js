@@ -486,7 +486,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     const adminInfo = await transporter.sendMail(adminMailOptions);
     console.log("✅ Admin email sent:", adminInfo.response);
 
-    // (2) 클라이언트(인보이스) 이메일 발송
+// (2) 클라이언트(인보이스) 이메일 발송
 if (emailAddress) {
   // 1) email.html 템플릿 읽기
   const templatePath = path.join(__dirname, "email.html");
@@ -498,12 +498,17 @@ if (emailAddress) {
     emailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
   }
 
-  // 2) 템플릿 안의 {{invoice}} 부분을 finalInvoice로 치환
-  // (juice(emailHtml)로 CSS 인라인화도 가능)
-  // emailHtml = juice(emailHtml); // 필요 시 사용
-  emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, finalInvoice);
+  // 2) DB 또는 draftOrders/ finalOrders에서 기존 저장된 invoice 가져오기
+  //    예: const storedInvoice = existingOrder.invoice;
+  const storedInvoice = existingOrder.invoice || "<p>No invoice data</p>";
 
-  // 3) 치환된 이메일 HTML을 nodemailer로 전송
+  // 3) 템플릿 안의 {{invoice}} 부분을 storedInvoice로 치환
+  emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, storedInvoice);
+
+  // (선택) juice(emailHtml)로 CSS 인라인화 가능
+  // emailHtml = juice(emailHtml);
+
+  // 4) 치환된 이메일 HTML을 nodemailer로 전송
   const clientMailOptions = {
     from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
     to: emailAddress,
