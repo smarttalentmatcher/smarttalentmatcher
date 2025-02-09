@@ -505,7 +505,7 @@ if (!savedOrder) {
   throw new Error("Failed to retrieve saved order for email.");
 }
 
-// [변경/추가] 저장된 invoice 내용을 로그로 출력 (디버깅용)
+// ✅ Admin에서 저장된 invoice 값만 사용 (기존 방식 제거됨)
 console.log("✅ Admin Stored Invoice:", savedOrder.invoice);
 
 // email.html 템플릿을 읽어오기
@@ -517,41 +517,10 @@ if (fs.existsSync(templatePath)) {
   emailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
 }
 
-// [변경/추가] 치환 전 템플릿과 invoice 데이터를 로그로 출력 (디버깅용)
-console.log("Before Replacement:", emailHtml);
-console.log("Invoice Data to Insert:", savedOrder.invoice);
+// ✅ 기존 방식 제거: 불필요한 invoice 불러오지 않음
+emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
 
-// [변경] 중복된 invoice 섹션을 제거하는 처리 시작
-// 먼저 savedOrder.invoice에서 <section class="cost-summary"> 섹션이 여러 번 있으면 첫 번째만 남김
-let cleanedInvoice = savedOrder.invoice;
-const invoiceOccurrences = (cleanedInvoice.match(/<section class="cost-summary"/g) || []).length;
-if (invoiceOccurrences > 1) {
-  // 첫 번째 <section class="cost-summary">부터 첫 번째 </section>까지의 부분만 사용
-  const firstOccurrenceIndex = cleanedInvoice.indexOf('<section class="cost-summary"');
-  const endIndex = cleanedInvoice.indexOf('</section>', firstOccurrenceIndex) + '</section>'.length;
-  cleanedInvoice = cleanedInvoice.slice(firstOccurrenceIndex, endIndex);
-  console.log("Cleaned Invoice Data:", cleanedInvoice);
-} else {
-  console.log("No duplicate invoice sections detected.");
-}
-// [변경] 치환: 템플릿 내의 {{invoice}} 플레이스홀더를 cleanedInvoice로 대체
-emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, cleanedInvoice);
-
-// [추가] 치환 후 이메일 템플릿 내에도 혹시 중복된 invoice 섹션이 남아 있을 수 있으므로, 
-// 정규표현식을 사용해 첫 번째 섹션만 남기고 나머지는 제거합니다.
-const finalInvoiceSections = emailHtml.match(/<section class="cost-summary"[\s\S]*?<\/section>/g);
-if (finalInvoiceSections && finalInvoiceSections.length > 1) {
-  const firstSection = finalInvoiceSections[0];
-  emailHtml = emailHtml.replace(/<section class="cost-summary"[\s\S]*?<\/section>/g, (match, offset, string) => {
-    return offset === string.indexOf(firstSection) ? match : "";
-  });
-  console.log("Removed duplicate invoice sections; kept the first occurrence.");
-}
-
-// [변경/추가] 최종 이메일 HTML 로그 출력 (디버깅용)
-console.log("Final Email HTML:", emailHtml);
-
-// 이메일 전송
+// ✅ 최종 이메일 전송
 await transporter.sendMail({
   from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
   to: savedOrder.emailAddress,
