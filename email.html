@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <title>Smart Talent Matcher Invoice</title>
   <style>
-    /* 인보이스 디자인에 필요한 스타일 (인라인으로 변환될 수 있음) */
     table {
       border-collapse: collapse;
       margin: 0 auto;
@@ -54,7 +53,7 @@
 </head>
 <body style="margin:0; padding:0; background-color:#ffffff; font-family: Roboto, sans-serif;">
 
-  <!-- 로고 영역 (인라인 스타일 적용, 테두리에 청록색 적용) -->
+  <!-- 로고 영역 -->
   <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;">
     <tr>
       <td align="center" style="padding:20px 0;">
@@ -87,17 +86,17 @@
     </tr>
   </table>
 
-  <!-- 로고 아래 문구 -->
+  <!-- 안내 문구 -->
   <div style="text-align: center; margin-bottom: 20px; font-size: 1.2rem; font-style: italic;">
     Thank you for trusting our service. We are committed to helping you find the right people.
   </div>
 
-  <!-- 인보이스 영역: 서버에서 {{invoice}} 플레이스홀더를 실제 인보이스 HTML로 치환 -->
+  <!-- 인보이스 삽입 위치 -->
   <div style="max-width: 800px; margin: 0 auto;">
     {{invoice}}
   </div>
 
-  <!-- Venmo 정보 및 참고사항 -->
+  <!-- Venmo 및 안내사항 -->
   <div style="max-width: 800px; margin: 30px auto; padding: 20px; border-top: 2px solid #ccc; text-align: center;">
     <div style="font-size: 1.4rem; font-weight: bold; color: #000; margin-bottom: 10px;">
       Venmo: <span style="color:#FF0000;">@smarttalentmatcher</span>
@@ -111,7 +110,7 @@
     </div>
   </div>
 
-  <!-- What's Next? 섹션 -->
+  <!-- What's Next? -->
   <div style="max-width: 800px; margin: 30px auto; padding: 20px; border-top: 2px solid #ccc; text-align: center;">
     <h3 style="font-size: 1.6rem; font-weight: bold; margin-bottom: 15px;">What's Next?</h3>
     <p style="font-size: 1rem; color: #555; margin-bottom: 10px;">
