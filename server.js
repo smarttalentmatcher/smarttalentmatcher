@@ -293,7 +293,7 @@ app.post("/submit-order", (req, res) => {
   try {
     const {
       emailAddress,
-      invoice,         // 영수증 (이 부분은 기존에 저장 중)
+      invoice,         // 영수증 HTML (디자인 포함)
       subtotal,
       baseDiscount,
       promoDiscount,
@@ -303,46 +303,24 @@ app.post("/submit-order", (req, res) => {
     const orderId = generateDateTimeOrderId();
     const createdAt = Date.now();
 
-    // **이메일 템플릿도 저장하기 위해 email.html을 불러옴**
-    const templatePath = path.join(__dirname, "email.html");
-    let emailTemplate = "";
-
-    if (fs.existsSync(templatePath)) {
-      emailTemplate = fs.readFileSync(templatePath, "utf-8");
-    } else {
-      emailTemplate = "<html><body><p>Email template not found.</p></body></html>";
-    }
-
-    // NaN 방지: 숫자로 변환
-    const cleanSubtotal = isNaN(parseFloat(subtotal)) ? 0 : parseFloat(subtotal);
-    const cleanBaseDiscount = isNaN(parseFloat(baseDiscount)) ? 0 : parseFloat(baseDiscount);
-    const cleanPromoDiscount = isNaN(parseFloat(promoDiscount)) ? 0 : parseFloat(promoDiscount);
-    const cleanFinalCost = isNaN(parseFloat(finalCost)) ? 0 : parseFloat(finalCost);
-
-    // invoice가 비어있으면 기본 메시지 넣기
-    const invoiceData = invoice && invoice.trim() !== ""
-      ? invoice
-      : "<p>Invoice details not available.</p>";
-
     const newDraft = {
       orderId,
       emailAddress: emailAddress || "",
-      invoice: invoiceData, // 기존 영수증 HTML
-      emailTemplate: emailTemplate, // 💾 이메일 템플릿까지 같이 저장!
-      subtotal: cleanSubtotal,
-      baseDiscount: cleanBaseDiscount,
-      promoDiscount: cleanPromoDiscount,
-      finalCost: cleanFinalCost,
+      invoice: invoice,       // ✅ 인라인 스타일 포함한 채 그대로 저장
+      subtotal: parseFloat(subtotal) || 0,
+      baseDiscount: parseFloat(baseDiscount) || 0,
+      promoDiscount: parseFloat(promoDiscount) || 0,
+      finalCost: parseFloat(finalCost) || 0,
       createdAt
     };
 
     draftOrders.push(newDraft);
-    console.log("✅ Draft order received and email template stored:", newDraft);
+    console.log("✅ Draft order received with FULL DESIGN:", newDraft);
     saveOrdersData();
 
     res.json({
       success: true,
-      message: "Draft order received (with email template)",
+      message: "Draft order received",
       orderId
     });
   } catch (err) {
@@ -486,7 +464,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     const adminInfo = await transporter.sendMail(adminMailOptions);
     console.log("✅ Admin email sent:", adminInfo.response);
 
-    // (2) 클라이언트(인보이스) 이메일 발송
+ // (2) 클라이언트(인보이스) 이메일 발송
 if (emailAddress) {
   // 1) email.html 템플릿 읽기
   const templatePath = path.join(__dirname, "email.html");
@@ -498,10 +476,12 @@ if (emailAddress) {
     emailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
   }
 
-  // 2) 템플릿 안의 {{invoice}} 부분을 finalInvoice로 치환
-  // (juice(emailHtml)로 CSS 인라인화도 가능)
-  // emailHtml = juice(emailHtml); // 필요 시 사용
+  // 2) 템플릿 안의 {{invoice}} 부분을 'finalInvoice'로 치환
+  //    여기서 finalInvoice는 인라인 디자인까지 포함된 invoice HTML
   emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, finalInvoice);
+
+  // (선택) juice(emailHtml)로 CSS 인라인화 가능
+  // emailHtml = juice(emailHtml);
 
   // 3) 치환된 이메일 HTML을 nodemailer로 전송
   const clientMailOptions = {
@@ -531,11 +511,7 @@ if (emailAddress) {
 
 /** 관리자 주문 조회 */
 app.get("/admin/orders", (req, res) => {
-  const processedOrders = finalOrders.map(order => {
-    const expired = (!order.paid && (Date.now() - order.createdAt >= 24 * 60 * 60 * 1000));
-    return { ...order, expired };
-  });
-  res.json(processedOrders);
+  res.json(finalOrders);  // ✅ 그대로 JSON 응답
 });
 
 // 삭제
