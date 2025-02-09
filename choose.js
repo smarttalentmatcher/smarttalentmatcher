@@ -2,7 +2,8 @@
 
 // 모든 체크박스와 영수증 표시 영역 선택
 const checkboxes = document.querySelectorAll(".package-checkbox");
-const selectedItemsDiv = document.getElementById("selected-items");
+const selectedNamesDiv = document.getElementById("selected-names");
+const selectedCostsDiv = document.getElementById("selected-costs");
 
 // 비용 및 할인 관련 DOM 요소
 const subtotalEl = document.getElementById("subtotal");
@@ -52,18 +53,23 @@ function applyPromo() {
 // 프로모 버튼에 이벤트 리스너 부착
 document.getElementById("apply-promo-btn").addEventListener("click", applyPromo);
 
-// 비용 및 영수증 업데이트 함수
 function updateCost() {
   let sum = 0;
-  selectedItemsDiv.innerHTML = ""; // 영수증 영역 초기화
+  // 새롭게 분리한 두 영역을 선택
+  const selectedNamesSpan = document.getElementById("selected-names");
+  const selectedCostsSpan = document.getElementById("selected-costs");
 
-  // 체크된 체크박스의 비용 합산 (disabled여부 무관하게 checked이면 포함)
+  // 기존 데이터 초기화
+  selectedNamesSpan.innerHTML = "";
+  selectedCostsSpan.innerHTML = "";
+
   checkboxes.forEach(cb => {
     if (cb.checked) {
       const cost = parseFloat(cb.dataset.cost || "0");
       const rateText = cb.dataset.rate || "";
       const row = cb.closest("tr");
-      const itemLabel = row.querySelector("td").textContent.trim();
+      // 이제 itemLabel 대신 체크박스의 data-label을 사용합니다.
+      const label = cb.dataset.label;
 
       // 그룹에 따른 접두사 결정
       let prefix = "";
@@ -79,25 +85,23 @@ function updateCost() {
         }
       }
 
-      // 영수증 라인 생성
-      const lineDiv = document.createElement("div");
-      lineDiv.className = "receipt-line";
+      // 선택된 항목의 이름 업데이트
+      // 여러 항목이 있을 경우 줄바꿈 처리
+      if (selectedNamesSpan.innerHTML !== "") {
+        selectedNamesSpan.innerHTML += "<br>";
+      }
+      selectedNamesSpan.innerHTML += prefix + label + " " + rateText;
 
-      const descSpan = document.createElement("span");
-      descSpan.className = "receipt-desc";
-      descSpan.textContent = prefix + itemLabel;
-
-      const priceSpan = document.createElement("span");
-      priceSpan.className = "receipt-price";
-      priceSpan.textContent = `$${cost.toFixed(2)} ${rateText}`;
-
-      lineDiv.appendChild(descSpan);
-      lineDiv.appendChild(priceSpan);
-      selectedItemsDiv.appendChild(lineDiv);
-
+      // 총합 누적
       sum += cost;
     }
   });
+
+  // 최종 금액을 selectedCostsSpan에 업데이트 (HTML에서 USD가 붙은 상태로 보입니다)
+  selectedCostsSpan.textContent = sum.toFixed(2);
+  // 또한, subtotal 영역도 업데이트 (이미 기존 코드에 있다면 그대로 유지)
+  subtotalEl.textContent = sum.toFixed(2);
+}
 
   // 기본 할인 및 프로모 할인 계산
   const baseDiscountAmount = sum * BASE_DISCOUNT_RATE;
