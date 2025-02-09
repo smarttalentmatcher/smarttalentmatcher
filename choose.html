@@ -72,7 +72,7 @@
       vertical-align: middle;
     }
 
-    /* 그룹 헤더 높이 감소 (index.html과 동일) */
+    /* 그룹 헤더 높이 감소 */
     .group-header-cell {
       background-color: #001f3f;
       color: #fff;
@@ -80,15 +80,15 @@
       font-size: 1.1rem;
       font-weight: 600;
       border: 4px solid #ccc;
-      padding: 2px 5px;   /* 줄여서 높이 조절 */
-      line-height: 1.2;  /* 줄여서 높이 조절 */
+      padding: 2px 5px;
+      line-height: 1.2;
       white-space: nowrap;
     }
   </style>
 </head>
 <body>
 
-  <header class="choose-header" style="text-align:center;">
+  <header class="choose-header">
     <h1><span class="step-indicator">1</span> Choose Your Target Locations</h1>
   </header>
 
@@ -147,11 +147,7 @@
           <td class="group-header-cell">
             <strong>For English Speakers</strong>
           </td>
-          <td style="background-color: #FFFFFF;"></td>
-          <td style="background-color: #FFFFFF;"></td>
-          <td style="background-color: #FFFFFF;"></td>
-          <td style="background-color: #FFFFFF;"></td>
-          <td style="background-color: #FFFFFF;"></td>
+          <td colspan="5" style="background-color: #FFFFFF;"></td>
         </tr>
         <tr>
           <td><strong>United Kingdom (+EU)</strong></td>
@@ -191,11 +187,7 @@
           <td class="group-header-cell">
             <strong>For Bilinguals</strong>
           </td>
-          <td style="background-color: #FFFFFF;"></td>
-          <td style="background-color: #FFFFFF;"></td>
-          <td style="background-color: #FFFFFF;"></td>
-          <td style="background-color: #FFFFFF;"></td>
-          <td style="background-color: #FFFFFF;"></td>
+          <td colspan="5" style="background-color: #FFFFFF;"></td>
         </tr>
         <tr>
           <td><strong>Asia</strong></td>
@@ -299,218 +291,7 @@
     <button id="next-button">Next</button>
   </section>
 
-  <!-- 자바스크립트 로직 직접 삽입 -->
-  <script>
-    // --- 체크박스 선택 시 금액 계산 로직 ---
-    const packageCheckboxes = document.querySelectorAll(".package-checkbox");
-    const selectedItemsDiv = document.getElementById("selected-items");
-
-    const subtotalEl = document.getElementById("subtotal");
-    const baseDiscountEl = document.getElementById("base-discount");
-    const finalCostEl = document.getElementById("final-cost");
-
-    const promoDiscountLine = document.getElementById("promo-discount-line");
-    const promoDiscountLabel = document.getElementById("promo-discount-label");
-    const promoDiscountEl = document.getElementById("promo-discount");
-
-    // baseDiscount는 기본 10% 할인
-    const BASE_DISCOUNT_RATE = 0.1;
-    // promoRate는 "WELCOME10", "RETURN15" 등에서 %할인을 줄 때 사용
-    // actor10은 고정 금액($10) 할인 예시 (원하면 수정 가능)
-    let promoRate = 0.0;    // ex) 0.1 → 10%, 0.15 → 15%
-    let promoFlat = 0.0;    // ex) $10 할인
-
-    // 체크박스 변경 시 비용 업데이트
-    packageCheckboxes.forEach(cb => {
-      cb.addEventListener("change", updateCost);
-    });
-    window.addEventListener("load", updateCost);
-
-    // 프로모션 코드 입력
-    const promoCodeInput = document.getElementById("promo-code");
-    const promoMessage = document.getElementById("promo-message");
-    const applyPromoBtn = document.getElementById("apply-promo-btn");
-    applyPromoBtn.addEventListener("click", applyPromo);
-
-    function applyPromo() {
-      const code = promoCodeInput.value.trim().toUpperCase();
-      promoMessage.textContent = "";
-      promoRate = 0.0;
-      promoFlat = 0.0;
-
-      // 예) WELCOME10 → 10% 추가 할인
-      //     RETURN15  → 15% 추가 할인
-      //     ACTOR10   → $10 할인
-      if (code === "WELCOME10") {
-        promoRate = 0.1;
-        promoMessage.textContent = "WELCOME10 applied: +10% discount!";
-      } else if (code === "RETURN15") {
-        promoRate = 0.15;
-        promoMessage.textContent = "RETURN15 applied: +15% discount!";
-      } else if (code === "ACTOR10") {
-        promoFlat = 10.0;
-        promoMessage.textContent = "ACTOR10 code applied: $10 discount!";
-      } else if (code !== "") {
-        // 코드가 틀린 경우
-        promoMessage.textContent = "Invalid promo code.";
-      }
-      updateCost();
-    }
-
-    // 비용 및 영수증 업데이트 함수
-    function updateCost() {
-      let sum = 0;
-      selectedItemsDiv.innerHTML = "";
-
-      // 체크된 패키지들의 비용 합산 & 영수증 작성
-      packageCheckboxes.forEach((cb) => {
-        if (cb.checked && !cb.disabled) {
-          const cost = parseFloat(cb.getAttribute("data-cost")) || 0;
-          const rateText = cb.getAttribute("data-rate") || "";
-          sum += cost;
-
-          // 선택 항목 표시 (영수증 line)
-          const itemLabel = cb.getAttribute("data-label") || "";
-          const lineDiv = document.createElement("div");
-          lineDiv.className = "receipt-line";
-
-          const descSpan = document.createElement("span");
-          descSpan.className = "receipt-desc";
-          descSpan.textContent = itemLabel + " " + rateText;
-
-          const priceSpan = document.createElement("span");
-          priceSpan.className = "receipt-price";
-          priceSpan.textContent = "$" + cost.toFixed(2);
-
-          lineDiv.appendChild(descSpan);
-          lineDiv.appendChild(priceSpan);
-          selectedItemsDiv.appendChild(lineDiv);
-        }
-      });
-
-      // 기본 할인 (10%)
-      const baseDiscount = sum * BASE_DISCOUNT_RATE;
-      const discounted = sum - baseDiscount;
-
-      // 프로모션 할인 (퍼센트 + 고정금액)
-      // (퍼센트 할인은 discounted에 적용, 이후 고정금액 차감)
-      const promoPercentDiscount = discounted * promoRate;
-      let finalAfterPercent = discounted - promoPercentDiscount;
-
-      // 고정 금액 할인
-      let finalAfterFlat = finalAfterPercent - promoFlat;
-      if (finalAfterFlat < 0) finalAfterFlat = 0; // 최소 0 이하로 내려가지 않게
-
-      // Subtotal, Discount, Final 반영
-      subtotalEl.textContent = sum.toFixed(2);
-      baseDiscountEl.textContent = baseDiscount.toFixed(2);
-      finalCostEl.textContent = finalAfterFlat.toFixed(2);
-
-      // 프로모 라인 표시
-      // (퍼센트/고정금액 합계를 표시)
-      const totalPromo = promoPercentDiscount + promoFlat;
-      if (totalPromo > 0) {
-        promoDiscountLine.style.display = "flex";
-        promoDiscountLabel.textContent = "Promo Discount:";
-        promoDiscountEl.textContent = totalPromo.toFixed(2);
-      } else {
-        promoDiscountLine.style.display = "none";
-      }
-    }
-
-    // Next 버튼 클릭 시 - 서버로 draft 주문 전송
-    const nextButton = document.getElementById("next-button");
-    nextButton.addEventListener("click", async () => {
-      console.log("Next 버튼 클릭됨");
-
-      // 체크된 패키지 정보
-      let selectedPackages = [];
-      packageCheckboxes.forEach(cb => {
-        if (cb.checked) {
-          selectedPackages.push({
-            label: cb.dataset.label || "",
-            cost: parseFloat(cb.dataset.cost || "0"),
-            rate: cb.dataset.rate || ""
-          });
-        }
-      });
-
-      // 비용 UI
-      const subtotal = parseFloat(subtotalEl.textContent || "0");
-      const baseDiscount = parseFloat(baseDiscountEl.textContent || "0");
-      const finalCost = parseFloat(finalCostEl.textContent || "0");
-
-      // 영수증(Invoice) HTML 생성
-      // 이미 receipt-line 들이 #selected-items에 들어있으므로,
-      // subtotal, discount, finalCost를 추가
-      const invoiceHTML = `
-        <div>
-          <h3>Selected Packages:</h3>
-          <div>
-            ${selectedItemsDiv.innerHTML} 
-          </div>
-          <hr>
-          <div class="receipt-line">
-            <span class="receipt-desc">Subtotal:</span>
-            <span class="receipt-price">$${subtotal.toFixed(2)}</span>
-          </div>
-          <div class="receipt-line">
-            <span class="receipt-desc">Base Discount (10%):</span>
-            <span class="receipt-price">-$${baseDiscount.toFixed(2)}</span>
-          </div>
-          <!-- promoValue는 updateCost()에서 계산 -->
-          ${
-            promoDiscountLine.style.display === "flex" 
-              ? `<div class="receipt-line">
-                   <span class="receipt-desc">Promo Discount:</span>
-                   <span class="receipt-price">-$${(promoDiscountEl.textContent || "0")}</span>
-                 </div>`
-              : ""
-          }
-          <hr>
-          <div class="receipt-line" style="font-weight:bold;">
-            <span class="receipt-desc">Final Cost:</span>
-            <span class="receipt-price">$${finalCost.toFixed(2)}</span>
-          </div>
-        </div>
-      `;
-
-      // 서버에 전송할 데이터
-      const orderData = {
-        invoice: invoiceHTML,
-        subtotal: subtotal.toFixed(2),
-        discount: (baseDiscount + parseFloat(promoDiscountEl.textContent||"0")).toFixed(2),
-        finalCost: finalCost.toFixed(2)
-      };
-
-      try {
-        // submit-order 라우트로 POST
-        const response = await fetch(window.location.origin + "/submit-order", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(orderData)
-        });
-
-        if (!response.ok) {
-          throw new Error("Server responded with " + response.status);
-        }
-        const result = await response.json();
-        console.log("submit-order result:", result);
-
-        if (result.success) {
-          // Draft orderId 저장
-          localStorage.setItem("orderId", result.orderId);
-          // 다음 페이지로 이동
-          window.location.href = window.location.origin + "/resume.html";
-        } else {
-          alert("Order submission failed: " + (result.message || "Unknown error"));
-        }
-
-      } catch (err) {
-        console.error("Error submitting order:", err);
-        alert("Error submitting order. Check console for details.");
-      }
-    });
-  </script>
+  <!-- 외부 JavaScript 파일 로드 -->
+  <script src="choose.js"></script>
 </body>
 </html>
