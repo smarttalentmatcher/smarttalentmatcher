@@ -505,6 +505,9 @@ if (!savedOrder) {
   throw new Error("Failed to retrieve saved order for email.");
 }
 
+// 🛑 중복된 invoice 데이터가 포함되어 있는지 확인하기 위해 로그 추가
+console.log("✅ Admin Stored Invoice:", savedOrder.invoice);
+
 // email.html 템플릿을 읽어오기
 const templatePath = path.join(__dirname, "email.html");
 let emailHtml = "";
@@ -515,8 +518,15 @@ if (fs.existsSync(templatePath)) {
   emailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
 }
 
-// 🔥 여기서 Admin에 저장된 `invoice` 값을 그대로 사용
+// 🛑 치환 전에 기존 emailHtml과 savedOrder.invoice 값 출력
+console.log("Before Replacement:", emailHtml);
+console.log("Invoice Data to Insert:", savedOrder.invoice);
+
+// 🔥 기존 방식으로 불러온 Invoice 데이터가 중복되지 않도록 수정
 emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
+
+// 🛑 치환 후 확인
+console.log("Final Email HTML:", emailHtml);
 
 await transporter.sendMail({
   from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
