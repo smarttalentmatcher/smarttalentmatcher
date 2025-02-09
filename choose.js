@@ -110,7 +110,7 @@ document.getElementById("next-button").addEventListener("click", (e) => {
   e.preventDefault();
   console.log("Next 버튼 클릭됨");
 
-  // 예시로 고정 이메일 (실제 서비스에서는 사용자가 입력한 값을 사용)
+  // 예시로 고정 이메일 (실제 서비스에서는 사용자가 입력한 값을 사용하거나, 이전 단계에 입력받아 로컬스토리지로 가져오도록 설계)
   const emailAddress = "no-email@example.com";
 
   // 영수증(Invoice) HTML 생성: .cost-summary 영역의 outerHTML을 그대로 가져옴
@@ -130,8 +130,10 @@ document.getElementById("next-button").addEventListener("click", (e) => {
     finalCost: finalCostEl.textContent
   };
 
-  // 서버가 로컬에서 실행 중이라면 절대 URL을 사용합니다.
-  fetch("http://localhost:3000/submit-order", {
+  // fetch 요청을 localhost가 아닌, 현재 페이지 도메인에 맞추기
+  // Render 또는 도메인에서 열 경우 → "https://도메인/submit-order"
+  // 로컬 테스트 시 → "http://localhost:3000/choose.html" 열었을 때, origin이 localhost가 됨
+  fetch(window.location.origin + "/submit-order", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data)
@@ -143,7 +145,7 @@ document.getElementById("next-button").addEventListener("click", (e) => {
         // 서버가 발급한 orderId와 emailAddress를 localStorage에 저장 후 다음 단계(resume.html)로 이동
         localStorage.setItem("orderId", res.orderId);
         localStorage.setItem("emailAddress", emailAddress);
-        window.location.href = "resume.html"; // 상대경로로 이동
+        window.location.href = window.location.origin + "/resume.html"; 
       } else {
         alert("Order submission failed.");
       }

@@ -10,7 +10,11 @@ const juice = require("juice");
 const cors = require("cors");
 
 const app = express();
-const PORT = 3000;
+
+// ──────────────────────────────────────────────
+// 1) Render 등 호스팅 환경을 고려: 동적 포트 사용
+// ──────────────────────────────────────────────
+const PORT = process.env.PORT || 3000;
 
 // 요청 로그 미들웨어 (디버깅용)
 app.use((req, res, next) => {
@@ -67,8 +71,11 @@ const upload = multer({ dest: "uploads/" });
 const uploadResume = multer({ dest: "uploads/resume/" });
 
 // 정적 파일 제공 (모든 파일이 최상위에 있으므로 __dirname 사용)
+// 예: choose.html, resume.html 등을 직접 열 수 있도록 함
 app.use(express.static(__dirname));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// JSON, URL-encoded 파싱
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -87,7 +94,8 @@ const transporter = nodemailer.createTransport({
 });
 
 // ──────────────────────────────────────────────
-// 자동 정리 기능: ordersData.json 및 uploads 폴더 정리 (재귀적)
+// 자동 정리 기능: ordersData.json 및 uploads 폴더 정리
+// (예: 1시간마다 실행)
 // ──────────────────────────────────────────────
 
 function cleanUpOrdersData() {
@@ -242,7 +250,7 @@ function autoCancelOrder(order) {
 // 라우트 설정
 // ──────────────────────────────────────────────
 
-// resume.html 제공 (테스트 페이지)
+// 기본 경로: 예시로 resume.html을 보여주지만, 원하는 파일로 바꿔도 됨.
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "resume.html"));
 });
@@ -299,6 +307,7 @@ app.post("/submit-order", (req, res) => {
     const orderId = generateDateTimeOrderId();
     const createdAt = Date.now();
     const invoiceData = invoice && invoice.trim() !== "" ? invoice : "<p>Invoice details not available.</p>";
+
     const newDraft = {
       orderId,
       emailAddress: emailAddress || "",
@@ -308,6 +317,7 @@ app.post("/submit-order", (req, res) => {
       finalCost: finalCost || "",
       createdAt
     };
+
     draftOrders.push(newDraft);
     console.log("✅ Draft order received:", newDraft);
     saveOrdersData();
@@ -550,6 +560,9 @@ app.post("/admin/update-payment", (req, res) => {
   res.json({ success: true, message: "Payment status updated." });
 });
 
+// ──────────────────────────────────────────────
+// 서버 실행
+// ──────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`✅ Server running at http://localhost:${PORT}`);
   finalOrders.forEach(order => {

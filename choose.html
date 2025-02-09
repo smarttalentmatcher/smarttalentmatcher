@@ -5,7 +5,7 @@
   <title>Choose Your Target Locations</title>
   <link rel="stylesheet" href="style.css">
   <style>
-    /* 테이블 및 영수증 관련 스타일 (원본 CSS는 참고용) */
+    /* 테이블 및 영수증 관련 스타일 */
     table {
       border-collapse: collapse;
       margin: 0 auto;
@@ -47,6 +47,29 @@
       color: #666;
       display: block;
       margin-top: 2px;
+    }
+
+    /* 추가 스타일 */
+    header.choose-header {
+      text-align: center;
+      padding: 20px 0;
+      background-color: #001f3f;
+      color: #fff;
+      margin-bottom: 30px;
+    }
+    .step-indicator {
+      display: inline-block;
+      width: 40px;
+      height: 40px;
+      line-height: 40px;
+      border-radius: 50%;
+      background-color: #FF69B4; /* 핫핑크 */
+      color: #fff;
+      font-weight: bold;
+      text-align: center;
+      margin-right: 10px;
+      font-size: 1.2rem;
+      vertical-align: middle;
     }
   </style>
 </head>
@@ -106,16 +129,16 @@
           </td>
         </tr>
 
-        <!-- For English Speakers 그룹 (인덱스와 동일한 디자인) -->
+        <!-- For English Speakers 그룹 -->
         <tr class="group-header" style="background-color: #f8f8f8;">
           <td class="group-header-cell" style="background-color: #001f3f; color: #fff; text-align: center; font-size: 1.1rem; font-weight: 600; border: 4px solid #ccc; padding: 5px 8px; white-space: nowrap;">
             <strong>For English Speakers</strong>
           </td>
-          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
-          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
-          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
-          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
-          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
+          <td style="background-color: #FFFFFF;"></td>
+          <td style="background-color: #FFFFFF;"></td>
+          <td style="background-color: #FFFFFF;"></td>
+          <td style="background-color: #FFFFFF;"></td>
+          <td style="background-color: #FFFFFF;"></td>
         </tr>
         <tr>
           <td><strong>United Kingdom (+EU)</strong></td>
@@ -150,16 +173,16 @@
           </td>
         </tr>
 
-        <!-- For Bilinguals 그룹 (인덱스와 동일한 디자인) -->
+        <!-- For Bilinguals 그룹 -->
         <tr class="group-header" style="background-color: #f8f8f8;">
           <td class="group-header-cell" style="background-color: #001f3f; color: #fff; text-align: center; font-size: 1.1rem; font-weight: 600; border: 4px solid #ccc; padding: 5px 8px; white-space: nowrap;">
             <strong>For Bilinguals</strong>
           </td>
-          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
-          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
-          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
-          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
-          <td style="background-color: #FFFFFF; border: 1px solid #ccc;"></td>
+          <td style="background-color: #FFFFFF;"></td>
+          <td style="background-color: #FFFFFF;"></td>
+          <td style="background-color: #FFFFFF;"></td>
+          <td style="background-color: #FFFFFF;"></td>
+          <td style="background-color: #FFFFFF;"></td>
         </tr>
         <tr>
           <td><strong>Asia</strong></td>
@@ -253,7 +276,7 @@
   <section class="promo-section" style="margin-top:20px; max-width:600px; margin: 0 auto;">
     <label for="promo-code">Enter Promo Code:</label>
     <input type="text" id="promo-code" placeholder="" />
-    <button onclick="applyPromo()">Apply</button>
+    <button id="apply-promo-btn">Apply</button>
     <p id="promo-message" style="color: red;"></p>
   </section>
 
@@ -263,6 +286,168 @@
     <button id="next-button">Next</button>
   </section>
 
-  <script src="choose.js"></script>
+  <!-- 자바스크립트 로직 직접 삽입 -->
+  <script>
+    // --- 체크박스 선택 시 금액 계산 로직 ---
+    const packageCheckboxes = document.querySelectorAll(".package-checkbox");
+    const subtotalEl = document.getElementById("subtotal");
+    const baseDiscountEl = document.getElementById("base-discount");
+    const finalCostEl = document.getElementById("final-cost");
+
+    const promoDiscountLine = document.getElementById("promo-discount-line");
+    const promoDiscountLabel = document.getElementById("promo-discount-label");
+    const promoDiscountEl = document.getElementById("promo-discount");
+
+    let promoValue = 0; // 프로모션 할인 금액
+
+    function updateCost() {
+      // 체크된 박스들의 비용 합산
+      let sum = 0;
+      packageCheckboxes.forEach(cb => {
+        if (cb.checked && !cb.disabled) {
+          const cost = parseFloat(cb.dataset.cost || "0");
+          sum += cost;
+        }
+      });
+
+      // 기본 10% 할인
+      const baseDiscount = sum * 0.1;
+      const discounted = sum - baseDiscount;
+
+      // 프로모션 할인 반영
+      const final = discounted - promoValue;
+
+      subtotalEl.textContent = sum.toFixed(2);
+      baseDiscountEl.textContent = baseDiscount.toFixed(2);
+      finalCostEl.textContent = final.toFixed(2);
+
+      // 만약 final 값이 음수가 되면 0으로 처리(과도한 할인 방지 예시)
+      if (final < 0) {
+        finalCostEl.textContent = "0.00";
+      }
+    }
+
+    // 체크박스 변화 감지
+    packageCheckboxes.forEach(cb => {
+      cb.addEventListener("change", updateCost);
+    });
+
+    // 페이지 로드 시 초기 계산
+    window.addEventListener("load", updateCost);
+
+    // --- 프로모션 코드 ---
+    const promoCodeInput = document.getElementById("promo-code");
+    const promoMessage = document.getElementById("promo-message");
+    const applyPromoBtn = document.getElementById("apply-promo-btn");
+
+    applyPromoBtn.addEventListener("click", applyPromo);
+
+    function applyPromo() {
+      const code = promoCodeInput.value.trim().toUpperCase();
+      // 예시: "ACTOR10" 이면 10 USD 할인
+      if (code === "ACTOR10") {
+        promoValue = 10;
+        promoMessage.textContent = "ACTOR10 code applied: $10 discount!";
+        promoDiscountLine.style.display = "flex";
+        promoDiscountLabel.textContent = "Promo Discount:";
+        promoDiscountEl.textContent = "10.00";
+      } else {
+        promoValue = 0;
+        promoMessage.textContent = "Invalid promo code.";
+        promoDiscountLine.style.display = "none";
+      }
+      updateCost();
+    }
+
+    // --- Next 버튼 ---
+    const nextButton = document.getElementById("next-button");
+    nextButton.addEventListener("click", async () => {
+      console.log("Next 버튼 클릭됨");
+
+      // (1) 체크된 패키지 정보를 수집
+      let selectedPackages = [];
+      packageCheckboxes.forEach(cb => {
+        if (cb.checked) {
+          selectedPackages.push({
+            label: cb.dataset.label,
+            cost: parseFloat(cb.dataset.cost || "0"),
+            rate: cb.dataset.rate || ""
+          });
+        }
+      });
+
+      // (2) 현재 계산된 비용들 가져오기
+      const subtotal = parseFloat(subtotalEl.textContent || "0");
+      const baseDiscount = parseFloat(baseDiscountEl.textContent || "0");
+      const finalCost = parseFloat(finalCostEl.textContent || "0");
+
+      // (3) 서버로 보내기 위한 데이터 구성
+      const orderData = {
+        // 나중에 이메일 주소, invoice 등의 필드가 필요하다면 추가
+        invoice: `
+          <p><strong>Selected Packages:</strong></p>
+          ${selectedPackages.map(sp => `
+            <div class="receipt-line">
+              <span class="receipt-desc">${sp.label} ${sp.rate}</span>
+              <span class="receipt-price">$${sp.cost.toFixed(2)}</span>
+            </div>
+          `).join('')}
+          <hr>
+          <div class="receipt-line">
+            <span class="receipt-desc">Subtotal:</span>
+            <span class="receipt-price">$${subtotal.toFixed(2)}</span>
+          </div>
+          <div class="receipt-line">
+            <span class="receipt-desc">Base Discount (10%):</span>
+            <span class="receipt-price">-$${baseDiscount.toFixed(2)}</span>
+          </div>
+          ${promoValue > 0 ? `
+            <div class="receipt-line">
+              <span class="receipt-desc">Promo Discount:</span>
+              <span class="receipt-price">-$${promoValue.toFixed(2)}</span>
+            </div>
+          ` : ''}
+          <hr>
+          <div class="receipt-line" style="font-weight:bold;">
+            <span class="receipt-desc">Final Cost:</span>
+            <span class="receipt-price">$${finalCost.toFixed(2)}</span>
+          </div>
+        `,
+        subtotal: subtotal.toFixed(2),
+        discount: (baseDiscount + promoValue).toFixed(2),
+        finalCost: finalCost.toFixed(2)
+      };
+
+      try {
+        // (4) 서버로 POST 요청 보내기 (submit-order)
+        // 'window.location.origin' 사용 → 현재 페이지 도메인 기반
+        const response = await fetch(window.location.origin + "/submit-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(orderData)
+        });
+
+        if (!response.ok) {
+          throw new Error("Server responded with " + response.status);
+        }
+
+        const result = await response.json();
+        console.log("submit-order result:", result);
+
+        if (result.success) {
+          // (5) 로컬 스토리지 등에 orderId 저장
+          localStorage.setItem("orderId", result.orderId);
+          // (6) 다음 페이지로 이동 (resume.html 등)
+          window.location.href = window.location.origin + "/resume.html";
+        } else {
+          alert("Order submission failed: " + (result.message || "Unknown error"));
+        }
+
+      } catch (err) {
+        console.error("Error submitting order:", err);
+        alert("Error submitting order. Check console for details.");
+      }
+    });
+  </script>
 </body>
 </html>
