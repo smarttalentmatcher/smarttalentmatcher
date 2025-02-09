@@ -1,8 +1,9 @@
-// 선택된 패키지(체크박스) 관련 요소들
+// choose.js (최종 예시)
+
 const checkboxes = document.querySelectorAll(".package-checkbox");
 const selectedItemsDiv = document.getElementById("selected-items");
 
-// 비용 및 할인 관련 요소들
+// 비용 & 할인 표시용 DOM 요소
 const subtotalEl = document.getElementById("subtotal");
 const baseDiscountEl = document.getElementById("base-discount");
 const promoDiscountLine = document.getElementById("promo-discount-line");
@@ -10,49 +11,60 @@ const promoDiscountLabel = document.getElementById("promo-discount-label");
 const promoDiscountEl = document.getElementById("promo-discount");
 const finalCostEl = document.getElementById("final-cost");
 
-// 기본 할인 및 프로모 할인 설정
-const BASE_DISCOUNT_RATE = 0.1; 
-let PROMO_RATE = 0.0;
+// 기본 할인(“-10% for invalid...”)은 항상 적용
+const BASE_DISCOUNT_RATE = 0.1;
 
-// 체크박스 상태가 변경될 때마다 비용 업데이트
-checkboxes.forEach(cb => cb.addEventListener("change", updateCost));
-document.addEventListener("DOMContentLoaded", updateCost);
+// 프로모 할인 관련 변수
+let promoRate = 0.0;  // 퍼센트 할인 (ex: 0.1 → 10%)
+let promoFlat = 0.0;  // 고정($) 할인 (여기서는 미사용)
 
-// 프로모 코드 적용 함수
+// 체크박스 변화, DOMContentLoaded 시 비용 업데이트
+checkboxes.forEach(cb => {
+  cb.addEventListener("change", updateCost);
+});
+window.addEventListener("load", updateCost);
+
+// 프로모코드 적용
 function applyPromo() {
   const promoInput = document.getElementById("promo-code");
   const promoMessage = document.getElementById("promo-message");
   const code = promoInput.value.trim().toUpperCase();
 
-  PROMO_RATE = 0.0;
+  // 초기화
   promoMessage.textContent = "";
+  promoRate = 0.0;
+  promoFlat = 0.0;
 
+  // 예: “WELCOME10” = 10%, “RETURN15” = 15%, “ACTOR10” = 10%
   if (code === "WELCOME10") {
-    PROMO_RATE = 0.1;
-    promoMessage.textContent = "WELCOME10 applied (+10% extra discount)";
+    promoRate = 0.1;
+    promoMessage.textContent = "WELCOME10 applied: +10% discount!";
   } else if (code === "RETURN15") {
-    PROMO_RATE = 0.15;
-    promoMessage.textContent = "RETURN15 applied (+15% extra discount)";
+    promoRate = 0.15;
+    promoMessage.textContent = "RETURN15 applied: +15% discount!";
   } else if (code !== "") {
+    // code가 빈칸이 아니고 위 3개 중 아무것도 아닐 때 → invalid
     promoMessage.textContent = "Invalid promo code.";
   }
 
   updateCost();
 }
 
-// 비용 및 영수증 업데이트 함수
+// 비용 및 영수증 업데이트
 function updateCost() {
   let sum = 0;
   selectedItemsDiv.innerHTML = "";
 
-  checkboxes.forEach((checkbox) => {
-    if (checkbox.checked) {
-      const cost = parseFloat(checkbox.getAttribute("data-cost")) || 0;
-      const rateText = checkbox.getAttribute("data-rate") || "";
-      const row = checkbox.closest("tr");
+  // 체크된 체크박스 모두 합산
+  // => disabled라도 checked면 포함 (Base Package)
+  checkboxes.forEach(cb => {
+    if (cb.checked) {
+      const cost = parseFloat(cb.dataset.cost || "0");
+      const rateText = cb.dataset.rate || "";
+      const row = cb.closest("tr");
       const itemLabel = row.querySelector("td").textContent.trim();
 
-      // 그룹 헤더(예: [Base Package] 또는 [For English Speakers] 등) 확인
+      // 그룹 헤더 확인
       let prefix = "";
       if (row.querySelector("td.us-package")) {
         prefix = "[Base Package] ";
@@ -66,7 +78,7 @@ function updateCost() {
         }
       }
 
-      // 영수증 한 줄 생성
+      // 영수증 한 줄
       const lineDiv = document.createElement("div");
       lineDiv.className = "receipt-line";
 
@@ -76,7 +88,7 @@ function updateCost() {
 
       const priceSpan = document.createElement("span");
       priceSpan.className = "receipt-price";
-      priceSpan.textContent = "$" + cost.toFixed(2) + " " + rateText;
+      priceSpan.textContent = `$${cost.toFixed(2)} ${rateText}`;
 
       lineDiv.appendChild(descSpan);
       lineDiv.appendChild(priceSpan);
@@ -86,53 +98,92 @@ function updateCost() {
     }
   });
 
+  // 기본 10% 할인
   const baseDiscountAmount = sum * BASE_DISCOUNT_RATE;
-  const promoDiscountAmount = sum * PROMO_RATE;
-  const final = sum - (baseDiscountAmount + promoDiscountAmount);
+  const discountedAfterBase = sum - baseDiscountAmount;
 
+  // 프로모 (퍼센트) 할인
+  const promoPercentDiscount = discountedAfterBase * promoRate;
+  let finalAfterPercent = discountedAfterBase - promoPercentDiscount;
+  if (finalAfterPercent < 0) finalAfterPercent = 0;
+
+  // 표시
   subtotalEl.textContent = sum.toFixed(2);
   baseDiscountEl.textContent = baseDiscountAmount.toFixed(2);
 
-  if (PROMO_RATE > 0) {
+  // 프로모 total
+  const totalPromo = promoPercentDiscount; // + promoFlat(0) if needed
+  if (totalPromo > 0) {
     promoDiscountLine.style.display = "flex";
-    const pRate = (PROMO_RATE * 100).toFixed(0);
-    promoDiscountLabel.innerHTML = `Promo Discount: -${pRate}%`;
-    promoDiscountEl.textContent = promoDiscountAmount.toFixed(2);
+    promoDiscountLabel.textContent = "Promo Discount:";
+    promoDiscountEl.textContent = totalPromo.toFixed(2);
   } else {
     promoDiscountLine.style.display = "none";
   }
 
-  finalCostEl.textContent = final.toFixed(2);
+  finalCostEl.textContent = finalAfterPercent.toFixed(2);
 }
 
-// Next 버튼 클릭 시 – 드래프트 주문을 서버로 전송 (invoice HTML 포함)
-document.getElementById("next-button").addEventListener("click", (e) => {
-  e.preventDefault();
+// Next 버튼
+document.getElementById("next-button").addEventListener("click", () => {
   console.log("Next 버튼 클릭됨");
 
-  // 예시로 고정 이메일 (실제 서비스에서는 사용자가 입력한 값을 사용하거나, 이전 단계에 입력받아 로컬스토리지로 가져오도록 설계)
-  const emailAddress = "no-email@example.com";
+  // 체크된 항목
+  let selectedPackages = [];
+  checkboxes.forEach(cb => {
+    if (cb.checked) {
+      selectedPackages.push({
+        label: cb.dataset.label || "",
+        cost: parseFloat(cb.dataset.cost || "0"),
+        rate: cb.dataset.rate || ""
+      });
+    }
+  });
 
-  // 영수증(Invoice) HTML 생성: .cost-summary 영역의 outerHTML을 그대로 가져옴
-  const costSummaryElem = document.querySelector(".cost-summary");
-  if (!costSummaryElem) {
-    console.error("Cost summary element not found!");
-    return;
-  }
-  const invoiceHTML = costSummaryElem.outerHTML;
+  // 비용
+  const subtotal = parseFloat(subtotalEl.textContent || "0");
+  const baseDiscount = parseFloat(baseDiscountEl.textContent || "0");
+  const finalCost = parseFloat(finalCostEl.textContent || "0");
+  const promoDiscountVal = promoDiscountEl.textContent || "0"; // 프로모 할인액
 
-  // 서버에 전송할 데이터 (invoice HTML 및 비용 관련 데이터 포함)
+  // 영수증 HTML
+  const invoiceHTML = `
+    <div>
+      <h3>Selected Packages:</h3>
+      <div>${selectedItemsDiv.innerHTML}</div>
+      <hr>
+      <div class="receipt-line">
+        <span class="receipt-desc">Subtotal:</span>
+        <span class="receipt-price">$${subtotal.toFixed(2)}</span>
+      </div>
+      <div class="receipt-line">
+        <span class="receipt-desc">Base Discount (10%):</span>
+        <span class="receipt-price">-$${baseDiscount.toFixed(2)}</span>
+      </div>
+      ${
+        (promoDiscountLine.style.display === "flex")
+          ? `<div class="receipt-line">
+               <span class="receipt-desc">Promo Discount:</span>
+               <span class="receipt-price">-$${parseFloat(promoDiscountVal).toFixed(2)}</span>
+             </div>`
+          : ""
+      }
+      <hr>
+      <div class="receipt-line" style="font-weight:bold;">
+        <span class="receipt-desc">Final Cost:</span>
+        <span class="receipt-price">$${finalCost.toFixed(2)}</span>
+      </div>
+    </div>
+  `;
+
+  // 서버로 전송
   const data = {
-    emailAddress: emailAddress,
     invoice: invoiceHTML,
-    subtotal: subtotalEl.textContent,
-    discount: baseDiscountEl.textContent,
-    finalCost: finalCostEl.textContent
+    subtotal: subtotal.toFixed(2),
+    discount: (baseDiscount + parseFloat(promoDiscountVal)).toFixed(2),
+    finalCost: finalCost.toFixed(2)
   };
 
-  // fetch 요청을 localhost가 아닌, 현재 페이지 도메인에 맞추기
-  // Render 또는 도메인에서 열 경우 → "https://도메인/submit-order"
-  // 로컬 테스트 시 → "http://localhost:3000/choose.html" 열었을 때, origin이 localhost가 됨
   fetch(window.location.origin + "/submit-order", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -142,10 +193,9 @@ document.getElementById("next-button").addEventListener("click", (e) => {
     .then(res => {
       console.log("Order submitted:", res);
       if (res.success) {
-        // 서버가 발급한 orderId와 emailAddress를 localStorage에 저장 후 다음 단계(resume.html)로 이동
         localStorage.setItem("orderId", res.orderId);
-        localStorage.setItem("emailAddress", emailAddress);
-        window.location.href = window.location.origin + "/resume.html"; 
+        // resume.html로 이동
+        window.location.href = window.location.origin + "/resume.html";
       } else {
         alert("Order submission failed.");
       }
