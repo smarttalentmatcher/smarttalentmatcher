@@ -180,22 +180,34 @@ function scheduleAutoCancel(order) {
 
 function sendReminder(order) {
   if (order.paid || order.reminderSent) return;
+
+  // Admin에 저장된 invoice를 사용하도록 변경
+  const savedOrder = finalOrders.find(o => o.orderId === order.orderId);
+  if (!savedOrder) {
+    console.error(`❌ Order #${order.orderId} not found in finalOrders.`);
+    return;
+  }
+
+  // email.html 템플릿 읽기
   const templatePath = path.join(__dirname, "email.html");
   let reminderEmailHtml = "";
+
   if (fs.existsSync(templatePath)) {
     reminderEmailHtml = fs.readFileSync(templatePath, "utf-8");
   } else {
-    reminderEmailHtml = `<html><body><p>Invoice details not available.</p></body></html>`;
+    reminderEmailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
   }
-  reminderEmailHtml = juice(reminderEmailHtml);
-  const invoiceHtml = order.invoice || "<p>Invoice details not available.</p>";
-  reminderEmailHtml = reminderEmailHtml.replace(/{{\s*invoice\s*}}/g, invoiceHtml);
+
+  // 🔥 Admin에 저장된 invoice 값으로 email.html의 {{invoice}} 치환
+  reminderEmailHtml = reminderEmailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
+
   const mailOptions = {
     from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
-    to: order.emailAddress,
-    subject: "**Reminder**[Smart Talent Matcher] Invoice for Your Submission",
+    to: savedOrder.emailAddress,
+    subject: "**Reminder** [Smart Talent Matcher] Invoice for Your Submission",
     html: reminderEmailHtml
   };
+
   transporter.sendMail(mailOptions)
     .then(info => {
       console.log(`✅ Reminder email sent for #${order.orderId}:`, info.response);
@@ -206,6 +218,7 @@ function sendReminder(order) {
       console.error("❌ Error sending reminder:", err);
     });
 }
+
 function autoCancelOrder(order) {
   if (order.paid) return;
   const cancelHtml = `
