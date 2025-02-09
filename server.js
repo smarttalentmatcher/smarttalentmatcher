@@ -486,36 +486,33 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     const adminInfo = await transporter.sendMail(adminMailOptions);
     console.log("✅ Admin email sent:", adminInfo.response);
 
-// (2) 클라이언트(인보이스) 이메일 발송
-if (emailAddress) {
-  // 1) email.html 템플릿 읽기
-  const templatePath = path.join(__dirname, "email.html");
-  let emailHtml = "";
-
-  if (fs.existsSync(templatePath)) {
-    emailHtml = fs.readFileSync(templatePath, "utf-8");
-  } else {
-    emailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
-  }
-
-  // 2) 템플릿 안의 {{invoice}} 부분을 'finalInvoice'로 치환
-  //    여기서 finalInvoice는 인라인 디자인까지 포함된 invoice HTML
-  emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, finalInvoice);
-
-  // (선택) juice(emailHtml)로 CSS 인라인화 가능
-  // emailHtml = juice(emailHtml);
-
-  // 3) 치환된 이메일 HTML을 nodemailer로 전송
-  const clientMailOptions = {
-    from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
-    to: emailAddress,
-    subject: "[Smart Talent Matcher] Invoice for Your Submission",
-    html: emailHtml
-  };
-
-  const clientInfo = await transporter.sendMail(clientMailOptions);
-  console.log("✅ Invoice email sent to client:", clientInfo.response);
+// 4️⃣ 클라이언트 Invoice 이메일 전송 (Admin에 저장된 invoice 사용)
+const savedOrder = finalOrders.find(o => o.orderId === newFinalOrderId);
+if (!savedOrder) {
+  throw new Error("Failed to retrieve saved order for email.");
 }
+
+// email.html 템플릿을 읽어오기
+const templatePath = path.join(__dirname, "email.html");
+let emailHtml = "";
+
+if (fs.existsSync(templatePath)) {
+  emailHtml = fs.readFileSync(templatePath, "utf-8");
+} else {
+  emailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
+}
+
+// 🔥 여기서 Admin에 저장된 `invoice` 값을 그대로 사용
+emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
+
+await transporter.sendMail({
+  from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
+  to: savedOrder.emailAddress,
+  subject: "[Smart Talent Matcher] Invoice for Your Submission",
+  html: emailHtml
+});
+
+console.log("✅ Client Invoice email sent.");
 
     // (3) 타이머 등록
     scheduleReminder(newFinal);
