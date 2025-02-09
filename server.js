@@ -461,28 +461,15 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     const adminInfo = await transporter.sendMail(adminMailOptions);
     console.log("✅ Admin email sent:", adminInfo.response);
 
-    // (2) 클라이언트(인보이스) 이메일 발송
+    // (2) 클라이언트(인보이스) 이메일 발송  
+    // **수정 부분:** 인보이스 디자인(choose.html에서 만들어진 영수증 디자인)이 그대로 유지되도록,
+    // 기존 email.html 템플릿을 사용하지 않고, finalInvoice(이미 완성된 인보이스 HTML)를 그대로 사용함.
     if (emailAddress) {
-      const templatePath = path.join(__dirname, "email.html");
-      console.log("Looking for email template at:", templatePath);
-      let clientEmailHtml = "";
-      if (fs.existsSync(templatePath)) {
-        clientEmailHtml = fs.readFileSync(templatePath, "utf-8");
-      } else {
-        clientEmailHtml = `<html><body><p>Invoice details not available.</p></body></html>`;
-      }
-
-      // juice로 CSS 인라인화
-      clientEmailHtml = juice(clientEmailHtml);
-
-      // invoice 치환
-      clientEmailHtml = clientEmailHtml.replace(/{{\s*invoice\s*}}/g, finalInvoice);
-
       const clientMailOptions = {
         from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
         to: emailAddress,
         subject: "[Smart Talent Matcher] Invoice for Your Submission",
-        html: clientEmailHtml
+        html: finalInvoice
       };
       const clientInfo = await transporter.sendMail(clientMailOptions);
       console.log("✅ Invoice email sent to client:", clientInfo.response);
