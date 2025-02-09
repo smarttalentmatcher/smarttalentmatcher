@@ -148,7 +148,7 @@ cleanUpOrdersData();
 cleanUpUnusedUploads();
 
 // 12h/24h 타이머
-const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+const TWELVE_HOURS = 1 * 60 * 1000;
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 const reminderTimers = {};
 const autoCancelTimers = {};
@@ -511,7 +511,6 @@ console.log("✅ Admin Stored Invoice:", savedOrder.invoice);
 // email.html 템플릿을 읽어오기
 const templatePath = path.join(__dirname, "email.html");
 let emailHtml = "";
-
 if (fs.existsSync(templatePath)) {
   emailHtml = fs.readFileSync(templatePath, "utf-8");
 } else {
@@ -522,8 +521,21 @@ if (fs.existsSync(templatePath)) {
 console.log("Before Replacement:", emailHtml);
 console.log("Invoice Data to Insert:", savedOrder.invoice);
 
-// 🔥 기존 방식으로 불러온 Invoice 데이터가 중복되지 않도록 수정
-emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
+// ★ 중복된 invoice 내용이 있다면 첫 번째 occurrence만 남기도록 cleaning 처리
+let cleanedInvoice = savedOrder.invoice;
+const invoiceOccurrences = (cleanedInvoice.match(/<section class="cost-summary"/g) || []).length;
+if (invoiceOccurrences > 1) {
+  // 첫 번째 <section class="cost-summary">부터 첫 번째 </section>까지의 부분만 사용
+  const firstOccurrenceIndex = cleanedInvoice.indexOf('<section class="cost-summary"');
+  const endIndex = cleanedInvoice.indexOf('</section>', firstOccurrenceIndex) + '</section>'.length;
+  cleanedInvoice = cleanedInvoice.slice(firstOccurrenceIndex, endIndex);
+  console.log("Cleaned Invoice Data:", cleanedInvoice);
+} else {
+  console.log("No duplicate invoice sections detected.");
+}
+
+// 🔥 치환: 템플릿 내의 {{invoice}} 플레이스홀더를 cleanedInvoice로 대체
+emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, cleanedInvoice);
 
 // 🛑 치환 후 확인
 console.log("Final Email HTML:", emailHtml);
