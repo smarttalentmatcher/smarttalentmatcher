@@ -15,11 +15,11 @@ const finalCostEl = document.getElementById("final-cost");
 // 기본 할인율 (10%)
 const BASE_DISCOUNT_RATE = 0.1;
 
-// 프로모션 관련 변수
+// 프로모 할인 관련 변수
 let promoRate = 0.0;  // 예: 0.1 → 10%, 0.15 → 15%
 let promoFlat = 0.0;  // 현재 사용하지 않음 (0)
 
-// 체크박스 & 초기 로드 시 비용 업데이트
+// 체크박스 변경 시 비용 업데이트
 checkboxes.forEach(cb => {
   cb.addEventListener("change", updateCost);
 });
@@ -36,28 +36,28 @@ function applyPromo() {
   promoRate = 0.0;
   promoFlat = 0.0;
 
-  // WELCOME10 (10%) 또는 RETURN15 (15%) 적용
+  // 예: WELCOME10 (10%), RETURN15 (15%)
   if (code === "WELCOME10") {
     promoRate = 0.1;
-    promoMessage.textContent = "WELCOME10 applied: -10% discount!";
+    promoMessage.textContent = "WELCOME10 applied: +10% discount!";
   } else if (code === "RETURN15") {
     promoRate = 0.15;
-    promoMessage.textContent = "RETURN15 applied: -15% discount!";
+    promoMessage.textContent = "RETURN15 applied: +15% discount!";
   } else if (code !== "") {
     promoMessage.textContent = "Invalid promo code.";
   }
   updateCost();
 }
 
-// 프로모션 버튼 이벤트 리스너 부착
+// 프로모 버튼에 이벤트 리스너 부착
 document.getElementById("apply-promo-btn").addEventListener("click", applyPromo);
 
 // 비용 및 영수증 업데이트 함수
 function updateCost() {
   let sum = 0;
-  selectedItemsDiv.innerHTML = ""; // 영수증 표시 영역 초기화
+  selectedItemsDiv.innerHTML = ""; // 영수증 영역 초기화
 
-  // 체크된 체크박스 모두 합산 (disabled 여부와 상관없이 checked이면 포함)
+  // 체크된 체크박스의 비용 합산 (disabled여부 무관하게 checked이면 포함)
   checkboxes.forEach(cb => {
     if (cb.checked) {
       const cost = parseFloat(cb.dataset.cost || "0");
@@ -65,7 +65,7 @@ function updateCost() {
       const row = cb.closest("tr");
       const itemLabel = row.querySelector("td").textContent.trim();
 
-      // 그룹 헤더(예: "[Base Package]", "[For English Speakers]" 등) 결정
+      // 그룹에 따른 접두사 결정
       let prefix = "";
       if (row.querySelector("td.us-package")) {
         prefix = "[Base Package] ";
@@ -79,7 +79,7 @@ function updateCost() {
         }
       }
 
-      // 영수증 라인 생성 → selectedItemsDiv에 추가
+      // 영수증 라인 생성
       const lineDiv = document.createElement("div");
       lineDiv.className = "receipt-line";
 
@@ -99,42 +99,39 @@ function updateCost() {
     }
   });
 
-  // 기본 할인 계산 (전체 금액에서 10% 차감)
+  // 기본 할인 및 프로모 할인 계산
   const baseDiscountAmount = sum * BASE_DISCOUNT_RATE;
   const discountedAfterBase = sum - baseDiscountAmount;
+  const promoPercentDiscount = discountedAfterBase * promoRate;
+  let finalAfterPercent = discountedAfterBase - promoPercentDiscount;
+  if (finalAfterPercent < 0) finalAfterPercent = 0;
 
-  // 프로모션 할인 계산 (기본 할인 적용 후 금액에서 promoRate 적용)
-  const promoPercentDiscount = sum * promoRate;
-  let finalAfterPromo = discountedAfterBase - promoPercentDiscount;
-  if (finalAfterPromo < 0) finalAfterPromo = 0;
-
-  // UI에 금액 표시 (달러 단위)
+  // 화면에 비용 업데이트
   subtotalEl.textContent = sum.toFixed(2);
   baseDiscountEl.textContent = baseDiscountAmount.toFixed(2);
 
-  // 화면 상 프로모션 할인 라인 (달러 금액 대신 percentage는 인보이스에 적용할 예정)
-  const totalPromo = promoPercentDiscount + promoFlat; // promoFlat은 0
-  if (totalPromo > 0) {
-    promoDiscountLine.style.display = "flex";
-    promoDiscountLabel.textContent = "Promo Discount: -${(promoRate * 100).toFixed(0)}%`; 
-    // 여기서는 계산된 달러 금액 대신, 단순히 할인율(%)은 인보이스에 적용할 예정임
-    promoDiscountEl.textContent = `$${totalPromo.toFixed(2)}`; // (화면용: 달러 할인액)
+  const totalPromo = promoPercentDiscount + promoFlat;
+  if (promoPercentDiscount > 0) {
+    promoDiscountLine.style.display = "flex"; // 프로모 할인 라인 표시
+    promoDiscountLabel.textContent = `Promo Discount: -${(promoRate * 100).toFixed(0)}%`; 
+    promoDiscountEl.textContent = `$${promoPercentDiscount.toFixed(2)}`; 
   } else {
-    promoDiscountLine.style.display = "none";
+    promoDiscountLine.style.display = "none"; // 프로모 할인 적용 안 되면 숨김
   }
 
-  finalCostEl.textContent = finalAfterPromo.toFixed(2);
+  finalCostEl.textContent = finalAfterPercent.toFixed(2);
 }
 
-// Next 버튼 클릭 시 - 서버로 주문 데이터 전송 후 resume.html로 이동
+// Next 버튼 클릭 시 서버에 주문 데이터 전송 후 resume.html로 이동
 document.getElementById("next-button").addEventListener("click", () => {
   console.log("Next 버튼 클릭됨");
 
   const subtotal = parseFloat(subtotalEl.textContent || "0");
   const baseDiscount = parseFloat(baseDiscountEl.textContent || "0");
   const finalCost = parseFloat(finalCostEl.textContent || "0");
+  const promoDiscountVal = parseFloat(promoDiscountEl.textContent || "0");
 
-  // 인보이스(영수증) HTML 생성 시, 프로모션 할인은 할인율(%)로 표시
+  // 인보이스(영수증) HTML 생성
   const invoiceHTML = `
     <div>
       <h3>Selected Packages:</h3>
@@ -149,10 +146,10 @@ document.getElementById("next-button").addEventListener("click", () => {
         <span class="receipt-price">-$${baseDiscount.toFixed(2)}</span>
       </div>
       ${
-        promoRate > 0
+        (promoDiscountLine.style.display === "flex")
           ? `<div class="receipt-line">
                <span class="receipt-desc">Promo Discount:</span>
-               <span class="receipt-price">-${(promoRate * 100).toFixed(0)}%</span>
+               <span class="receipt-price">-$${promoDiscountVal.toFixed(2)}</span>
              </div>`
           : ""
       }
@@ -164,11 +161,11 @@ document.getElementById("next-button").addEventListener("click", () => {
     </div>
   `;
 
-  // 서버에 전송할 데이터 객체 구성
+  // 서버로 전송할 데이터 객체 구성
   const orderData = {
     invoice: invoiceHTML,
     subtotal: subtotal.toFixed(2),
-    discount: (baseDiscount).toFixed(2), // 할인 금액(기본 할인)
+    discount: (baseDiscount + promoDiscountVal).toFixed(2),
     finalCost: finalCost.toFixed(2)
   };
 
