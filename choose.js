@@ -116,9 +116,9 @@ function updateCost() {
   const totalPromo = promoPercentDiscount + promoFlat; // promoFlat은 0
   if (totalPromo > 0) {
     promoDiscountLine.style.display = "flex";
-    promoDiscountLabel.textContent = "Promo Discount:";
+    promoDiscountLabel.textContent = "Promo Discount: -${(promoRate * 100).toFixed(0)}%`; 
     // 여기서는 계산된 달러 금액 대신, 단순히 할인율(%)은 인보이스에 적용할 예정임
-    promoDiscountEl.textContent = `-$${totalPromo.toFixed(2)}`; // (화면용: 달러 할인액)
+    promoDiscountEl.textContent = `$${totalPromo.toFixed(2)}`; // (화면용: 달러 할인액)
   } else {
     promoDiscountLine.style.display = "none";
   }
