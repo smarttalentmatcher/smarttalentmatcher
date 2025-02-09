@@ -498,17 +498,14 @@ if (emailAddress) {
     emailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
   }
 
-  // ✅ 2) 어드민(Admin)에 최종 저장된 데이터에서 invoice 가져오기
-  const finalOrder = finalOrders.find(o => o.orderId === orderId);
-  const storedInvoice = finalOrder ? finalOrder.invoice : "<p>No invoice data</p>";
-
-  // 3) 템플릿 안의 {{invoice}} 부분을 storedInvoice로 치환
-  emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, storedInvoice);
+  // 2) 템플릿 안의 {{invoice}} 부분을 'finalInvoice'로 치환
+  //    여기서 finalInvoice는 인라인 디자인까지 포함된 invoice HTML
+  emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, finalInvoice);
 
   // (선택) juice(emailHtml)로 CSS 인라인화 가능
   // emailHtml = juice(emailHtml);
 
-  // 4) 치환된 이메일 HTML을 nodemailer로 전송
+  // 3) 치환된 이메일 HTML을 nodemailer로 전송
   const clientMailOptions = {
     from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
     to: emailAddress,
