@@ -9,20 +9,12 @@ const fs = require("fs");
 const juice = require("juice");
 const cors = require("cors");
 
-// 🔥 [추가] Mongoose (MongoDB) 불러오기
 const mongoose = require("mongoose");
 
-const app = express();
-
-// [추가] 환경 변수에서 MongoDB URI 가져오기
-// Render에서 MONGO_URI로 설정한 값이 있으면 그걸 쓰고, 없으면 로컬 mongodb://...
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/test";
 
-// [추가] MongoDB에 연결
-mongoose.connect(MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
+// MongoDB 연결
+mongoose.connect(MONGO_URI, {})  // 여기서 불필요한 옵션 삭제!
   .then(() => {
     console.log("✅ Connected to MongoDB Atlas");
   })
@@ -633,4 +625,19 @@ app.listen(PORT, () => {
     scheduleReminder(order);
     scheduleAutoCancel(order);
   });
+});
+const testSchema = new mongoose.Schema({
+  testField: String
+});
+const TestModel = mongoose.model("TestModel", testSchema);
+
+// 테스트용 API
+app.get("/test-mongo", async (req, res) => {
+  try {
+    const doc = await TestModel.create({ testField: "Hello Mongo!" });
+    res.json({ success: true, doc });
+  } catch (err) {
+    console.error("DB Error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
