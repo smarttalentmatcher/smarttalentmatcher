@@ -102,7 +102,7 @@ function updateCost() {
   // 기본 할인 및 프로모 할인 계산
   const baseDiscountAmount = sum * BASE_DISCOUNT_RATE;
   const discountedAfterBase = sum - baseDiscountAmount;
-  const promoPercentDiscount = discountedAfterBase * promoRate;
+  const promoPercentDiscount = sum * promoRate;
   let finalAfterPercent = discountedAfterBase - promoPercentDiscount;
   if (finalAfterPercent < 0) finalAfterPercent = 0;
 
