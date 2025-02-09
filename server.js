@@ -8,19 +8,20 @@ const path = require("path");
 const fs = require("fs");
 const juice = require("juice");
 const cors = require("cors");
+const mongoose = require("mongoose"); // MongoDB 사용
 
-const mongoose = require("mongoose");
-
+// 1) MongoDB 연결
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/test";
-
-// MongoDB 연결
-mongoose.connect(MONGO_URI, {})  // 여기서 불필요한 옵션 삭제!
+mongoose.connect(MONGO_URI)
   .then(() => {
     console.log("✅ Connected to MongoDB Atlas");
   })
-  .catch(err => {
+  .catch((err) => {
     console.error("❌ MongoDB Connection Error:", err);
   });
+
+// 2) Express 앱 생성
+const app = express();
 
 // 동적 포트 (Render 등 호스팅 고려)
 const PORT = process.env.PORT || 3000;
@@ -41,6 +42,7 @@ function generateDateTimeOrderId() {
   return mm + dd + hh + min;
 }
 
+// JSON 파일에 저장할 임시 데이터 (기존 코드 유지)
 const DATA_FILE = path.join(__dirname, "ordersData.json");
 let draftOrders = [];
 let finalOrders = [];
@@ -63,6 +65,7 @@ function loadOrdersData() {
     console.log("No existing data file found. Starting fresh.");
   }
 }
+loadOrdersData();
 
 function saveOrdersData() {
   const dataToSave = { draftOrders, finalOrders };
@@ -73,7 +76,6 @@ function saveOrdersData() {
     console.error("Failed to save orders data:", err);
   }
 }
-loadOrdersData();
 
 // Multer 설정
 const upload = multer({ dest: "uploads/" });
@@ -153,7 +155,6 @@ function cleanUpUnusedUploads() {
   const uploadsDir = path.join(__dirname, "uploads");
   cleanDirectory(uploadsDir);
 }
-
 setInterval(() => {
   cleanUpOrdersData();
   cleanUpUnusedUploads();
@@ -213,7 +214,7 @@ function sendReminder(order) {
     reminderEmailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
   }
 
-  // 🔥 Admin에 저장된 invoice 값으로 email.html의 {{invoice}} 치환
+  // Admin에 저장된 invoice 값으로 email.html의 {{invoice}} 치환
   reminderEmailHtml = reminderEmailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
 
   const mailOptions = {
@@ -321,7 +322,7 @@ app.post("/submit-order", (req, res) => {
   try {
     const {
       emailAddress,
-      invoice,         // 영수증 내용 (필요하면 받되, 최종은 admin에서 확정)
+      invoice,
       subtotal,
       baseDiscount,
       promoDiscount,
@@ -345,7 +346,7 @@ app.post("/submit-order", (req, res) => {
     const newDraft = {
       orderId,
       emailAddress: emailAddress || "",
-      invoice: invoiceData, // choose.html에서 넘어온 인보이스(초안)
+      invoice: invoiceData,
       subtotal: cleanSubtotal,
       baseDiscount: cleanBaseDiscount,
       promoDiscount: cleanPromoDiscount,
@@ -385,7 +386,7 @@ app.post("/update-order", uploadResume.single("headshot"), (req, res) => {
   if (resumeLink !== undefined) existingOrder.resumeLink = resumeLink;
   if (introduction !== undefined) existingOrder.introduction = introduction;
 
-  // [선택] 유저가 준 invoice를 무조건 덮어씌우지 않으려면 주석 처리
+  // 필요하다면 invoice도 업데이트
   // if (invoice) existingOrder.invoice = invoice;
 
   if (req.file) {
@@ -508,23 +509,22 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     const adminInfo = await transporter.sendMail(adminMailOptions);
     console.log("✅ Admin email sent:", adminInfo.response);
 
-    // 4️⃣ 클라이언트 Invoice 이메일 전송 (Admin에 저장된 invoice 사용)
+    // 4️⃣ 클라이언트 Invoice 이메일 전송
     const savedOrder = finalOrders.find(o => o.orderId === newFinalOrderId);
     if (!savedOrder) {
       throw new Error("Failed to retrieve saved order for email.");
     }
 
-    // email.html 템플릿을 읽어오기
+    // email.html 템플릿
     const templatePath = path.join(__dirname, "email.html");
     let emailHtml = "";
-
     if (fs.existsSync(templatePath)) {
       emailHtml = fs.readFileSync(templatePath, "utf-8");
     } else {
       emailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
     }
 
-    // 🔥 여기서 Admin에 저장된 `invoice` 값을 그대로 사용
+    // invoice 치환
     emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
 
     await transporter.sendMail({
@@ -533,7 +533,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       subject: "[Smart Talent Matcher] Invoice for Your Submission",
       html: emailHtml
     });
-
     console.log("✅ Client Invoice email sent.");
 
     // (3) 타이머 등록
@@ -618,20 +617,23 @@ app.post("/admin/update-payment", (req, res) => {
   res.json({ success: true, message: "Payment status updated." });
 });
 
-// 서버 실행
+// 3) 서버 실행
 app.listen(PORT, () => {
   console.log(`✅ Server running at http://localhost:${PORT}`);
+
+  // 기존 오더에 대해 리마인더 / 오토캔슬 스케줄
   finalOrders.forEach(order => {
     scheduleReminder(order);
     scheduleAutoCancel(order);
   });
 });
+
+/** [추가] 테스트용 스키마 & 라우트 (Mongo 연결 확인용) */
 const testSchema = new mongoose.Schema({
   testField: String
 });
 const TestModel = mongoose.model("TestModel", testSchema);
 
-// 테스트용 API
 app.get("/test-mongo", async (req, res) => {
   try {
     const doc = await TestModel.create({ testField: "Hello Mongo!" });
