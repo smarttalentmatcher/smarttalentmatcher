@@ -148,7 +148,7 @@ cleanUpOrdersData();
 cleanUpUnusedUploads();
 
 // 12h/24h 타이머
-const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+const TWELVE_HOURS = 1 * 60 * 1000;  // 1분 (테스트용)
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 const reminderTimers = {};
 const autoCancelTimers = {};
