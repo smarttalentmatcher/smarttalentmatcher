@@ -373,15 +373,21 @@ app.post("/update-order", uploadResume.single("headshot"), (req, res) => {
     console.error("Draft order not found for orderId:", orderId);
     return res.status(404).json({ success: false, message: "Order not found" });
   }
+
+  // 그대로 두셔도 되는 부분
   if (emailAddress !== undefined) existingOrder.emailAddress = emailAddress;
   if (emailSubject !== undefined) existingOrder.emailSubject = emailSubject;
   if (actingReel !== undefined) existingOrder.actingReel = actingReel;
   if (resumeLink !== undefined) existingOrder.resumeLink = resumeLink;
   if (introduction !== undefined) existingOrder.introduction = introduction;
-  if (invoice) existingOrder.invoice = invoice;
+
+  // [선택] 유저가 준 invoice를 무조건 덮어씌우지 않으려면 주석 처리
+  // if (invoice) existingOrder.invoice = invoice;
+
   if (req.file) {
     existingOrder.headshot = `/uploads/resume/${req.file.filename}`;
   }
+
   console.log("✅ Draft order updated:", existingOrder);
   saveOrdersData();
 
