@@ -291,10 +291,33 @@ app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res)
 /** (A) /submit-order → choose.html (드래프트 주문 생성) */
 app.post("/submit-order", (req, res) => {
   try {
-    const { emailAddress, invoice, subtotal, discount, finalCost } = req.body;
+    const {
+      emailAddress,
+      invoice,         // 영수증 (이 부분은 기존에 저장 중)
+      subtotal,
+      baseDiscount,
+      promoDiscount,
+      finalCost
+    } = req.body;
 
     const orderId = generateDateTimeOrderId();
     const createdAt = Date.now();
+
+    // **이메일 템플릿도 저장하기 위해 email.html을 불러옴**
+    const templatePath = path.join(__dirname, "email.html");
+    let emailTemplate = "";
+
+    if (fs.existsSync(templatePath)) {
+      emailTemplate = fs.readFileSync(templatePath, "utf-8");
+    } else {
+      emailTemplate = "<html><body><p>Email template not found.</p></body></html>";
+    }
+
+    // NaN 방지: 숫자로 변환
+    const cleanSubtotal = isNaN(parseFloat(subtotal)) ? 0 : parseFloat(subtotal);
+    const cleanBaseDiscount = isNaN(parseFloat(baseDiscount)) ? 0 : parseFloat(baseDiscount);
+    const cleanPromoDiscount = isNaN(parseFloat(promoDiscount)) ? 0 : parseFloat(promoDiscount);
+    const cleanFinalCost = isNaN(parseFloat(finalCost)) ? 0 : parseFloat(finalCost);
 
     // invoice가 비어있으면 기본 메시지 넣기
     const invoiceData = invoice && invoice.trim() !== ""
@@ -304,20 +327,22 @@ app.post("/submit-order", (req, res) => {
     const newDraft = {
       orderId,
       emailAddress: emailAddress || "",
-      invoice: invoiceData,
-      subtotal: subtotal || "",
-      discount: discount || "",
-      finalCost: finalCost || "",
+      invoice: invoiceData, // 기존 영수증 HTML
+      emailTemplate: emailTemplate, // 💾 이메일 템플릿까지 같이 저장!
+      subtotal: cleanSubtotal,
+      baseDiscount: cleanBaseDiscount,
+      promoDiscount: cleanPromoDiscount,
+      finalCost: cleanFinalCost,
       createdAt
     };
 
     draftOrders.push(newDraft);
-    console.log("✅ Draft order received:", newDraft);
+    console.log("✅ Draft order received and email template stored:", newDraft);
     saveOrdersData();
 
     res.json({
       success: true,
-      message: "Draft order received",
+      message: "Draft order received (with email template)",
       orderId
     });
   } catch (err) {
@@ -461,19 +486,34 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     const adminInfo = await transporter.sendMail(adminMailOptions);
     console.log("✅ Admin email sent:", adminInfo.response);
 
-    // (2) 클라이언트(인보이스) 이메일 발송  
-    // **수정 부분:** 인보이스 디자인(choose.html에서 만들어진 영수증 디자인)이 그대로 유지되도록,
-    // 기존 email.html 템플릿을 사용하지 않고, finalInvoice(이미 완성된 인보이스 HTML)를 그대로 사용함.
-    if (emailAddress) {
-      const clientMailOptions = {
-        from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
-        to: emailAddress,
-        subject: "[Smart Talent Matcher] Invoice for Your Submission",
-        html: finalInvoice
-      };
-      const clientInfo = await transporter.sendMail(clientMailOptions);
-      console.log("✅ Invoice email sent to client:", clientInfo.response);
-    }
+    // (2) 클라이언트(인보이스) 이메일 발송
+if (emailAddress) {
+  // 1) email.html 템플릿 읽기
+  const templatePath = path.join(__dirname, "email.html");
+  let emailHtml = "";
+
+  if (fs.existsSync(templatePath)) {
+    emailHtml = fs.readFileSync(templatePath, "utf-8");
+  } else {
+    emailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
+  }
+
+  // 2) 템플릿 안의 {{invoice}} 부분을 finalInvoice로 치환
+  // (juice(emailHtml)로 CSS 인라인화도 가능)
+  // emailHtml = juice(emailHtml); // 필요 시 사용
+  emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, finalInvoice);
+
+  // 3) 치환된 이메일 HTML을 nodemailer로 전송
+  const clientMailOptions = {
+    from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
+    to: emailAddress,
+    subject: "[Smart Talent Matcher] Invoice for Your Submission",
+    html: emailHtml
+  };
+
+  const clientInfo = await transporter.sendMail(clientMailOptions);
+  console.log("✅ Invoice email sent to client:", clientInfo.response);
+}
 
     // (3) 타이머 등록
     scheduleReminder(newFinal);
