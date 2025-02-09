@@ -30,26 +30,36 @@ function generateDateTimeOrderId() {
   return mm + dd + hh + min;
 }
 
+// ──────────────────────────────────────────────
+// 데이터 파일 로드/저장 (로컬 하드에 저장)
+// ──────────────────────────────────────────────
+
 const DATA_FILE = path.join(__dirname, "ordersData.json");
 let draftOrders = [];
 let finalOrders = [];
 
 /** 서버 시작 시 주문 데이터 불러오기 */
 function loadOrdersData() {
-  if (fs.existsSync(DATA_FILE)) {
-    try {
-      const raw = fs.readFileSync(DATA_FILE, "utf-8");
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === "object") {
-        draftOrders = parsed.draftOrders || [];
-        finalOrders = parsed.finalOrders || [];
-      }
-      console.log("✅ Loaded orders data from", DATA_FILE);
-    } catch (err) {
-      console.error("Failed to parse ordersData.json:", err);
+  // 파일이 없으면 새로 생성
+  if (!fs.existsSync(DATA_FILE)) {
+    console.log("No existing data file found. Creating a new one...");
+    fs.writeFileSync(
+      DATA_FILE,
+      JSON.stringify({ draftOrders: [], finalOrders: [] }, null, 2),
+      "utf-8"
+    );
+  }
+
+  try {
+    const raw = fs.readFileSync(DATA_FILE, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      draftOrders = parsed.draftOrders || [];
+      finalOrders = parsed.finalOrders || [];
     }
-  } else {
-    console.log("No existing data file found. Starting fresh.");
+    console.log("✅ Loaded orders data from", DATA_FILE);
+  } catch (err) {
+    console.error("Failed to parse ordersData.json:", err);
   }
 }
 function saveOrdersData() {
@@ -63,22 +73,28 @@ function saveOrdersData() {
 }
 loadOrdersData();
 
+// ──────────────────────────────────────────────
 // Multer 설정
+// ──────────────────────────────────────────────
 const upload = multer({ dest: "uploads/" });
 const uploadResume = multer({ dest: "uploads/resume/" });
 
+// ──────────────────────────────────────────────
 // 정적 파일
+// ──────────────────────────────────────────────
 app.use(express.static(__dirname));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// JSON, URL-encoded 파싱
+// ──────────────────────────────────────────────
+// JSON, URL-encoded 파싱 + CORS
+// ──────────────────────────────────────────────
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// CORS
 app.use(cors());
 
-// Nodemailer (네이버 SMTP)
+// ──────────────────────────────────────────────
+// Nodemailer (네이버 SMTP) 세팅
+// ──────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
   host: "smtp.naver.com",
   port: 465,
@@ -89,7 +105,9 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// 자동 정리 (ordersData.json & uploads 폴더)
+// ──────────────────────────────────────────────
+// 정기적 데이터/업로드 정리
+// ──────────────────────────────────────────────
 function cleanUpOrdersData() {
   const dataToSave = { finalOrders: finalOrders };
   try {
@@ -140,14 +158,20 @@ function cleanUpUnusedUploads() {
   const uploadsDir = path.join(__dirname, "uploads");
   cleanDirectory(uploadsDir);
 }
+
+// 1시간마다 정리
 setInterval(() => {
   cleanUpOrdersData();
   cleanUpUnusedUploads();
 }, 60 * 60 * 1000);
+
+// 서버 시작 시 한 번 실행
 cleanUpOrdersData();
 cleanUpUnusedUploads();
 
-// 12h/24h 타이머
+// ──────────────────────────────────────────────
+// 12h/24h 타이머 (Reminder/Auto-Cancel)
+// ──────────────────────────────────────────────
 const TWELVE_HOURS = 12 * 60 * 60 * 1000;
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 const reminderTimers = {};
@@ -162,7 +186,9 @@ function scheduleReminder(order) {
     }
     const timeoutId = setTimeout(() => sendReminder(order), timeLeft);
     reminderTimers[order.orderId] = timeoutId;
-    console.log(`⏰ Scheduled 12h reminder for #${order.orderId} in ${Math.round(timeLeft/1000)}s`);
+    console.log(
+      `⏰ Scheduled 12h reminder for #${order.orderId} in ${Math.round(timeLeft / 1000)}s`
+    );
   }
 }
 function scheduleAutoCancel(order) {
@@ -174,12 +200,15 @@ function scheduleAutoCancel(order) {
     }
     const timeoutId = setTimeout(() => autoCancelOrder(order), timeLeft);
     autoCancelTimers[order.orderId] = timeoutId;
-    console.log(`⏰ Scheduled 24h auto-cancel for #${order.orderId} in ${Math.round(timeLeft/1000)}s`);
+    console.log(
+      `⏰ Scheduled 24h auto-cancel for #${order.orderId} in ${Math.round(timeLeft / 1000)}s`
+    );
   }
 }
 
 function sendReminder(order) {
   if (order.paid || order.reminderSent) return;
+
   const templatePath = path.join(__dirname, "email.html");
   let reminderEmailHtml = "";
   if (fs.existsSync(templatePath)) {
@@ -188,14 +217,17 @@ function sendReminder(order) {
     reminderEmailHtml = `<html><body><p>Invoice details not available.</p></body></html>`;
   }
   reminderEmailHtml = juice(reminderEmailHtml);
+
   const invoiceHtml = order.invoice || "<p>Invoice details not available.</p>";
   reminderEmailHtml = reminderEmailHtml.replace(/{{\s*invoice\s*}}/g, invoiceHtml);
+
   const mailOptions = {
     from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
     to: order.emailAddress,
     subject: "**Reminder**[Smart Talent Matcher] Invoice for Your Submission",
     html: reminderEmailHtml
   };
+
   transporter.sendMail(mailOptions)
     .then(info => {
       console.log(`✅ Reminder email sent for #${order.orderId}:`, info.response);
@@ -206,6 +238,7 @@ function sendReminder(order) {
       console.error("❌ Error sending reminder:", err);
     });
 }
+
 function autoCancelOrder(order) {
   if (order.paid) return;
   const cancelHtml = `
@@ -242,12 +275,13 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "resume.html"));
 });
 
-// Test email - Headshot → Reel → Resume → Intro
+// (테스트) 이메일 발송: Headshot → Reel → Resume → Intro
 const uploadHeadshot = multer({ dest: "uploads/" });
 app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res) => {
   try {
     const { emailAddress, emailSubject, actingReel, resumeLink, introduction } = req.body;
     const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
+
     let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
     if (req.file) {
       emailHtml += `
@@ -291,12 +325,17 @@ app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res)
 /** (A) /submit-order → choose.html (드래프트 주문 생성) */
 app.post("/submit-order", (req, res) => {
   try {
-    const { emailAddress, invoice, subtotal, discount, finalCost } = req.body;
+    let { emailAddress, invoice, subtotal, discount, finalCost } = req.body;
+
+    // 숫자로 변환 (NaN 방지)
+    const cleanSubtotal = isNaN(parseFloat(subtotal)) ? 0 : parseFloat(subtotal);
+    const cleanDiscount = isNaN(parseFloat(discount)) ? 0 : parseFloat(discount);
+    const cleanFinalCost = isNaN(parseFloat(finalCost)) ? 0 : parseFloat(finalCost);
 
     const orderId = generateDateTimeOrderId();
     const createdAt = Date.now();
 
-    // invoice가 비어있으면 기본 메시지 넣기
+    // invoice(인보이스 HTML)가 비어있으면 기본 문구
     const invoiceData = invoice && invoice.trim() !== ""
       ? invoice
       : "<p>Invoice details not available.</p>";
@@ -305,9 +344,10 @@ app.post("/submit-order", (req, res) => {
       orderId,
       emailAddress: emailAddress || "",
       invoice: invoiceData,
-      subtotal: subtotal || "",
-      discount: discount || "",
-      finalCost: finalCost || "",
+      // 저장 시 숫자로 기록
+      subtotal: cleanSubtotal,
+      discount: cleanDiscount,
+      finalCost: cleanFinalCost,
       createdAt
     };
 
@@ -336,12 +376,18 @@ app.post("/update-order", uploadResume.single("headshot"), (req, res) => {
     console.error("Draft order not found for orderId:", orderId);
     return res.status(404).json({ success: false, message: "Order not found" });
   }
+
   if (emailAddress !== undefined) existingOrder.emailAddress = emailAddress;
   if (emailSubject !== undefined) existingOrder.emailSubject = emailSubject;
   if (actingReel !== undefined) existingOrder.actingReel = actingReel;
   if (resumeLink !== undefined) existingOrder.resumeLink = resumeLink;
   if (introduction !== undefined) existingOrder.introduction = introduction;
-  if (invoice) existingOrder.invoice = invoice;
+  
+  // invoice가 넘어오면 갱신
+  if (typeof invoice === "string" && invoice.trim() !== "") {
+    existingOrder.invoice = invoice;
+  }
+
   if (req.file) {
     existingOrder.headshot = `/uploads/resume/${req.file.filename}`;
   }
@@ -361,7 +407,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice, venmoId } = req.body;
     console.log("Final submit received:", req.body);
 
-    // 기존 최종 주문(이메일 기준) 취소
+    // 기존 최종 주문(이메일 기준) 취소 (이메일 중복 방지)
     const oldFinals = finalOrders.filter(o => o.emailAddress === emailAddress);
     if (oldFinals.length > 0) {
       console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Canceling them...`);
@@ -397,7 +443,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
 
     const existingDraft = draftOrders.find(o => o.orderId === orderId);
     if (existingDraft && invoice) {
-      existingDraft.invoice = invoice;
+      existingDraft.invoice = invoice; // 최종 인보이스 반영
     }
 
     // 새 파이널 ID 생성
@@ -414,7 +460,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       actingReel: actingReel || "",
       resumeLink: resumeLink || "",
       introduction: introduction || "",
-      invoice: finalInvoice,
+      invoice: finalInvoice, // 인보이스 디자인 여기 저장
       venmoId: venmoId || "",
       createdAt: Date.now(),
       paid: false,
@@ -461,9 +507,8 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     const adminInfo = await transporter.sendMail(adminMailOptions);
     console.log("✅ Admin email sent:", adminInfo.response);
 
-    // (2) 클라이언트(인보이스) 이메일 발송  
-    // **수정 부분:** 인보이스 디자인(choose.html에서 만들어진 영수증 디자인)이 그대로 유지되도록,
-    // 기존 email.html 템플릿을 사용하지 않고, finalInvoice(이미 완성된 인보이스 HTML)를 그대로 사용함.
+    // (2) 클라이언트(인보이스) 이메일 발송
+    // **중요**: finalInvoice(choose.html 등에서 만든 HTML)를 그대로 보냄
     if (emailAddress) {
       const clientMailOptions = {
         from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
@@ -475,7 +520,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       console.log("✅ Invoice email sent to client:", clientInfo.response);
     }
 
-    // (3) 타이머 등록
+    // (3) 타이머 등록 (12h / 24h)
     scheduleReminder(newFinal);
     scheduleAutoCancel(newFinal);
 
@@ -498,7 +543,7 @@ app.get("/admin/orders", (req, res) => {
   res.json(processedOrders);
 });
 
-// 삭제
+// (관리자) 주문 삭제
 app.post("/admin/delete-order", (req, res) => {
   const { orderId } = req.body;
   const idx = finalOrders.findIndex(o => o.orderId === orderId);
@@ -544,7 +589,7 @@ app.post("/admin/delete-order", (req, res) => {
     });
 });
 
-// 결제 상태 업데이트
+// (관리자) 결제 상태 업데이트
 app.post("/admin/update-payment", (req, res) => {
   const { orderId, paid } = req.body;
   const order = finalOrders.find(o => o.orderId === orderId);
@@ -560,6 +605,7 @@ app.post("/admin/update-payment", (req, res) => {
 // 서버 실행
 app.listen(PORT, () => {
   console.log(`✅ Server running at http://localhost:${PORT}`);
+  // 서버 시작 시 기존 주문들의 타이머 재등록
   finalOrders.forEach(order => {
     scheduleReminder(order);
     scheduleAutoCancel(order);
