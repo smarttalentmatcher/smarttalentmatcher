@@ -104,7 +104,7 @@ function updateCost() {
   const discountedAfterBase = sum - baseDiscountAmount;
 
   // 프로모션 할인 계산 (기본 할인 적용 후 금액에서 promoRate 적용)
-  const promoPercentDiscount = discountedAfterBase * promoRate;
+  const promoPercentDiscount = sum * promoRate;
   let finalAfterPromo = discountedAfterBase - promoPercentDiscount;
   if (finalAfterPromo < 0) finalAfterPromo = 0;
 
