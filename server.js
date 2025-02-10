@@ -120,8 +120,8 @@ const transporter = nodemailer.createTransport({
   port: 465,
   secure: true,
   auth: {
-    user: "letsspeak01@naver.com",
-    pass: "ESLUTHE53P6L"
+    user: process.env.NODemailer_USER,
+    pass: process.env.NODemailer_PASS
   }
 });
 
