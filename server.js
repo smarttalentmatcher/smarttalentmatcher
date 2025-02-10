@@ -254,14 +254,6 @@ async function restoreTimers() {
   }
 }
 
-// ================================
-// 서버 실행 시 타이머 복원
-// ================================
-app.listen(PORT, () => {
-  console.log(`✅ Server running at ${process.env.SERVER_URL || "http://localhost:" + PORT}`);
-  restoreTimers(); // 서버 재시작 시 기존 주문의 타이머 다시 설정
-});
-
 // ──────────────────────────────────────────────
 // 라우트
 // ──────────────────────────────────────────────
@@ -393,46 +385,46 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice, venmoId } = req.body;
     console.log("Final submit received:", req.body);
 
-       // 기존 최종 주문 취소 (해당 이메일의 final 주문들) 및 삭제 (MongoDB + Cloudinary)
-       const oldFinals = await Order.find({ emailAddress, status: "final" });
-       if (oldFinals.length > 0) {
-         console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Deleting them...`);
-         for (const oldOrder of oldFinals) {
-           // 취소 이메일 전송
-           const cancelHtml = `
-             <div style="font-family: Arial, sans-serif;">
-               <p>Hello,</p>
-               <p>Your previous invoice (Order #${oldOrder.orderId}) has been <strong>canceled</strong> because a new order was submitted.</p>
-               <p>Only the new invoice will remain valid. If you have any questions, please contact us.</p>
-               <br>
-               <p>Regards,<br>Smart Talent Matcher</p>
-             </div>
-           `;
-           await transporter.sendMail({
-             from: `"Smart Talent Matcher" <${process.env.NODemailer_USER || "letsspeak01@naver.com"}>`,
-             to: emailAddress,
-             subject: "[Smart Talent Matcher] Previous Invoice Canceled",
-             html: cancelHtml
-           });
-           console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
-   
-           // Cloudinary에서 헤드샷 삭제 (이미지 존재하는 경우)
-           if (oldOrder.headshot) {
-             const parts = oldOrder.headshot.split('/');
-             const uploadIndex = parts.findIndex(part => part === "upload");
-             if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
-               const fileNameWithExtension = parts.slice(uploadIndex + 2).join('/'); 
-               const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, ""); // 확장자 제거
-               console.log("Deleting Cloudinary resource with public_id:", publicId);
-               await cloudinary.uploader.destroy(publicId);
-             }
-           }
-   
-           // MongoDB에서 기존 주문 삭제
-           await Order.deleteOne({ _id: oldOrder._id });
-           console.log(`Deleted old final order #${oldOrder.orderId} from MongoDB.`);
-         }
-       }
+    // 기존 최종 주문 취소 (해당 이메일의 final 주문들) 및 삭제 (MongoDB + Cloudinary)
+    const oldFinals = await Order.find({ emailAddress, status: "final" });
+    if (oldFinals.length > 0) {
+      console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Deleting them...`);
+      for (const oldOrder of oldFinals) {
+        // 취소 이메일 전송
+        const cancelHtml = `
+          <div style="font-family: Arial, sans-serif;">
+            <p>Hello,</p>
+            <p>Your previous invoice (Order #${oldOrder.orderId}) has been <strong>canceled</strong> because a new order was submitted.</p>
+            <p>Only the new invoice will remain valid. If you have any questions, please contact us.</p>
+            <br>
+            <p>Regards,<br>Smart Talent Matcher</p>
+          </div>
+        `;
+        await transporter.sendMail({
+          from: `"Smart Talent Matcher" <${process.env.NODemailer_USER || "letsspeak01@naver.com"}>`,
+          to: emailAddress,
+          subject: "[Smart Talent Matcher] Previous Invoice Canceled",
+          html: cancelHtml
+        });
+        console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
+
+        // Cloudinary에서 헤드샷 삭제 (이미지 존재하는 경우)
+        if (oldOrder.headshot) {
+          const parts = oldOrder.headshot.split('/');
+          const uploadIndex = parts.findIndex(part => part === "upload");
+          if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
+            const fileNameWithExtension = parts.slice(uploadIndex + 2).join('/'); 
+            const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, ""); // 확장자 제거
+            console.log("Deleting Cloudinary resource with public_id:", publicId);
+            await cloudinary.uploader.destroy(publicId);
+          }
+        }
+
+        // MongoDB에서 기존 주문 삭제
+        await Order.deleteOne({ _id: oldOrder._id });
+        console.log(`Deleted old final order #${oldOrder.orderId} from MongoDB.`);
+      }
+    }
     // draft 주문을 찾기
     const draftOrder = await Order.findOne({ orderId, status: "draft" });
     if (!draftOrder) {
@@ -574,17 +566,10 @@ app.post("/admin/delete-order", async (req, res) => {
 
     // Cloudinary에서 헤드샷 삭제 (order.headshot에 URL이 저장되어 있을 경우)
     if (order.headshot) {
-      // Cloudinary URL에서 public_id 추출하기
-      // 예시 URL: https://res.cloudinary.com/your_cloud_name/image/upload/v123456789/SmartTalentMatcher/headshots/filename.jpg
       const parts = order.headshot.split('/');
       const uploadIndex = parts.findIndex(part => part === "upload");
       if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
-        // parts[uploadIndex + 1]은 버전 정보 (v123456789)이고,
-        // parts[uploadIndex + 2]부터는 폴더 및 파일명이 포함됩니다.
-        // 만약 파일이 SmartTalentMatcher/headshots 폴더에 저장되었다면, 전체 public_id는:
-        // "SmartTalentMatcher/headshots/filename" (확장자 제외)
         const fileNameWithExtension = parts.slice(uploadIndex + 2).join('/'); 
-        // 예: "SmartTalentMatcher/headshots/filename.jpg"
         const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, ""); // 확장자 제거
         console.log("Deleting Cloudinary resource with public_id:", publicId);
         await cloudinary.uploader.destroy(publicId);
@@ -680,13 +665,10 @@ const cleanUpNonFinalOrders = async () => {
     for (const order of orders) {
       // If the order has a headshot URL, delete the corresponding Cloudinary resource
       if (order.headshot) {
-        // 예시 URL: https://res.cloudinary.com/your_cloud_name/image/upload/v123456789/SmartTalentMatcher/headshots/filename.jpg
         const parts = order.headshot.split('/');
         const uploadIndex = parts.findIndex(part => part === "upload");
         if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
-          // Combine the parts after "upload" to get the folder and file name
           const fileNameWithExtension = parts.slice(uploadIndex + 2).join('/');
-          // Remove the file extension to extract the public_id
           const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, "");
           console.log("Deleting Cloudinary resource with public_id:", publicId);
           await cloudinary.uploader.destroy(publicId);
@@ -707,6 +689,7 @@ const cleanUpNonFinalOrders = async () => {
 app.listen(PORT, () => {
   console.log(`✅ Server running at ${process.env.SERVER_URL || "http://localhost:" + PORT}`);
   
-  // Call the cleanup function to remove orders that are not "final"
+  // 서버 재시작 시 타이머 복원 및 미완료 주문 cleanup
+  restoreTimers();
   cleanUpNonFinalOrders();
 });
