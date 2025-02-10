@@ -125,12 +125,18 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+// ================================
 // 타이머 관련 상수 및 변수 (메모리 기반)
-const TWELVE_HOURS = 2 * 60 * 1000;
-const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+// ================================
+const TWELVE_HOURS = 4 * 60 * 1000; // 12시간 (12 * 60 * 60 * 1000 밀리초)
+const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000; // 24시간 (24 * 60 * 60 * 1000 밀리초)
+
 const reminderTimers = {};
 const autoCancelTimers = {};
 
+// ================================
+// 리마인더 이메일 스케줄링 함수
+// ================================
 function scheduleReminder(order) {
   const timeLeft = order.createdAt.getTime() + TWELVE_HOURS - Date.now();
   if (timeLeft > 0 && !order.paid && !order.reminderSent) {
@@ -138,12 +144,14 @@ function scheduleReminder(order) {
       clearTimeout(reminderTimers[order.orderId]);
       delete reminderTimers[order.orderId];
     }
-    const timeoutId = setTimeout(() => sendReminder(order), timeLeft);
-    reminderTimers[order.orderId] = timeoutId;
-    console.log(`⏰ Scheduled reminder for #${order.orderId} in ${Math.round(timeLeft / 1000)}s`);
+    reminderTimers[order.orderId] = setTimeout(() => sendReminder(order), timeLeft);
+    console.log(`⏰ Scheduled reminder for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
   }
 }
 
+// ================================
+// 자동 취소 이메일 스케줄링 함수
+// ================================
 function scheduleAutoCancel(order) {
   const timeLeft = order.createdAt.getTime() + TWENTY_FOUR_HOURS - Date.now();
   if (timeLeft > 0 && !order.paid) {
@@ -151,12 +159,14 @@ function scheduleAutoCancel(order) {
       clearTimeout(autoCancelTimers[order.orderId]);
       delete autoCancelTimers[order.orderId];
     }
-    const timeoutId = setTimeout(() => autoCancelOrder(order), timeLeft);
-    autoCancelTimers[order.orderId] = timeoutId;
-    console.log(`⏰ Scheduled auto-cancel for #${order.orderId} in ${Math.round(timeLeft / 1000)}s`);
+    autoCancelTimers[order.orderId] = setTimeout(() => autoCancelOrder(order), timeLeft);
+    console.log(`⏰ Scheduled auto-cancel for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
   }
 }
 
+// ================================
+// 리마인더 이메일 전송 함수
+// ================================
 function sendReminder(order) {
   if (order.paid || order.reminderSent) return;
 
@@ -166,10 +176,12 @@ function sendReminder(order) {
         console.error(`❌ Order #${order.orderId} not found in DB.`);
         return;
       }
+
       const templatePath = path.join(__dirname, "email.html");
       let reminderEmailHtml = fs.existsSync(templatePath)
         ? fs.readFileSync(templatePath, "utf-8")
         : "<html><body><p>Invoice details not available.</p></body></html>";
+
       reminderEmailHtml = reminderEmailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
 
       const mailOptions = {
@@ -186,15 +198,17 @@ function sendReminder(order) {
           savedOrder.reminderSent = true;
           return savedOrder.save();
         })
-        .catch((err) => {
-          console.error("❌ Error sending reminder:", err);
-        });
+        .catch((err) => console.error("❌ Error sending reminder:", err));
     })
     .catch((err) => console.error("DB Error:", err));
 }
 
+// ================================
+// 자동 취소 이메일 전송 함수
+// ================================
 function autoCancelOrder(order) {
   if (order.paid) return;
+
   const cancelHtml = `
     <div style="font-family: Arial, sans-serif;">
       <p>Hello,</p>
@@ -203,12 +217,14 @@ function autoCancelOrder(order) {
       <p>Regards,<br>Smart Talent Matcher</p>
     </div>
   `;
+
   const mailOptions = {
     from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
     to: order.emailAddress,
     subject: "[Smart Talent Matcher] Invoice Auto-Canceled (24h Passed)",
     html: cancelHtml
   };
+
   transporter
     .sendMail(mailOptions)
     .then((info) => {
@@ -217,10 +233,34 @@ function autoCancelOrder(order) {
         .then(() => console.log(`Order #${order.orderId} removed from DB.`))
         .catch((err) => console.error("❌ Error deleting order:", err));
     })
-    .catch((err) => {
-      console.error("❌ Error sending auto-cancel:", err);
-    });
+    .catch((err) => console.error("❌ Error sending auto-cancel:", err));
 }
+
+// ================================
+// 서버 시작 시 기존 주문을 다시 스케줄링 (서버 재시작 시 타이머 복원)
+// ================================
+async function restoreTimers() {
+  try {
+    const pendingOrders = await Order.find({ status: "final", paid: false });
+
+    pendingOrders.forEach((order) => {
+      if (!order.reminderSent) scheduleReminder(order);
+      scheduleAutoCancel(order);
+    });
+
+    console.log(`✅ Restored ${pendingOrders.length} orders with pending reminders and cancellations.`);
+  } catch (err) {
+    console.error("❌ Error restoring timers:", err);
+  }
+}
+
+// ================================
+// 서버 실행 시 타이머 복원
+// ================================
+app.listen(PORT, () => {
+  console.log(`✅ Server running at ${process.env.SERVER_URL || "http://localhost:" + PORT}`);
+  restoreTimers(); // 서버 재시작 시 기존 주문의 타이머 다시 설정
+});
 
 // ──────────────────────────────────────────────
 // 라우트
@@ -470,17 +510,40 @@ app.post("/final-submit", multer().none(), async (req, res) => {
   }
 });
 
-/** 관리자 주문 조회 - final 상태의 주문들 */
+/** 
+ * 📌 관리자 주문 조회 API
+ * - `status: "final"`인 주문을 조회하여 반환
+ * - 24시간이 지나면 `expired: "24hrs"`로 설정 (노란색 하이라이트)
+ * - 48시간이 지나면 자동 삭제
+ */
 app.get("/admin/orders", async (req, res) => {
   try {
+    const now = Date.now();
     const orders = await Order.find({ status: "final" });
+
+    // 주문 상태 처리
     const processedOrders = orders.map((order) => {
-      const expired = !order.paid && (Date.now() - order.createdAt.getTime() >= 24 * 60 * 60 * 1000);
+      const timeSinceCreation = now - order.createdAt.getTime();
+
+      // 24시간 초과 시 `expired: "24hrs"` (미결제 상태에서만 적용)
+      const expired = !order.paid && timeSinceCreation >= 24 * 60 * 60 * 1000 ? "24hrs" : "";
+
       return { ...order.toObject(), expired };
     });
+
+    // ✅ 48시간 초과된 미결제 주문 자동 삭제
+    const deletedOrders = await Order.deleteMany({
+      paid: false, 
+      createdAt: { $lt: new Date(now - 48 * 60 * 60 * 1000) }
+    });
+
+    if (deletedOrders.deletedCount > 0) {
+      console.log(`🗑️ Deleted ${deletedOrders.deletedCount} expired orders (48h old).`);
+    }
+
     res.json(processedOrders);
   } catch (err) {
-    console.error("Error fetching orders:", err);
+    console.error("❌ Error fetching orders:", err);
     res.status(500).json({ success: false, message: "Database error" });
   }
 });
@@ -538,21 +601,72 @@ app.post("/admin/delete-order", async (req, res) => {
   }
 });
 
-/** 결제 상태 업데이트 */
+/** 결제 상태 업데이트 및 서비스 시작 이메일 발송 + 대량 이메일 캠페인 시작 */
 app.post("/admin/update-payment", async (req, res) => {
   try {
     const { orderId, paid } = req.body;
     const order = await Order.findOne({ orderId, status: "final" });
+
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
+
+    // ✅ 결제 상태 업데이트
     order.paid = Boolean(paid);
-    console.log(`Order #${orderId} payment status updated to ${order.paid}`);
     await order.save();
-    res.json({ success: true, message: "Payment status updated." });
+    console.log(`✅ Order #${orderId} payment status updated to ${order.paid}`);
+
+    // ✅ 결제가 완료되면 기존과 동일한 방식으로 서비스 시작 이메일 발송
+    if (order.paid) {
+      const templatePath = path.join(__dirname, "email.html");
+      let emailHtml = fs.existsSync(templatePath)
+        ? fs.readFileSync(templatePath, "utf-8")
+        : "<html><body><p>Service start confirmation details not available.</p></body></html>";
+
+      // ✅ 이메일 본문 업데이트
+      emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, order.invoice);
+      emailHtml += `
+        <div style="font-size: 1.2rem; font-weight: bold; text-align: center; margin-top: 20px;">
+          🎉 Your service has started! 🎉
+        </div>
+        <p>Dear Customer,</p>
+        <p>We are pleased to inform you that your payment has been successfully processed, and your service has now begun.</p>
+        <p>Once all emails corresponding to your selected region have been sent, you will receive a confirmation email.</p>
+        <p>Thank you for trusting our service. We are committed to helping you find the right people.</p>
+        <br>
+        <p>Best Regards,</p>
+        <p><strong>Smart Talent Matcher Team</strong></p>
+      `;
+
+      await transporter.sendMail({
+        from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
+        to: order.emailAddress,
+        subject: "[Smart Talent Matcher] Your Service Has Started!",
+        html: emailHtml
+      });
+
+      console.log(`📩 Service start email sent to ${order.emailAddress}`);
+
+      // ✅ SendGrid 서버에 대량 이메일 캠페인 시작 요청
+      const sendgridResponse = await fetch("http://localhost:4000/start-email-campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, emailAddress: order.emailAddress })
+      });
+
+      const sendgridResult = await sendgridResponse.json();
+      if (sendgridResult.success) {
+        console.log(`✅ Email campaign started successfully for Order #${orderId}`);
+      } else {
+        console.error(`❌ Failed to start email campaign: ${sendgridResult.message}`);
+      }
+    }
+
+    res.json({ success: true, message: "Payment status updated, service start email sent, and email campaign started if paid." });
+
   } catch (err) {
-    console.error("Error updating payment:", err);
-    res.status(500).json({ success: false, message: "Database error" });
+    console.error("❌ Error updating payment, sending email, or starting campaign:", err);
+    res.status(500).json({ success: false, message: "Database error, email sending failed, or email campaign failed." });
   }
 });
 
