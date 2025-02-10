@@ -8,11 +8,11 @@
   <style>
     /* Admin 페이지 전용 스타일 */
     .orders-container {
-      width: 90%;         
-      max-width: 1800px;  
+      width: 90%;
+      max-width: 1800px;
       margin: 40px auto;
-      max-height: 250px;  
-      overflow-y: auto;   
+      max-height: 250px;
+      overflow-y: auto;
     }
     .orders-table {
       width: 100%;
@@ -41,31 +41,6 @@
     .orders-table tbody tr {
       background-color: #ffffff;
     }
-    /* 열 너비 지정 */
-    /* Headshot 열: 8번째 열 */
-    .orders-table th:nth-child(8),
-    .orders-table td:nth-child(8) {
-      width: 200px;
-    }
-    /* Invoice 열: 9번째 열 */
-    .orders-table th:nth-child(9),
-    .orders-table td:nth-child(9) {
-      width: 300px;
-    }
-
-    header.admin-header {
-      text-align: center;
-      padding: 20px 0;
-      background-color: #001f3f;
-      color: #fff;
-      margin-bottom: 20px;
-    }
-    header.admin-header h1 {
-      font-size: 2rem;
-      margin: 0;
-      font-weight: bold;
-    }
-
     .delete-button {
       background-color: red;
       color: #fff;
@@ -75,8 +50,7 @@
       padding: 6px 10px;
       border-radius: 4px;
     }
-
-    /* 스크롤이 필요한 셀: Introduction, Invoice */
+    /* 스크롤이 필요한 셀 */
     .scroll-cell {
       max-height: 100px;
       overflow-y: auto;
@@ -143,20 +117,12 @@
 
           // 5. Acting Reel (링크)
           const actingTd = document.createElement('td');
-          if (order.actingReel) {
-            actingTd.innerHTML = `<a href="${order.actingReel}" target="_blank">${order.actingReel}</a>`;
-          } else {
-            actingTd.textContent = "";
-          }
+          actingTd.innerHTML = order.actingReel ? `<a href="${order.actingReel}" target="_blank">${order.actingReel}</a>` : "";
           tr.appendChild(actingTd);
 
           // 6. Resume Link (링크)
           const resumeTd = document.createElement('td');
-          if (order.resumeLink) {
-            resumeTd.innerHTML = `<a href="${order.resumeLink}" target="_blank">${order.resumeLink}</a>`;
-          } else {
-            resumeTd.textContent = "";
-          }
+          resumeTd.innerHTML = order.resumeLink ? `<a href="${order.resumeLink}" target="_blank">${order.resumeLink}</a>` : "";
           tr.appendChild(resumeTd);
 
           // 7. Introduction (스크롤 가능)
@@ -187,8 +153,12 @@
           // 10. Payment / Delete
           const paymentTd = document.createElement('td');
 
-          if (order.expired) {
-            // 주문이 24시간 이상 경과한 경우
+          const timeSinceCreation = Date.now() - new Date(order.createdAt).getTime();
+          if (timeSinceCreation >= 48 * 60 * 60 * 1000) {
+            // 48시간이 지나면 자동 삭제
+            tr.remove();
+          } else if (timeSinceCreation >= 24 * 60 * 60 * 1000) {
+            // 24시간 이상 경과한 경우 "24hrs" 표시
             paymentTd.innerHTML = `<span style="color:red; font-weight:bold;">24hrs</span>`;
           } else {
             let finalCost = order.finalCost || "";
@@ -212,62 +182,35 @@
           tbody.appendChild(tr);
         });
 
-        // Payment 체크박스 이벤트
-        document.querySelectorAll(".payment-checkbox").forEach(checkbox => {
-          checkbox.addEventListener("change", e => {
-            const isPaid = e.target.checked;
-            const orderId = e.target.getAttribute("data-order-id");
-            fetch("/admin/update-payment", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ orderId, paid: isPaid })
-            })
-              .then(r => r.json())
-              .then(res => {
-                if (res.success) {
-                  console.log("Payment updated:", res.message);
-                } else {
-                  alert("Error updating payment status: " + (res.message || ""));
-                }
-              })
-              .catch(err => {
-                console.error("Error updating payment:", err);
-              });
-          });
-        });
-
         // Delete 버튼 이벤트
         document.querySelectorAll(".delete-button").forEach(deleteBtn => {
           deleteBtn.addEventListener("click", () => {
             const orderId = deleteBtn.getAttribute("data-order-id");
-            if (confirm(`Delete order #${orderId}? This will send a cancellation email.`)) {
-              fetch("/admin/delete-order", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ orderId })
+            fetch("/admin/delete-order", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ orderId })
+            })
+              .then(r => r.json())
+              .then(res => {
+                if (res.success) {
+                  alert(res.message);
+                  const row = deleteBtn.closest("tr");
+                  if (row) row.remove();
+                } else {
+                  alert("Error: " + (res.message || "Unknown error"));
+                }
               })
-                .then(r => r.json())
-                .then(res => {
-                  if (res.success) {
-                    alert(res.message);
-                    const row = deleteBtn.closest("tr");
-                    if (row) row.remove();
-                  } else {
-                    alert("Error: " + (res.message || "Unknown error"));
-                  }
-                })
-                .catch(err => {
-                  console.error(err);
-                  alert("Failed to delete order. See console.");
-                });
-            }
+              .catch(err => {
+                console.error(err);
+                alert("Failed to delete order. See console.");
+              });
           });
         });
       })
       .catch(error => {
         console.error("Error fetching orders:", error);
-        const tbody = document.getElementById('orders-tbody');
-        tbody.innerHTML = "<tr><td colspan='10'>Failed to load orders.</td></tr>";
+        document.getElementById('orders-tbody').innerHTML = "<tr><td colspan='10'>Failed to load orders.</td></tr>";
       });
   </script>
 </body>
