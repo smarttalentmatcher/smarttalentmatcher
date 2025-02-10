@@ -126,7 +126,7 @@ const transporter = nodemailer.createTransport({
 });
 
 // 타이머 관련 상수 및 변수 (메모리 기반)
-const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+const TWELVE_HOURS = 2 * 60 * 1000;
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 const reminderTimers = {};
 const autoCancelTimers = {};
