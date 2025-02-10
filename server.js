@@ -1,6 +1,10 @@
 //
 // server.js
 //
+
+// 환경변수 로드를 위해 dotenv 초기화 (환경변수를 .env 파일에서 불러옵니다)
+require('dotenv').config();
+
 const express = require("express");
 const nodemailer = require("nodemailer");
 const multer = require("multer");
@@ -12,7 +16,7 @@ const mongoose = require("mongoose"); // MongoDB 사용
 
 // 1) MongoDB 연결
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/test";
-mongoose.connect(MONGO_URI)
+mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => {
     console.log("✅ Connected to MongoDB Atlas");
   })
