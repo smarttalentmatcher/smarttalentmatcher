@@ -14,7 +14,7 @@ const juice = require("juice");
 const cors = require("cors");
 const mongoose = require("mongoose"); // MongoDB 사용
 
-// ★ 추가: Cloudinary 관련 패키지 불러오기
+// ★ Cloudinary 관련 패키지 불러오기
 const cloudinary = require("cloudinary").v2;
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
 
@@ -29,13 +29,15 @@ cloudinary.config({
 const headshotStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: "SmartTalentMatcher/headshots",
+    folder: "SmartTalentMatcher/headshots", // Cloudinary 내 저장 폴더
     allowed_formats: ["jpg", "jpeg", "png"]
   }
 });
 const uploadHeadshot = multer({ storage: headshotStorage });
 
+//
 // MongoDB 연결
+//
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/test";
 mongoose
   .connect(MONGO_URI)
@@ -66,7 +68,7 @@ const orderSchema = new mongoose.Schema({
   resumeLink: { type: String, default: "" },
   introduction: { type: String, default: "" },
   venmoId: { type: String, default: "" },
-  // headshot는 이제 Cloudinary URL를 저장합니다.
+  // headshot는 Cloudinary URL을 저장합니다.
   headshot: { type: String, default: "" },
   status: { type: String, default: "draft" } // "draft", "final", "canceled"
 });
@@ -96,11 +98,12 @@ function generateDateTimeOrderId() {
   return mm + dd + hh + min;
 }
 
-// Multer 설정 - 헤드샷 업로드는 Cloudinary를 사용하므로 uploadHeadshot 사용
-// resume 파일 등 다른 파일은 기존 local storage로 업로드할 수 있음:
+// Multer 설정  
+// → 헤드샷 업로드는 Cloudinary 미들웨어(uploadHeadshot) 사용  
+// (resume 등 다른 파일은 필요 시 별도 처리 가능)
 const uploadResume = multer({ dest: "uploads/resume/" });
 
-// 정적 파일 제공 (로컬 파일 접근용 - resume 등)
+// 정적 파일 제공 (로컬 파일 접근용 - resume 파일 등)
 app.use(express.static(__dirname));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
@@ -228,12 +231,11 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "resume.html"));
 });
 
-// ★ 수정: Test email 엔드포인트 (headshot URL 사용)
+// ★ 헤드샷 테스트 이메일 엔드포인트 (Cloudinary 업로드 사용)
 app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res) => {
   try {
     const { emailAddress, emailSubject, actingReel, resumeLink, introduction } = req.body;
     const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
-    // headshot URL는 req.file.path (Cloudinary가 업로드 후 반환한 URL)
     let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
     if (req.file) {
       emailHtml += `
@@ -256,7 +258,6 @@ app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res)
       to: emailAddress,
       subject: emailSubject,
       html: emailHtml
-      // headshot은 HTML에 URL로 포함하므로 별도 attachment 필요 없음.
     };
     console.log("Sending test email to:", emailAddress);
     const info = await transporter.sendMail(mailOptions);
@@ -308,10 +309,10 @@ app.post("/submit-order", async (req, res) => {
 });
 
 /** (B) /update-order → resume.html (파일 업로드, draft 갱신)
- *  MongoDB에서 해당 draft 주문을 찾아 업데이트함.
- *  ★ 수정: 헤드샷 업로드는 Cloudinary를 통해 업로드되어 req.file.path에 URL이 있음.
+ *  → MongoDB에서 해당 draft 주문을 찾아 업데이트함.
+ *  ★ 수정: 헤드샷 업로드 시 Cloudinary를 사용하도록 uploadHeadshot 미들웨어 적용
  */
-app.post("/update-order", uploadResume.single("headshot"), async (req, res) => {
+app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) => {
   try {
     const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice } = req.body;
     const order = await Order.findOne({ orderId, status: "draft" });
@@ -326,9 +327,8 @@ app.post("/update-order", uploadResume.single("headshot"), async (req, res) => {
     if (resumeLink !== undefined) order.resumeLink = resumeLink;
     if (introduction !== undefined) order.introduction = introduction;
     if (invoice && invoice.trim() !== "") order.invoice = invoice;
-    // 만약 헤드샷 파일이 업로드되면, 기존 local 업로드가 아닌 Cloudinary URL 사용
+    // 헤드샷 파일이 업로드되면, Cloudinary URL (req.file.path) 사용
     if (req.file) {
-      // req.file.path는 Cloudinary에서 반환한 URL
       order.headshot = req.file.path;
     }
 
@@ -404,7 +404,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
     let adminEmailHtml = `<div style="font-family: Arial, sans-serif;">`;
     if (draftOrder.headshot) {
-      // ★ 수정: 관리자 이메일에서도 헤드샷은 URL을 사용하여 보여줍니다.
+      // 관리자 이메일에서 헤드샷 URL을 사용
       adminEmailHtml += `
         <div>
           <img src="${draftOrder.headshot}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
@@ -424,7 +424,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       to: "letsspeak01@naver.com",
       subject: emailSubject || "[No Subject Provided]",
       html: adminEmailHtml
-      // 헤드샷은 HTML 내에 URL을 사용하므로 별도 attachment 생략
     };
     const adminInfo = await transporter.sendMail(adminMailOptions);
     console.log("✅ Admin email sent:", adminInfo.response);
