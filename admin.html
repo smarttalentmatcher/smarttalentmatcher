@@ -126,7 +126,7 @@
         const is3WeeksOld = timeSinceCreation >= 21 * 24 * 60 * 60 * 1000;
         const isPaid = order.paid;
         
-        // 주문 정보 추가
+        // 주문 정보 추가 (특정 필드만 사용)
         ["orderId", "venmoId", "emailAddress", "emailSubject", "actingReel", "resumeLink", "introduction"].forEach(field => {
           const td = document.createElement('td');
           td.textContent = order[field] || "";
@@ -175,17 +175,17 @@
             <button class="delete-button" data-order-id="${order.orderId}">Delete</button>
           `;
         }
-
         tr.appendChild(paymentTd);
         tbody.appendChild(tr);
       });
     }
 
-    // 검색 기능
+    // 검색 기능 (특정 필드만 검사)
     document.getElementById("search-box").addEventListener("input", function () {
       const searchTerm = this.value.toLowerCase();
+      const fieldsToSearch = ['orderId', 'venmoId', 'emailAddress', 'emailSubject', 'actingReel', 'resumeLink', 'introduction'];
       const filteredOrders = ordersData.filter(order =>
-        Object.values(order).some(value => value && value.toString().toLowerCase().includes(searchTerm))
+        fieldsToSearch.some(field => order[field] && order[field].toString().toLowerCase().includes(searchTerm))
       );
       renderOrders(filteredOrders);
     });
