@@ -14,7 +14,28 @@ const juice = require("juice");
 const cors = require("cors");
 const mongoose = require("mongoose"); // MongoDB 사용
 
-// 1) MongoDB 연결
+// ★ 추가: Cloudinary 관련 패키지 불러오기
+const cloudinary = require("cloudinary").v2;
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
+
+// ★ Cloudinary 설정
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// ★ Cloudinary Storage 설정 (헤드샷 전용)
+const headshotStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "SmartTalentMatcher/headshots",
+    allowed_formats: ["jpg", "jpeg", "png"]
+  }
+});
+const uploadHeadshot = multer({ storage: headshotStorage });
+
+// MongoDB 연결
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/test";
 mongoose
   .connect(MONGO_URI)
@@ -26,7 +47,7 @@ mongoose
   });
 
 /* ─────────────────────────────────────
-   [추가] Mongoose Order 모델 정의  
+   Mongoose Order 모델 정의  
    주문 데이터를 DB에 저장하기 위한 스키마를 정의합니다.
 ──────────────────────────────────────── */
 const orderSchema = new mongoose.Schema({
@@ -45,21 +66,11 @@ const orderSchema = new mongoose.Schema({
   resumeLink: { type: String, default: "" },
   introduction: { type: String, default: "" },
   venmoId: { type: String, default: "" },
+  // headshot는 이제 Cloudinary URL를 저장합니다.
   headshot: { type: String, default: "" },
   status: { type: String, default: "draft" } // "draft", "final", "canceled"
 });
 const Order = mongoose.model("Order", orderSchema);
-
-/* ─────────────────────────────────────
-   기존 로컬 파일/메모리 주문 관련 변수 및 함수는
-   이제 MongoDB로 대체하므로 삭제하거나 사용하지 않습니다.
-──────────────────────────────────────── */
-// const DATA_FILE = path.join(__dirname, "ordersData.json");
-// let draftOrders = [];
-// let finalOrders = [];
-
-// function loadOrdersData() { … }
-// function saveOrdersData() { … }
 
 //
 // Express 앱 생성
@@ -85,11 +96,11 @@ function generateDateTimeOrderId() {
   return mm + dd + hh + min;
 }
 
-// Multer 설정
-const upload = multer({ dest: "uploads/" });
+// Multer 설정 - 헤드샷 업로드는 Cloudinary를 사용하므로 uploadHeadshot 사용
+// resume 파일 등 다른 파일은 기존 local storage로 업로드할 수 있음:
 const uploadResume = multer({ dest: "uploads/resume/" });
 
-// 정적 파일 제공
+// 정적 파일 제공 (로컬 파일 접근용 - resume 등)
 app.use(express.static(__dirname));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
@@ -106,13 +117,13 @@ const transporter = nodemailer.createTransport({
   port: 465,
   secure: true,
   auth: {
-    user: "letsspeak01@naver.com", // 본인 계정
-    pass: "ESLUTHE53P6L" // 앱 비밀번호 또는 실제 비밀번호
+    user: "letsspeak01@naver.com",
+    pass: "ESLUTHE53P6L"
   }
 });
 
 // 타이머 관련 상수 및 변수 (메모리 기반)
-const TWELVE_HOURS = 2 * 60 * 1000;
+const TWELVE_HOURS = 2 * 60 * 1000; // 테스트용 2분
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 const reminderTimers = {};
 const autoCancelTimers = {};
@@ -126,7 +137,7 @@ function scheduleReminder(order) {
     }
     const timeoutId = setTimeout(() => sendReminder(order), timeLeft);
     reminderTimers[order.orderId] = timeoutId;
-    console.log(`⏰ Scheduled 12h reminder for #${order.orderId} in ${Math.round(timeLeft / 1000)}s`);
+    console.log(`⏰ Scheduled reminder for #${order.orderId} in ${Math.round(timeLeft / 1000)}s`);
   }
 }
 
@@ -139,28 +150,23 @@ function scheduleAutoCancel(order) {
     }
     const timeoutId = setTimeout(() => autoCancelOrder(order), timeLeft);
     autoCancelTimers[order.orderId] = timeoutId;
-    console.log(`⏰ Scheduled 24h auto-cancel for #${order.orderId} in ${Math.round(timeLeft / 1000)}s`);
+    console.log(`⏰ Scheduled auto-cancel for #${order.orderId} in ${Math.round(timeLeft / 1000)}s`);
   }
 }
 
 function sendReminder(order) {
   if (order.paid || order.reminderSent) return;
 
-  // MongoDB에서 주문을 찾습니다.
   Order.findOne({ orderId: order.orderId, status: order.status })
     .then((savedOrder) => {
       if (!savedOrder) {
         console.error(`❌ Order #${order.orderId} not found in DB.`);
         return;
       }
-
-      // email.html 템플릿 읽기
       const templatePath = path.join(__dirname, "email.html");
       let reminderEmailHtml = fs.existsSync(templatePath)
         ? fs.readFileSync(templatePath, "utf-8")
         : "<html><body><p>Invoice details not available.</p></body></html>";
-
-      // 템플릿 내 {{invoice}} 치환
       reminderEmailHtml = reminderEmailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
 
       const mailOptions = {
@@ -204,7 +210,6 @@ function autoCancelOrder(order) {
     .sendMail(mailOptions)
     .then((info) => {
       console.log(`🚨 Auto-cancel email sent for #${order.orderId}:`, info.response);
-      // DB에서 해당 주문을 삭제하거나 상태를 변경할 수 있습니다.
       Order.deleteOne({ orderId: order.orderId, status: order.status })
         .then(() => console.log(`Order #${order.orderId} removed from DB.`))
         .catch((err) => console.error("❌ Error deleting order:", err));
@@ -223,17 +228,17 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "resume.html"));
 });
 
-// Test email - Headshot → Reel → Resume → Intro
-const uploadHeadshot = multer({ dest: "uploads/" });
+// ★ 수정: Test email 엔드포인트 (headshot URL 사용)
 app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res) => {
   try {
     const { emailAddress, emailSubject, actingReel, resumeLink, introduction } = req.body;
     const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
+    // headshot URL는 req.file.path (Cloudinary가 업로드 후 반환한 URL)
     let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
     if (req.file) {
       emailHtml += `
         <div>
-          <img src="cid:headshotImage" style="max-width:600px; width:100%; height:auto;" />
+          <img src="${req.file.path}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
         </div>
         <br>
       `;
@@ -250,16 +255,8 @@ app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res)
       from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
       to: emailAddress,
       subject: emailSubject,
-      html: emailHtml,
-      attachments: req.file
-        ? [
-            {
-              filename: req.file.originalname,
-              path: req.file.path,
-              cid: "headshotImage"
-            }
-          ]
-        : []
+      html: emailHtml
+      // headshot은 HTML에 URL로 포함하므로 별도 attachment 필요 없음.
     };
     console.log("Sending test email to:", emailAddress);
     const info = await transporter.sendMail(mailOptions);
@@ -272,7 +269,7 @@ app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res)
 });
 
 /** (A) /submit-order → choose.html (드래프트 주문 생성)
- *  → 주문 데이터를 MongoDB에 저장하도록 수정함.
+ *  주문 데이터를 MongoDB에 저장하도록 수정함.
  */
 app.post("/submit-order", async (req, res) => {
   try {
@@ -311,7 +308,8 @@ app.post("/submit-order", async (req, res) => {
 });
 
 /** (B) /update-order → resume.html (파일 업로드, draft 갱신)
- *  → MongoDB에서 해당 draft 주문을 찾아 업데이트함.
+ *  MongoDB에서 해당 draft 주문을 찾아 업데이트함.
+ *  ★ 수정: 헤드샷 업로드는 Cloudinary를 통해 업로드되어 req.file.path에 URL이 있음.
  */
 app.post("/update-order", uploadResume.single("headshot"), async (req, res) => {
   try {
@@ -327,10 +325,11 @@ app.post("/update-order", uploadResume.single("headshot"), async (req, res) => {
     if (actingReel !== undefined) order.actingReel = actingReel;
     if (resumeLink !== undefined) order.resumeLink = resumeLink;
     if (introduction !== undefined) order.introduction = introduction;
-    // invoice 업데이트(필요시)
     if (invoice && invoice.trim() !== "") order.invoice = invoice;
+    // 만약 헤드샷 파일이 업로드되면, 기존 local 업로드가 아닌 Cloudinary URL 사용
     if (req.file) {
-      order.headshot = `/uploads/resume/${req.file.filename}`;
+      // req.file.path는 Cloudinary에서 반환한 URL
+      order.headshot = req.file.path;
     }
 
     await order.save();
@@ -347,7 +346,7 @@ app.post("/update-order", uploadResume.single("headshot"), async (req, res) => {
 });
 
 /** (C) /final-submit → submit.html (최종 제출)
- *  → draft 주문을 final 주문으로 전환하고, 관련 이메일 및 타이머를 설정함.
+ *  draft 주문을 final 주문으로 전환하고, 관련 이메일 및 타이머를 설정함.
  */
 app.post("/final-submit", multer().none(), async (req, res) => {
   try {
@@ -405,9 +404,10 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
     let adminEmailHtml = `<div style="font-family: Arial, sans-serif;">`;
     if (draftOrder.headshot) {
+      // ★ 수정: 관리자 이메일에서도 헤드샷은 URL을 사용하여 보여줍니다.
       adminEmailHtml += `
         <div>
-          <img src="cid:headshotImage" style="max-width:600px; width:100%; height:auto;" />
+          <img src="${draftOrder.headshot}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
         </div>
         <br>
       `;
@@ -423,16 +423,8 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
       to: "letsspeak01@naver.com",
       subject: emailSubject || "[No Subject Provided]",
-      html: adminEmailHtml,
-      attachments: draftOrder.headshot
-        ? [
-            {
-              filename: path.basename(draftOrder.headshot),
-              path: path.join(__dirname, draftOrder.headshot),
-              cid: "headshotImage"
-            }
-          ]
-        : []
+      html: adminEmailHtml
+      // 헤드샷은 HTML 내에 URL을 사용하므로 별도 attachment 생략
     };
     const adminInfo = await transporter.sendMail(adminMailOptions);
     console.log("✅ Admin email sent:", adminInfo.response);
@@ -532,7 +524,7 @@ app.post("/admin/update-payment", async (req, res) => {
 
 // 3) 서버 실행
 app.listen(PORT, () => {
-  console.log(`✅ Server running at http://localhost:${PORT}`);
+  console.log(`✅ Server running at ${process.env.SERVER_URL || "http://localhost:" + PORT}`);
   // (참고) 서버 재시작 시 DB에 저장된 주문들에 대해 타이머 등록은 필요하면 추가 구현
 });
 
