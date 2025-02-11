@@ -386,45 +386,52 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     console.log("Final submit received:", req.body);
 
     // 기존 최종 주문 취소 (해당 이메일의 final 주문들) 및 삭제 (MongoDB + Cloudinary)
-    const oldFinals = await Order.find({ emailAddress, status: "final" });
-    if (oldFinals.length > 0) {
-      console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Deleting them...`);
-      for (const oldOrder of oldFinals) {
-        // 취소 이메일 전송
-        const cancelHtml = `
-          <div style="font-family: Arial, sans-serif;">
-            <p>Hello,</p>
-            <p>Your previous invoice (Order #${oldOrder.orderId}) has been <strong>canceled</strong> because a new order was submitted.</p>
-            <p>Only the new invoice will remain valid. If you have any questions, please contact us.</p>
-            <br>
-            <p>Regards,<br>Smart Talent Matcher</p>
-          </div>
-        `;
-        await transporter.sendMail({
-          from: `"Smart Talent Matcher" <${process.env.NODemailer_USER || "letsspeak01@naver.com"}>`,
-          to: emailAddress,
-          subject: "[Smart Talent Matcher] Previous Invoice Canceled",
-          html: cancelHtml
-        });
-        console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
+// 단, 기존 주문 중 paid가 false인 주문만 삭제하고, paid가 true인 주문은 유지합니다.
+const oldFinals = await Order.find({ emailAddress, status: "final" });
+if (oldFinals.length > 0) {
+  // Unpaid인 주문만 필터링
+  const ordersToDelete = oldFinals.filter(order => !order.paid);
+  if (ordersToDelete.length > 0) {
+    console.log(`Found ${ordersToDelete.length} old final orders for ${emailAddress} that are unpaid. Deleting them...`);
+    for (const oldOrder of ordersToDelete) {
+      // 취소 이메일 전송
+      const cancelHtml = `
+        <div style="font-family: Arial, sans-serif;">
+          <p>Hello,</p>
+          <p>Your previous invoice (Order #${oldOrder.orderId}) has been <strong>canceled</strong> because a new order was submitted.</p>
+          <p>Only the new invoice will remain valid. If you have any questions, please contact us.</p>
+          <br>
+          <p>Regards,<br>Smart Talent Matcher</p>
+        </div>
+      `;
+      await transporter.sendMail({
+        from: `"Smart Talent Matcher" <${process.env.NODemailer_USER || "letsspeak01@naver.com"}>`,
+        to: emailAddress,
+        subject: "[Smart Talent Matcher] Previous Invoice Canceled",
+        html: cancelHtml
+      });
+      console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
 
-        // Cloudinary에서 헤드샷 삭제 (이미지 존재하는 경우)
-        if (oldOrder.headshot) {
-          const parts = oldOrder.headshot.split('/');
-          const uploadIndex = parts.findIndex(part => part === "upload");
-          if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
-            const fileNameWithExtension = parts.slice(uploadIndex + 2).join('/'); 
-            const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, ""); // 확장자 제거
-            console.log("Deleting Cloudinary resource with public_id:", publicId);
-            await cloudinary.uploader.destroy(publicId);
-          }
+      // Cloudinary에서 헤드샷 삭제 (있을 경우)
+      if (oldOrder.headshot) {
+        const parts = oldOrder.headshot.split('/');
+        const uploadIndex = parts.findIndex(part => part === "upload");
+        if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
+          const fileNameWithExtension = parts.slice(uploadIndex + 2).join('/');
+          const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, ""); // 확장자 제거
+          console.log("Deleting Cloudinary resource with public_id:", publicId);
+          await cloudinary.uploader.destroy(publicId);
         }
-
-        // MongoDB에서 기존 주문 삭제
-        await Order.deleteOne({ _id: oldOrder._id });
-        console.log(`Deleted old final order #${oldOrder.orderId} from MongoDB.`);
       }
+
+      // MongoDB에서 기존 주문 삭제
+      await Order.deleteOne({ _id: oldOrder._id });
+      console.log(`Deleted old final order #${oldOrder.orderId} from MongoDB.`);
     }
+  } else {
+    console.log(`No unpaid final orders found for ${emailAddress}. Existing paid final orders remain intact.`);
+  }
+}
     // draft 주문을 찾기
     const draftOrder = await Order.findOne({ orderId, status: "draft" });
     if (!draftOrder) {
