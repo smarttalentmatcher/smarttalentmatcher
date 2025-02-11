@@ -591,7 +591,6 @@ app.post("/admin/update-payment", async (req, res) => {
   try {
     const { orderId, paid } = req.body;
     const order = await Order.findOne({ orderId, status: "final" });
-
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
@@ -601,17 +600,10 @@ app.post("/admin/update-payment", async (req, res) => {
     await order.save();
     console.log(`✅ Order #${orderId} payment status updated to ${order.paid}`);
 
-    // ✅ 결제가 완료되면 기존과 동일한 방식으로 서비스 시작 이메일 발송
+    // ✅ 결제가 완료되면, email.html 파일을 사용하지 않고, 아래 템플릿만 사용하여 서비스 시작 이메일 발송
     if (order.paid) {
-      const templatePath = path.join(__dirname, "email.html");
-      let emailHtml = fs.existsSync(templatePath)
-        ? fs.readFileSync(templatePath, "utf-8")
-        : "<html><body><p>Service start confirmation details not available.</p></body></html>";
-
-      // ✅ 이메일 본문 업데이트
-      emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, order.invoice);
-      emailHtml += `
-        <div style="font-size: 1.2rem; font-weight: bold; text-align: center; margin-top: 20px;">
+      let emailHtml = `
+        <div style="font-size: 1.2rem; font-weight: bold;  margin-top: 20px;">
           🎉 Your service has started! 🎉
         </div>
         <p>Dear Customer,</p>
@@ -629,7 +621,6 @@ app.post("/admin/update-payment", async (req, res) => {
         subject: "[Smart Talent Matcher] Your Service Has Started!",
         html: emailHtml
       });
-
       console.log(`📩 Service start email sent to ${order.emailAddress}`);
 
       // ✅ SendGrid 서버에 대량 이메일 캠페인 시작 요청
@@ -638,7 +629,6 @@ app.post("/admin/update-payment", async (req, res) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderId, emailAddress: order.emailAddress })
       });
-
       const sendgridResult = await sendgridResponse.json();
       if (sendgridResult.success) {
         console.log(`✅ Email campaign started successfully for Order #${orderId}`);
@@ -648,7 +638,6 @@ app.post("/admin/update-payment", async (req, res) => {
     }
 
     res.json({ success: true, message: "Payment status updated, service start email sent, and email campaign started if paid." });
-
   } catch (err) {
     console.error("❌ Error updating payment, sending email, or starting campaign:", err);
     res.status(500).json({ success: false, message: "Database error, email sending failed, or email campaign failed." });
