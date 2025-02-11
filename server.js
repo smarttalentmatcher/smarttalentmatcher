@@ -655,6 +655,28 @@ app.post("/admin/update-payment", async (req, res) => {
   }
 });
 
+/** 
+ * 새로 추가된 엔드포인트: /admin/toggle-payment
+ * - GET 요청을 통해 쿼리 스트링으로 orderId와 paid (true/false)를 전달하면
+ *   해당 주문의 결제 상태를 업데이트합니다.
+ */
+app.get("/admin/toggle-payment", async (req, res) => {
+  try {
+    const { orderId, paid } = req.query;
+    const order = await Order.findOne({ orderId, status: "final" });
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    order.paid = (paid === "true");
+    await order.save();
+    console.log(`✅ Order #${orderId} payment toggled to ${order.paid}`);
+    res.json({ success: true, message: `Order #${orderId} updated to paid: ${order.paid}` });
+  } catch (err) {
+    console.error("❌ Error toggling payment:", err);
+    res.status(500).json({ success: false, message: "Error updating payment status" });
+  }
+});
+
 // ================================
 // Cleanup Function: Remove non-final orders on startup
 // ================================

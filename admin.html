@@ -53,7 +53,7 @@
       text-align: center;
       margin-bottom: 20px;
     }
-    .filter-container select, .filter-container input {
+    .filter-container select {
       padding: 8px;
       margin: 5px;
       font-size: 1rem;
@@ -66,9 +66,8 @@
     <h1>Admin Panel - Orders</h1>
   </header>
 
-  <!-- 검색 및 필터 -->
+  <!-- 필터 (검색창 제거됨) -->
   <div class="filter-container">
-    <input type="text" id="search-box" placeholder="Search orders...">
     <select id="filter-status">
       <option value="all">All Orders</option>
       <option value="expired">24hrs Passed</option>
@@ -179,16 +178,6 @@
         tbody.appendChild(tr);
       });
     }
-
-    // 검색 기능 (특정 필드만 검사)
-    document.getElementById("search-box").addEventListener("input", function () {
-      const searchTerm = this.value.toLowerCase();
-      const fieldsToSearch = ['orderId', 'venmoId', 'emailAddress', 'emailSubject', 'actingReel', 'resumeLink', 'introduction'];
-      const filteredOrders = ordersData.filter(order =>
-        fieldsToSearch.some(field => order[field] && order[field].toString().toLowerCase().includes(searchTerm))
-      );
-      renderOrders(filteredOrders);
-    });
 
     // 필터 기능
     document.getElementById("filter-status").addEventListener("change", function () {
