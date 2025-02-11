@@ -608,10 +608,13 @@ app.post("/admin/update-payment", async (req, res) => {
         </div>
         <br>
         <p>Dear Customer,</p>
+        <BR><BR>
         <p>We are pleased to inform you that your payment has been successfully processed, and your service has now begun.</p>
+        <BR>
         <p>Once all emails corresponding to your selected region have been sent, you will receive a confirmation email.</p>
+        <BR>
         <p>Thank you for trusting our service. We are committed to helping you find the right people.</p>
-        <br>
+        <br><BR>
         <p>Best Regards,</p>
         <p><strong>Smart Talent Matcher Team</strong></p>
       `;
