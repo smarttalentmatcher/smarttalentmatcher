@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <title>Admin Panel - Orders</title>
   <link rel="stylesheet" href="style.css">
-
   <style>
     .orders-container {
       width: 90%;
@@ -45,9 +44,11 @@
       padding: 6px 10px;
       border-radius: 4px;
     }
+    /* Invoice 셀의 가로 폭을 고정하고 넘치는 경우 가로 스크롤 생성 */
     .scroll-cell {
-      max-height: 100px;
-      overflow-y: auto;
+      width: 300px;           /* 가로 폭을 300px로 고정 (원하는 값으로 변경 가능) */
+      overflow-x: auto;       /* 가로로 넘치는 내용은 스크롤 처리 */
+      word-wrap: break-word;
     }
     .filter-container {
       text-align: center;
@@ -60,7 +61,6 @@
     }
   </style>
 </head>
-
 <body>
   <header class="admin-header">
     <h1>Admin Panel - Orders</h1>
@@ -145,7 +145,7 @@
         }
         tr.appendChild(headshotTd);
 
-        // Invoice
+        // Invoice (가로 폭 고정 + 넘치면 가로 스크롤)
         const invoiceTd = document.createElement('td');
         invoiceTd.classList.add("scroll-cell");
         invoiceTd.innerHTML = order.invoice || "";
@@ -155,6 +155,7 @@
         const paymentTd = document.createElement('td');
         if (timeSinceCreation >= 48 * 60 * 60 * 1000) {
           tr.remove(); // 48시간 지난 주문 삭제
+          return; // 다음 주문으로 넘어감
         } else if (isExpired) {
           paymentTd.innerHTML = `<span style="color:red; font-weight:bold;">24hrs</span>`;
         } else {
@@ -176,6 +177,29 @@
         }
         tr.appendChild(paymentTd);
         tbody.appendChild(tr);
+      });
+      
+      // 체크박스 이벤트 핸들러 연결
+      attachPaymentCheckboxHandlers();
+    }
+
+    function attachPaymentCheckboxHandlers() {
+      const checkboxes = document.querySelectorAll('.payment-checkbox');
+      checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+          const orderId = this.dataset.orderId;
+          const paid = this.checked;
+          // 체크박스 변경 시 GET 요청으로 결제 상태 업데이트
+          fetch(`/admin/toggle-payment?orderId=${orderId}&paid=${paid}`, { method: 'GET' })
+            .then(response => response.json())
+            .then(data => {
+              console.log(data.message);
+              // 필요 시 UI 갱신 작업 추가 가능
+            })
+            .catch(error => {
+              console.error("Error updating payment:", error);
+            });
+        });
       });
     }
 
