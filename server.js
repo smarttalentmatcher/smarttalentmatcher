@@ -606,7 +606,7 @@ app.post("/admin/update-payment", async (req, res) => {
         <div style="font-size: 1.2rem; font-weight: bold;  margin-top: 20px;">
           🎉 Your service has started! 🎉
         </div>
-        <br>
+        <br><BR>
         <p>Dear Customer,</p>
         <BR><BR>
         <p>We are pleased to inform you that your payment has been successfully processed, and your service has now begun.</p>
