@@ -607,7 +607,7 @@ app.post("/admin/update-payment", async (req, res) => {
           🎉 Your service has started! 🎉
         </div>
         <br><BR>
-        <p>strong>Dear Customer,</strong></p>
+        <p><strong>Dear Customer,</strong></p>
         <BR><BR>
         <p>We are pleased to inform you that your payment has been successfully processed, and your service has now begun.</p>
         <BR>
