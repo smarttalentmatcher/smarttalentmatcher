@@ -18,8 +18,8 @@
       margin: 0 auto;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
       border-radius: 8px;
-      overflow: hidden;
-      table-layout: fixed;
+      /* table-layout: fixed; */ 
+      /* table-layout을 auto로 두면 colgroup의 너비 지정이 적용됩니다. */
     }
     .orders-table th, .orders-table td {
       padding: 10px 8px;
@@ -44,10 +44,9 @@
       padding: 6px 10px;
       border-radius: 4px;
     }
-    /* Invoice 셀의 가로 폭을 고정하고 넘치는 경우 가로 스크롤 생성 */
+    /* Invoice 셀의 내용이 넘칠 경우 가로 스크롤 생성 */
     .scroll-cell {
-      width: 400px;           /* 원하는 가로 폭으로 고정 (여기서는 400px) */
-      overflow-x: auto;       /* 내용이 넘칠 경우 가로 스크롤 생성 */
+      overflow-x: auto;
       word-wrap: break-word;
     }
     .filter-container {
@@ -79,6 +78,19 @@
 
   <div class="orders-container">
     <table class="orders-table">
+      <!-- colgroup을 사용하여 각 열의 너비 지정 (invoice 열은 9번째 열) -->
+      <colgroup>
+        <col style="width: auto;">  <!-- Order ID -->
+        <col style="width: auto;">  <!-- Venmo Account -->
+        <col style="width: auto;">  <!-- Email Address -->
+        <col style="width: auto;">  <!-- Email Subject -->
+        <col style="width: auto;">  <!-- Acting Reel -->
+        <col style="width: auto;">  <!-- Resume Link -->
+        <col style="width: auto;">  <!-- Introduction -->
+        <col style="width: auto;">  <!-- Headshot -->
+        <col style="width: 400px;">   <!-- Invoice: 고정 너비 400px -->
+        <col style="width: auto;">  <!-- Payment / Delete -->
+      </colgroup>
       <thead>
         <tr>
           <th>Order ID</th>
@@ -145,7 +157,7 @@
         }
         tr.appendChild(headshotTd);
 
-        // Invoice (가로 폭 고정 + 넘치면 가로 스크롤)
+        // Invoice (가로 폭은 colgroup에 의해 400px 고정, 넘치면 가로 스크롤)
         const invoiceTd = document.createElement('td');
         invoiceTd.classList.add("scroll-cell");
         invoiceTd.innerHTML = order.invoice || "";
