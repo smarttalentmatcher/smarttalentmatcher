@@ -77,28 +77,18 @@
 
   <div class="orders-container">
     <table class="orders-table">
-      <!-- colgroup 적용: 각 열의 너비를 지정 -->
+      <!-- colgroup을 사용하여 각 열의 너비 지정 -->
       <colgroup>
-        <!-- 1. Order ID: 200px -->
-        <col style="width: 200px;">
-        <!-- 2. Venmo Account: 200px -->
-        <col style="width: 200px;">
-        <!-- 3. Email Address: 200px -->
-        <col style="width: 200px;">
-        <!-- 4. Email Subject: 200px -->
-        <col style="width: 200px;">
-        <!-- 5. Acting Reel: 200px -->
-        <col style="width: 200px;">
-        <!-- 6. Resume Link: 200px -->
-        <col style="width: 200px;">
-        <!-- 7. Introduction: 200px -->
-        <col style="width: 200px;">
-        <!-- 8. Headshot: 200px -->
-        <col style="width: 200px;">
-        <!-- 9. Invoice: 400px (나머지 열과 다르게 더 넓게) -->
-        <col style="width: 400px;">
-        <!-- 10. Payment / Delete: 200px -->
-        <col style="width: 200px;">
+        <col style="width: 100px;">  <!-- Order ID -->
+        <col style="width: 100px;">  <!-- Venmo Account -->
+        <col style="width: 100px;">  <!-- Email Address -->
+        <col style="width: 100px;">  <!-- Email Subject -->
+        <col style="width: 100px;">  <!-- Acting Reel -->
+        <col style="width: 100px;">  <!-- Resume Link -->
+        <col style="width: 100px;">  <!-- Introduction -->
+        <col style="width: 100px;">  <!-- Headshot -->
+        <col style="width: 200px;">  <!-- Invoice -->
+        <col style="width: 100px;">  <!-- Payment / Delete -->
       </colgroup>
       <thead>
         <tr>
@@ -143,6 +133,7 @@
         const tr = document.createElement('tr');
         const timeSinceCreation = Date.now() - new Date(order.createdAt).getTime();
         const isExpired = timeSinceCreation >= 24 * 60 * 60 * 1000;
+        
         // 주문 정보 추가 (특정 필드만 사용)
         ["orderId", "venmoId", "emailAddress", "emailSubject", "actingReel", "resumeLink", "introduction"].forEach(field => {
           const td = document.createElement('td');
@@ -163,7 +154,7 @@
         }
         tr.appendChild(headshotTd);
 
-        // Invoice (가로 폭은 colgroup에 의해 400px 고정, 내용이 넘치면 가로 스크롤)
+        // Invoice (colgroup에 의해 200px 고정, 내용이 넘치면 가로 스크롤)
         const invoiceTd = document.createElement('td');
         invoiceTd.classList.add("scroll-cell");
         invoiceTd.innerHTML = order.invoice || "";
@@ -212,7 +203,7 @@
             .then(response => response.json())
             .then(data => {
               console.log(data.message);
-              // 만약 결제 상태가 true라면, update-payment 엔드포인트를 호출하여 이메일 발송 및 추가 처리를 진행
+              // 결제 상태가 true이면 update-payment 엔드포인트 호출 (이메일 발송 등)
               if (paid) {
                 fetch('/admin/update-payment', {
                   method: 'POST',
