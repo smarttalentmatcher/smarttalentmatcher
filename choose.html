@@ -5,7 +5,7 @@
   <title>Choose Your Target Locations</title>
   <link rel="stylesheet" href="style.css">
   <style>
-    /* (1) 표준 테이블 스타일 */
+    /* 테이블 및 영수증 관련 스타일 */
     table {
       border-collapse: collapse;
       margin: 0 auto;
@@ -16,8 +16,40 @@
       padding: 8px;
       text-align: center;
     }
+    .receipt-line {
+      display: flex;
+      justify-content: space-between;
+      margin: 4px 0;
+    }
+    .receipt-desc {
+      text-align: left;
+    }
+    .receipt-price {
+      text-align: right;
+      margin-left: 10px;
+    }
+    .cost-summary {
+      max-width: 600px;
+      margin: 20px auto;
+    }
+    .summary-line {
+      display: flex;
+      justify-content: space-between;
+      margin: 4px 0;
+    }
+    .final-cost {
+      font-weight: bold;
+      font-size: 1.1em;
+      margin-top: 10px;
+    }
+    .discount-note {
+      font-size: 0.85em;
+      color: #666;
+      display: block;
+      margin-top: 2px;
+    }
 
-    /* choose.html 전반 스타일(생략) */
+    /* 추가 스타일 */
     header.choose-header {
       text-align: center;
       padding: 20px 0;
@@ -31,7 +63,7 @@
       height: 40px;
       line-height: 40px;
       border-radius: 50%;
-      background-color: #FF69B4; 
+      background-color: #FF69B4; /* 핫핑크 */
       color: #fff;
       font-weight: bold;
       text-align: center;
@@ -39,6 +71,8 @@
       font-size: 1.2rem;
       vertical-align: middle;
     }
+
+    /* 그룹 헤더 높이 감소 (index.html과 동일) */
     .group-header-cell {
       background-color: #001f3f;
       color: #fff;
@@ -46,22 +80,9 @@
       font-size: 1.1rem;
       font-weight: 600;
       border: 4px solid #ccc;
-      padding: 2px 5px;
-      line-height: 1.2;
+      padding: 2px 5px;   /* 줄여서 높이 조절 */
+      line-height: 1.2;  /* 줄여서 높이 조절 */
       white-space: nowrap;
-    }
-
-    /* (2) 인보이스 테이블(.cost-summary-table) 스타일 – 이메일 클라이언트에서는 인라인 스타일로 덮어씁니다. */
-    .cost-summary-table {
-      width: 100%;
-      border-collapse: collapse;
-      background-color: #f1f1f1; /* 부모 배경 */
-      color: #000; /* 검정색 강제 */
-    }
-    .cost-summary-table td {
-      padding: 6px;
-      vertical-align: middle;
-      border: none;
     }
   </style>
 </head>
@@ -232,74 +253,151 @@
     <em>***We grouped countries that share the same entertainment industry, organizing them by market rather than by nation.</em>
   </p>
 
-  <!-- 인보이스: 테이블 구조(변경 없음) – 인라인 스타일로 확실하게 픽스 -->
-  <section class="cost-summary" style="max-width:900px; margin:20px auto; padding:15px; background-color:#f1f1f1; border-radius:8px; font-size:1.1rem; line-height:1.5; color:#000;">
-    <table class="cost-summary-table" style="width:100%; border-collapse:collapse; background-color:#f1f1f1; color:#000;">
-      <!-- 선택된 항목들 -->
-      <tr>
-        <td class="invoice-label" align="left" style="width:50%; text-align: left; font-size:1rem; color:#000; padding:6px;">
-          <div id="selected-names"></div>
-        </td>
-        <td class="invoice-value" align="right" style="width:50%; text-align: right; font-size:1rem; color:#000; text-decoration:none; pointer-events:none; white-space:nowrap; padding:6px;">
-          <div id="selected-costs">0</div>
-        </td>
-      </tr>
+  <!-- 비용 요약 및 영수증 영역 (Invoice) -->
+  <section class="cost-summary" style="
+    max-width:900px;
+    margin:20px auto;
+    padding:15px;
+    background-color:#f1f1f1;
+    border-radius:8px;
+    font-size:1.1rem;
+    line-height:1.5;
+    color:#000;
+  ">
+    <!-- 선택된 항목 영역 -->
+    <div id="selected-items-container" style="
+      display:flex;
+      justify-content:space-between;
+      border-bottom:1px dashed #ccc;
+      padding:5px 0;
+      font-size:1rem;
+      margin-bottom:3px;
+    ">
+      <span id="selected-names" style="white-space:nowrap; color:#000 !important; text-align:left;">[Selected Items]</span>
+      <span style="
+        display:inline-block;
+        text-align:right;
+        min-width:60px;
+        color:#000 !important;
+        text-decoration:none !important;
+        white-space:nowrap;
+      ">
+        <span id="selected-costs" style="white-space:nowrap; color:#000 !important;">0</span>
+      </span>
+    </div>
 
-      <!-- Subtotal -->
-      <tr>
-        <td class="invoice-label" align="left" style="text-align: left; font-size:1rem; color:#000; padding:6px;">Subtotal:</td>
-        <td class="invoice-value" align="right" style="text-align: right; font-size:1rem; color:#000; padding:6px;">
-          <span id="subtotal">0</span>
-        </td>
-      </tr>
+    <!-- Subtotal 행 -->
+    <div style="
+      display:flex;
+      justify-content:space-between;
+      border-bottom:1px dashed #ccc;
+      padding:5px 0;
+      font-size:1rem;
+      margin-bottom:3px;
+    ">
+      <span style="white-space:nowrap; color:#000 !important; text-align:left;">Subtotal:</span>
+      <span style="
+        display:inline-block;
+        text-align:right;
+        min-width:60px;
+        color:#000 !important;
+        text-decoration:none !important;
+        white-space:nowrap;
+      ">
+        <span id="subtotal" style="white-space:nowrap; color:#000 !important;">0</span>
+      </span>
+    </div>
 
-      <!-- Discount (10%) -->
-      <tr>
-        <td class="invoice-label" align="left" style="text-align: left; font-size:1rem; color:#000; padding:6px;">
-          Discount: -10%
-          <div style="font-size:0.85em; color:#666; margin-top:2px;">(for invalid/long-targeting emails adjustment)</div>
-        </td>
-        <td class="invoice-value" align="right" style="text-align: right; font-size:1rem; color:#000; padding:6px;">
-          <span id="base-discount">0</span>
-        </td>
-      </tr>
+    <!-- Discount 행 -->
+    <div style="
+      display:flex;
+      justify-content:space-between;
+      border-bottom:1px dashed #ccc;
+      padding:5px 0;
+      font-size:1rem;
+      margin-bottom:3px;
+    ">
+      <span style="white-space:nowrap; color:#000 !important; text-align:left;">
+        Discount: -10%
+        <span style="
+          font-size:0.85em;
+          color:#666;
+          display:inline-block;
+          margin-top:2px;
+          white-space:nowrap;
+        ">
+          (for invalid/long-targeting emails adjustment)
+        </span>
+      </span>
+      <span style="
+        display:inline-block;
+        text-align:right;
+        min-width:60px;
+        color:#000 !important;
+        text-decoration:none !important;
+        white-space:nowrap;
+      ">
+        <span id="base-discount" style="white-space:nowrap; color:#000 !important;">0</span>
+      </span>
+    </div>
 
-      <!-- Promo Discount 행 (동적) -->
-      <tr id="promo-discount-line" style="display:none;">
-        <td class="invoice-label" id="promo-discount-label" align="left" style="text-align: left; font-size:1rem; color:#000; padding:6px;"></td>
-        <td class="invoice-value" align="right" style="text-align: right; font-size:1rem; color:#000; padding:6px;">
-          <span id="promo-discount">0</span>
-        </td>
-      </tr>
+    <!-- Promo Discount 행 (동적) -->
+    <div id="promo-discount-line" style="
+      display:none;
+      justify-content:space-between;
+      border-bottom:1px dashed #ccc;
+      padding:5px 0;
+      font-size:1rem;
+      margin-bottom:3px;
+    ">
+      <span id="promo-discount-label" style="white-space:nowrap; color:#000 !important; text-align:left;"></span>
+      <span style="
+        display:inline-block;
+        text-align:right;
+        min-width:60px;
+        color:#000 !important;
+        text-decoration:none !important;
+        white-space:nowrap;
+      ">
+        <span id="promo-discount" style="white-space:nowrap; color:#000 !important;">0</span>
+      </span>
+    </div>
 
-      <!-- 구분선 -->
-      <tr>
-        <td colspan="2" style="padding:0;">
-          <hr style="border:0; border-top:1px solid #ccc; margin:10px 0;">
-        </td>
-      </tr>
+    <hr style="border:0; border-top:1px solid #ccc; margin:10px 0;" />
 
-      <!-- Final Cost -->
-      <tr class="final-row">
-        <td class="invoice-label" align="left" style="text-align: left; font-size:1.1rem; color:#000; font-weight:bold; padding:6px;">Final Cost:</td>
-        <td class="invoice-value" align="right" style="text-align: right; font-size:1.1rem; color:#000; font-weight:bold; padding:6px;">
-          <span id="final-cost">0</span>
-        </td>
-      </tr>
-    </table>
+    <!-- Final Cost 행 -->
+    <div style="
+      display:flex;
+      justify-content:space-between;
+      font-weight:bold;
+      font-size:1.1em;
+      margin-top:10px;
+    ">
+      <span style="white-space:nowrap; color:#000 !important; text-align:left;">Final Cost:</span>
+      <span style="
+        display:inline-block;
+        text-align:right;
+        min-width:60px;
+        color:#000 !important;
+        text-decoration:none !important;
+        white-space:nowrap;
+      ">
+        <span id="final-cost" style="white-space:nowrap; color:#000 !important;">0</span>
+      </span>
+    </div>
   </section>
 
   <!-- 프로모션 코드 입력 영역 -->
-  <section class="promo-section" style="margin-top:20px; max-width:600px; margin: 0 auto;">
+  <section class="promo-section" style="margin-top:20px; max-width:600px; margin:0 auto;">
     <label for="promo-code">Enter Promo Code:</label>
     <input type="text" id="promo-code" placeholder="" />
     <button id="apply-promo-btn">Apply</button>
-    <p id="promo-message" style="color: red;"></p>
+    <p id="promo-message" style="color:red;"></p>
   </section>
 
   <br>
   <!-- 다음 단계 버튼 -->
-  <section class="next-step" style="margin-top:30px; max-width:600px; margin: 0 auto;">
+  <section class="next-step" style="margin-top:30px; max-width:600px; margin:0 auto;">
     <button id="next-button">Next</button>
   </section>
 
