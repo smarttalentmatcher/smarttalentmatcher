@@ -254,139 +254,42 @@
   </p>
 
   <!-- 비용 요약 및 영수증 영역 (Invoice) -->
-  <section class="cost-summary" style="
-    max-width:900px;
-    margin:20px auto;
-    padding:15px;
-    background-color:#f1f1f1;
-    border-radius:8px;
-    font-size:1.1rem;
-    line-height:1.5;
-    color:#000;
-  ">
-    <!-- 선택된 항목 영역 -->
-    <div id="selected-items-container" style="
-      display:flex;
-      justify-content:space-between;
-      border-bottom:1px dashed #ccc;
-      padding:5px 0;
-      font-size:1rem;
-      margin-bottom:3px;
-    ">
-      <span id="selected-names" style="white-space:nowrap; color:#000 !important; text-align:left;">[Selected Items]</span>
-      <!-- 숫자 컨테이너를 block으로 변경하여 오른쪽 정렬 강제 -->
-      <span style="
-        display:block;
-        text-align:right !important;
-        min-width:60px;
-        color:#000 !important;
-        text-decoration:none !important;
-        white-space:nowrap;
-      ">
-        <span id="selected-costs" style="display:block; text-align:right !important; white-space:nowrap; color:#000 !important;">0</span>
-      </span>
-    </div>
-
-    <!-- Subtotal 행 -->
-    <div style="
-      display:flex;
-      justify-content:space-between;
-      border-bottom:1px dashed #ccc;
-      padding:5px 0;
-      font-size:1rem;
-      margin-bottom:3px;
-    ">
-      <span style="white-space:nowrap; color:#000 !important; text-align:left;">Subtotal:</span>
-      <span style="
-        display:block;
-        text-align:right !important;
-        min-width:60px;
-        color:#000 !important;
-        text-decoration:none !important;
-        white-space:nowrap;
-      ">
-        <span id="subtotal" style="display:block; text-align:right !important; white-space:nowrap; color:#000 !important;">0</span>
-      </span>
-    </div>
-
-    <!-- Discount 행 -->
-    <div style="
-      display:flex;
-      justify-content:space-between;
-      border-bottom:1px dashed #ccc;
-      padding:5px 0;
-      font-size:1rem;
-      margin-bottom:3px;
-    ">
-      <span style="white-space:nowrap; color:#000 !important; text-align:left;">
-        Discount: -10%
-        <span style="
-          font-size:0.85em;
-          color:#666;
-          display:inline-block;
-          margin-top:2px;
-          white-space:nowrap;
-        ">
-          (for invalid/long-targeting emails adjustment)
-        </span>
-      </span>
-      <span style="
-        display:block;
-        text-align:right !important;
-        min-width:60px;
-        color:#000 !important;
-        text-decoration:none !important;
-        white-space:nowrap;
-      ">
-        <span id="base-discount" style="display:block; text-align:right !important; white-space:nowrap; color:#000 !important;">0</span>
-      </span>
-    </div>
-
-    <!-- Promo Discount 행 (동적) -->
-    <div id="promo-discount-line" style="
-      display:none;
-      justify-content:space-between;
-      border-bottom:1px dashed #ccc;
-      padding:5px 0;
-      font-size:1rem;
-      margin-bottom:3px;
-    ">
-      <span id="promo-discount-label" style="white-space:nowrap; color:#000 !important; text-align:left;"></span>
-      <span style="
-        display:block;
-        text-align:right !important;
-        min-width:60px;
-        color:#000 !important;
-        text-decoration:none !important;
-        white-space:nowrap;
-      ">
-        <span id="promo-discount" style="display:block; text-align:right !important; white-space:nowrap; color:#000 !important;">0</span>
-      </span>
-    </div>
-
-    <hr style="border:0; border-top:1px solid #ccc; margin:10px 0;" />
-
-    <!-- Final Cost 행 -->
-    <div style="
-      display:flex;
-      justify-content:space-between;
-      font-weight:bold;
-      font-size:1.1em;
-      margin-top:10px;
-    ">
-      <span style="white-space:nowrap; color:#000 !important; text-align:left;">Final Cost:</span>
-      <span style="
-        display:block;
-        text-align:right !important;
-        min-width:60px;
-        color:#000 !important;
-        text-decoration:none !important;
-        white-space:nowrap;
-      ">
-        <span id="final-cost" style="display:block; text-align:right !important; white-space:nowrap; color:#000 !important;">0</span>
-      </span>
-    </div>
-  </section>
+<table width="900" border="0" cellspacing="0" cellpadding="0" style="max-width:900px; margin:20px auto; padding:15px; background-color:#f1f1f1; border-radius:8px; font-size:1.1rem; line-height:1.5; color:#000; font-family:Arial, sans-serif;">
+  <!-- 선택된 항목 영역 -->
+  <tr style="border-bottom:1px dashed #ccc;">
+    <td align="left" style="padding:5px; white-space:nowrap; color:#000;">[Selected Items]</td>
+    <td align="right" style="padding:5px; white-space:nowrap; color:#000;">0</td>
+  </tr>
+  <!-- Subtotal 행 -->
+  <tr style="border-bottom:1px dashed #ccc;">
+    <td align="left" style="padding:5px; white-space:nowrap; color:#000;">Subtotal:</td>
+    <td align="right" style="padding:5px; white-space:nowrap; color:#000;">0</td>
+  </tr>
+  <!-- Discount 행 -->
+  <tr style="border-bottom:1px dashed #ccc;">
+    <td align="left" style="padding:5px; white-space:nowrap; color:#000;">
+      Discount: -10%<br>
+      <span style="font-size:0.85em; color:#666; white-space:nowrap;">(for invalid/long-targeting emails adjustment)</span>
+    </td>
+    <td align="right" style="padding:5px; white-space:nowrap; color:#000;">0</td>
+  </tr>
+  <!-- Promo Discount 행 (동적, 필요 시 display:block으로 변경) -->
+  <tr id="promo-discount-line" style="display:none; border-bottom:1px dashed #ccc;">
+    <td align="left" style="padding:5px; white-space:nowrap; color:#000;"></td>
+    <td align="right" style="padding:5px; white-space:nowrap; color:#000;">0</td>
+  </tr>
+  <!-- 구분선 -->
+  <tr>
+    <td colspan="2" style="padding:0;">
+      <hr style="border:0; border-top:1px solid #ccc; margin:10px 0;">
+    </td>
+  </tr>
+  <!-- Final Cost 행 -->
+  <tr>
+    <td align="left" style="padding:5px; white-space:nowrap; color:#000; font-weight:bold;">Final Cost:</td>
+    <td align="right" style="padding:5px; white-space:nowrap; color:#000; font-weight:bold;">0</td>
+  </tr>
+</table>
 
   <!-- 프로모션 코드 입력 영역 -->
   <section class="promo-section" style="margin-top:20px; max-width:600px; margin:0 auto;">
