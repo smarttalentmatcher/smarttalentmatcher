@@ -5,7 +5,7 @@
   <title>Choose Your Target Locations</title>
   <link rel="stylesheet" href="style.css">
   <style>
-    /* (1) 표준 테이블 스타일 */
+    /* (1) 기본 표 스타일 */
     table {
       border-collapse: collapse;
       margin: 0 auto;
@@ -17,7 +17,7 @@
       text-align: center;
     }
 
-    /* choose.html 전반 스타일(생략) */
+    /* choose-header 등 기존 스타일들 */
     header.choose-header {
       text-align: center;
       padding: 20px 0;
@@ -51,33 +51,47 @@
       white-space: nowrap;
     }
 
-    /* (2) 인보이스 테이블(.cost-summary-table) 스타일 */
-    .cost-summary-table {
+    /* (2) 인보이스 테이블 (.invoice-table) */
+    .invoice-table {
       width: 100%;
       border-collapse: collapse;
-      background-color: #f1f1f1; /* 부모 배경 */
-      color: #000; /* 검정색 강제 */
+      background-color: #f1f1f1; /* 부모 영역 배경 */
+      border-radius: 8px;
     }
-    .cost-summary-table td {
-      padding: 6px;
-      vertical-align: middle;
-      border: none; /* 테두리는 필요에 따라 */
+    /* 모든 tr에 border-bottom: 점선 */
+    .invoice-table tr {
+      border-bottom: 1px dashed #ccc;
     }
-    /* 왼쪽 라벨 셀: 텍스트 왼쪽 정렬 */
+    /* 맨 마지막 행(최종 비용 등) 아래쪽 라인 없애고 싶으면: */
+    .invoice-table tr:last-child {
+      border-bottom: none;
+    }
+    /* 왼쪽 셀(항목명) */
     .invoice-label {
+      padding: 8px;
       text-align: left;
+      vertical-align: top;
       font-size: 1rem;
+      color: #333;
     }
-    /* 오른쪽 금액 셀: 텍스트 오른쪽 정렬 + 보라색 링크 방지 */
+    /* 오른쪽 셀(금액) - 오른쪽 정렬 */
     .invoice-value {
+      padding: 8px;
       text-align: right;
       font-size: 1rem;
       color: #000 !important;
       text-decoration: none !important;
-      pointer-events: none;  /* 링크화 방지 */
-      white-space: nowrap;   /* 줄바꿈 방지 */
+      pointer-events: none; /* 지메일 링크화 방지 */
+      white-space: nowrap;
     }
-    /* 굵게 표시할 최종행 */
+    /* 서브 라벨 (for invalid/long-targeting...) 작은 글씨 */
+    .invoice-sublabel {
+      font-size: 0.85em;
+      color: #666;
+      margin-top: 2px;
+      display: block;
+    }
+    /* 파이널 행 굵게 */
     .final-row .invoice-label,
     .final-row .invoice-value {
       font-weight: bold;
@@ -85,13 +99,13 @@
     }
   </style>
 </head>
+
 <body>
 
-  <header class="choose-header" style="text-align:center;">
+  <header class="choose-header">
     <h1><span class="step-indicator">1</span> Choose Your Target Locations</h1>
   </header>
 
-  <!-- 안내 문구 -->
   <div class="choose-subtext" style="text-align: center; margin-top: 10px;">
     <p>
       <br>
@@ -112,12 +126,12 @@
     <table>
       <thead>
         <tr>
-          <th><strong>Target Locations</strong></th>
-          <th><strong>Talent Agent</strong></th>
-          <th><strong>Management</strong></th>
-          <th><strong>Casting Director</strong></th>
-          <th><strong>Total</strong></th>
-          <th><strong>Check Box</strong></th>
+          <th>Target Locations</th>
+          <th>Talent Agent</th>
+          <th>Management</th>
+          <th>Casting Director</th>
+          <th>Total</th>
+          <th>Check Box</th>
         </tr>
       </thead>
       <tbody>
@@ -140,8 +154,7 @@
             >
           </td>
         </tr>
-
-        <!-- For English Speakers 그룹 -->
+        <!-- For English Speakers -->
         <tr class="group-header" style="background-color: #f8f8f8;">
           <td class="group-header-cell">
             <strong>For English Speakers</strong>
@@ -185,7 +198,7 @@
           </td>
         </tr>
 
-        <!-- For Bilinguals 그룹 -->
+        <!-- For Bilinguals -->
         <tr class="group-header" style="background-color: #f8f8f8;">
           <td class="group-header-cell">
             <strong>For Bilinguals</strong>
@@ -248,12 +261,12 @@
     </table>
   </section>
 
-  <p style="text-align:center; margin: 20px auto;">
+  <p style="text-align:center; margin:20px auto;">
     <em>***We grouped countries that share the same entertainment industry, organizing them by market rather than by nation.</em>
   </p>
 
-  <!-- 인보이스: 테이블 구조로 변경 -->
-  <section class="cost-summary" style="
+  <!-- 인보이스 표 (점선 구분) -->
+  <section style="
     max-width:900px;
     margin:20px auto;
     padding:15px;
@@ -263,16 +276,17 @@
     line-height:1.5;
     color:#000;
   ">
-    <table class="cost-summary-table">
-      <!-- 선택된 항목들 -->
-      <tr>
-        <td class="invoice-label" style="width:50%;">
-          <div id="selected-names"></div>
-        </td>
-        <td class="invoice-value" style="width:50%;">
-          <div id="selected-costs">0</div>
-        </td>
-      </tr>
+    <table class="invoice-table" style="width:100%; border-collapse:collapse;">
+      <!-- 선택된 항목 (패키지들) -->
+      <tbody id="selected-items-table">
+        <!-- choose.js에서 row를 반복 삽입 or innerHTML로 구성 -->
+        <!-- 예: 
+          <tr>
+            <td class="invoice-label">[Base Package] United States (+Canada) ($0.005 per email)</td>
+            <td class="invoice-value">$445.85</td>
+          </tr>
+        -->
+      </tbody>
 
       <!-- Subtotal -->
       <tr>
@@ -282,20 +296,20 @@
         </td>
       </tr>
 
-      <!-- Discount (10%) -->
+      <!-- Discount -->
       <tr>
         <td class="invoice-label">
           Discount: -10%
-          <div style="font-size:0.85em; color:#666; margin-top:2px;">
+          <span class="invoice-sublabel">
             (for invalid/long-targeting emails adjustment)
-          </div>
+          </span>
         </td>
         <td class="invoice-value">
           <span id="base-discount">0</span>
         </td>
       </tr>
 
-      <!-- Promo Discount 행 (동적) -->
+      <!-- Promo Discount (동적) -->
       <tr id="promo-discount-line" style="display:none;">
         <td class="invoice-label" id="promo-discount-label"></td>
         <td class="invoice-value">
@@ -303,12 +317,7 @@
         </td>
       </tr>
 
-      <!-- 구분선 -->
-      <tr>
-        <td colspan="2"><hr style="border:0; border-top:1px solid #ccc; margin:10px 0;"></td>
-      </tr>
-
-      <!-- Final Cost -->
+      <!-- 최종 행: Final Cost -->
       <tr class="final-row">
         <td class="invoice-label">Final Cost:</td>
         <td class="invoice-value">
@@ -318,21 +327,20 @@
     </table>
   </section>
 
-  <!-- 프로모션 코드 입력 영역 -->
-  <section class="promo-section" style="margin-top:20px; max-width:600px; margin: 0 auto;">
+  <!-- 프로모션 코드 -->
+  <section style="margin-top:20px; max-width:600px; margin:0 auto; text-align:center;">
     <label for="promo-code">Enter Promo Code:</label>
     <input type="text" id="promo-code" placeholder="" />
     <button id="apply-promo-btn">Apply</button>
-    <p id="promo-message" style="color: red;"></p>
+    <p id="promo-message" style="color:red;"></p>
   </section>
 
   <br>
-  <!-- 다음 단계 버튼 -->
-  <section class="next-step" style="margin-top:30px; max-width:600px; margin: 0 auto;">
+  <section style="text-align:center; margin-top:30px; max-width:600px; margin:0 auto;">
     <button id="next-button">Next</button>
   </section>
 
-  <!-- 외부 JavaScript 파일 로드 -->
+  <!-- choose.js 로직 로드 -->
   <script src="choose.js"></script>
 </body>
 </html>
