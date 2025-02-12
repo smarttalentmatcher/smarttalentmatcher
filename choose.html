@@ -5,7 +5,7 @@
   <title>Choose Your Target Locations</title>
   <link rel="stylesheet" href="style.css">
   <style>
-    /* 테이블 및 영수증 관련 스타일 */
+    /* (1) 표준 테이블 스타일 */
     table {
       border-collapse: collapse;
       margin: 0 auto;
@@ -16,97 +16,323 @@
       padding: 8px;
       text-align: center;
     }
-    .cost-summary {
-      max-width: 600px;
-      margin: 20px auto;
-      background-color: #f1f1f1;
-      border-radius: 8px;
-      font-size: 1.1rem;
-      line-height: 1.5;
-      color: #000 !important; /* 🔹 모든 텍스트 검은색 강제 적용 */
+
+    /* choose.html 전반 스타일(생략) */
+    header.choose-header {
+      text-align: center;
+      padding: 20px 0;
+      background-color: #001f3f;
+      color: #fff;
+      margin-bottom: 30px;
     }
-    .summary-line, .receipt-line {
-      display: flex;
-      justify-content: space-between;
-      margin: 4px 0;
-    }
-    .final-cost {
+    .step-indicator {
+      display: inline-block;
+      width: 40px;
+      height: 40px;
+      line-height: 40px;
+      border-radius: 50%;
+      background-color: #FF69B4; 
+      color: #fff;
       font-weight: bold;
-      font-size: 1.1em;
-      margin-top: 10px;
+      text-align: center;
+      margin-right: 10px;
+      font-size: 1.2rem;
+      vertical-align: middle;
     }
-    .discount-note {
-      font-size: 0.85em;
-      color: #666 !important;
-      display: block;
-      margin-top: 2px;
+    .group-header-cell {
+      background-color: #001f3f;
+      color: #fff;
+      text-align: center;
+      font-size: 1.1rem;
+      font-weight: 600;
+      border: 4px solid #ccc;
+      padding: 2px 5px;
+      line-height: 1.2;
+      white-space: nowrap;
     }
-    /* 숫자 정렬 문제 해결 */
-    .cost-value {
-      display: block;
-      text-align: right !important;
-      min-width: 60px;
+
+    /* (2) 인보이스 테이블(.cost-summary-table) 스타일 */
+    .cost-summary-table {
+      width: 100%;
+      border-collapse: collapse;
+      background-color: #f1f1f1; /* 부모 배경 */
+      color: #000; /* 검정색 강제 */
+    }
+    .cost-summary-table td {
+      padding: 6px;
+      vertical-align: middle;
+      border: none; /* 테두리는 필요에 따라 */
+    }
+    /* 왼쪽 라벨 셀: 텍스트 왼쪽 정렬 */
+    .invoice-label {
+      text-align: left;
+      font-size: 1rem;
+    }
+    /* 오른쪽 금액 셀: 텍스트 오른쪽 정렬 + 보라색 링크 방지 */
+    .invoice-value {
+      text-align: right;
+      font-size: 1rem;
       color: #000 !important;
       text-decoration: none !important;
+      pointer-events: none;  /* 링크화 방지 */
+      white-space: nowrap;   /* 줄바꿈 방지 */
+    }
+    /* 굵게 표시할 최종행 */
+    .final-row .invoice-label,
+    .final-row .invoice-value {
+      font-weight: bold;
+      font-size: 1.1rem;
     }
   </style>
 </head>
 <body>
 
   <header class="choose-header" style="text-align:center;">
-    <h1>Choose Your Target Locations</h1>
+    <h1><span class="step-indicator">1</span> Choose Your Target Locations</h1>
   </header>
 
-  <section class="cost-summary">
-    <!-- 선택된 항목 영역 -->
-    <div class="summary-line">
-      <span id="selected-names"></span>
-      <span id="selected-costs" class="cost-value">0</span>
-    </div>
+  <!-- 안내 문구 -->
+  <div class="choose-subtext" style="text-align: center; margin-top: 10px;">
+    <p>
+      <br>
+      There are 
+      <span style="background-color: #FFFF00;">More</span>
+      Talent agents, Managers, and Casting Directors 
+      <br>
+      <span style="background-color: #FFFF00;">Waiting</span>
+      for you 
+      <span style="background-color: #FFFF00;">Than you think</span>.<br><br>
+      <span style="color: #00bc00; font-style: italic;">Cast Wider, Open More Doors,</span> and <span class="underline-italic">Find the Right People.</span>
+    </p>
+  </div>
+  <br>
 
-    <!-- Subtotal 행 -->
-    <div class="summary-line">
-      <span>Subtotal:</span>
-      <span id="subtotal" class="cost-value">0</span>
-    </div>
+  <!-- 패키지 선택 표 -->
+  <section class="package-section">
+    <table>
+      <thead>
+        <tr>
+          <th><strong>Target Locations</strong></th>
+          <th><strong>Talent Agent</strong></th>
+          <th><strong>Management</strong></th>
+          <th><strong>Casting Director</strong></th>
+          <th><strong>Total</strong></th>
+          <th><strong>Check Box</strong></th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Base Package: US(+Canada) -->
+        <tr>
+          <td class="us-package"><strong>United States (+Canada)</strong></td>
+          <td>2885</td>
+          <td>4442</td>
+          <td>1590</td>
+          <td>8917</td>
+          <td>
+            <input
+              type="checkbox"
+              class="package-checkbox"
+              data-label="United States (+Canada)"
+              data-cost="445.85"
+              data-rate="($0.005 per email)"
+              checked
+              disabled
+            >
+          </td>
+        </tr>
 
-    <!-- Discount 행 -->
-    <div class="summary-line">
-      <span>
-        Discount: -10%
-        <span class="discount-note">(for invalid/long-targeting emails adjustment)</span>
-      </span>
-      <span id="base-discount" class="cost-value">0</span>
-    </div>
+        <!-- For English Speakers 그룹 -->
+        <tr class="group-header" style="background-color: #f8f8f8;">
+          <td class="group-header-cell">
+            <strong>For English Speakers</strong>
+          </td>
+          <td style="background-color: #FFFFFF;"></td>
+          <td style="background-color: #FFFFFF;"></td>
+          <td style="background-color: #FFFFFF;"></td>
+          <td style="background-color: #FFFFFF;"></td>
+          <td style="background-color: #FFFFFF;"></td>
+        </tr>
+        <tr>
+          <td><strong>United Kingdom (+EU)</strong></td>
+          <td>3124</td>
+          <td>1742</td>
+          <td>533</td>
+          <td>5399</td>
+          <td>
+            <input 
+              type="checkbox"
+              class="package-checkbox"
+              data-label="United Kingdom (+EU)"
+              data-cost="269.95"
+              data-rate="($0.005 per email)"
+            >
+          </td>
+        </tr>
+        <tr>
+          <td><strong>Australia</strong></td>
+          <td>383</td>
+          <td>274</td>
+          <td>71</td>
+          <td>728</td>
+          <td>
+            <input
+              type="checkbox"
+              class="package-checkbox"
+              data-label="Australia"
+              data-cost="36.4"
+              data-rate="($0.005 per email)"
+            >
+          </td>
+        </tr>
 
-    <!-- Promo Discount 행 (동적) -->
-    <div id="promo-discount-line" class="summary-line" style="display:none;">
-      <span id="promo-discount-label"></span>
-      <span id="promo-discount" class="cost-value">0</span>
-    </div>
-
-    <hr style="border: 0; border-top: 1px solid #ccc; margin:10px 0;">
-
-    <!-- Final Cost 행 -->
-    <div class="summary-line final-cost">
-      <span>Final Cost:</span>
-      <span id="final-cost" class="cost-value">0</span>
-    </div>
+        <!-- For Bilinguals 그룹 -->
+        <tr class="group-header" style="background-color: #f8f8f8;">
+          <td class="group-header-cell">
+            <strong>For Bilinguals</strong>
+          </td>
+          <td style="background-color: #FFFFFF;"></td>
+          <td style="background-color: #FFFFFF;"></td>
+          <td style="background-color: #FFFFFF;"></td>
+          <td style="background-color: #FFFFFF;"></td>
+          <td style="background-color: #FFFFFF;"></td>
+        </tr>
+        <tr>
+          <td><strong>Asia</strong></td>
+          <td>288</td>
+          <td>703</td>
+          <td>164</td>
+          <td>1155</td>
+          <td>
+            <input
+              type="checkbox"
+              class="package-checkbox"
+              data-label="Asia"
+              data-cost="57.75"
+              data-rate="($0.005 per email)"
+            >
+          </td>
+        </tr>
+        <tr>
+          <td><strong>South America</strong></td>
+          <td>148</td>
+          <td>176</td>
+          <td>80</td>
+          <td>404</td>
+          <td>
+            <input
+              type="checkbox"
+              class="package-checkbox"
+              data-label="South America"
+              data-cost="20.1"
+              data-rate="($0.005 per email)"
+            >
+          </td>
+        </tr>
+        <tr>
+          <td><strong>Africa</strong></td>
+          <td>96</td>
+          <td>88</td>
+          <td>35</td>
+          <td>219</td>
+          <td>
+            <input
+              type="checkbox"
+              class="package-checkbox"
+              data-label="Africa"
+              data-cost="10.95"
+              data-rate="($0.005 per email)"
+            >
+          </td>
+        </tr>
+      </tbody>
+    </table>
   </section>
 
-  <!-- 프로모션 코드 입력 -->
-  <section style="max-width:600px; margin: 0 auto;">
+  <p style="text-align:center; margin: 20px auto;">
+    <em>***We grouped countries that share the same entertainment industry, organizing them by market rather than by nation.</em>
+  </p>
+
+  <!-- 인보이스: 테이블 구조로 변경 -->
+  <section class="cost-summary" style="
+    max-width:900px;
+    margin:20px auto;
+    padding:15px;
+    background-color:#f1f1f1;
+    border-radius:8px;
+    font-size:1.1rem;
+    line-height:1.5;
+    color:#000;
+  ">
+    <table class="cost-summary-table">
+      <!-- 선택된 항목들 -->
+      <tr>
+        <td class="invoice-label" style="width:50%;">
+          <div id="selected-names"></div>
+        </td>
+        <td class="invoice-value" style="width:50%;">
+          <div id="selected-costs">0</div>
+        </td>
+      </tr>
+
+      <!-- Subtotal -->
+      <tr>
+        <td class="invoice-label">Subtotal:</td>
+        <td class="invoice-value">
+          <span id="subtotal">0</span>
+        </td>
+      </tr>
+
+      <!-- Discount (10%) -->
+      <tr>
+        <td class="invoice-label">
+          Discount: -10%
+          <div style="font-size:0.85em; color:#666; margin-top:2px;">
+            (for invalid/long-targeting emails adjustment)
+          </div>
+        </td>
+        <td class="invoice-value">
+          <span id="base-discount">0</span>
+        </td>
+      </tr>
+
+      <!-- Promo Discount 행 (동적) -->
+      <tr id="promo-discount-line" style="display:none;">
+        <td class="invoice-label" id="promo-discount-label"></td>
+        <td class="invoice-value">
+          <span id="promo-discount">0</span>
+        </td>
+      </tr>
+
+      <!-- 구분선 -->
+      <tr>
+        <td colspan="2"><hr style="border:0; border-top:1px solid #ccc; margin:10px 0;"></td>
+      </tr>
+
+      <!-- Final Cost -->
+      <tr class="final-row">
+        <td class="invoice-label">Final Cost:</td>
+        <td class="invoice-value">
+          <span id="final-cost">0</span>
+        </td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- 프로모션 코드 입력 영역 -->
+  <section class="promo-section" style="margin-top:20px; max-width:600px; margin: 0 auto;">
     <label for="promo-code">Enter Promo Code:</label>
     <input type="text" id="promo-code" placeholder="" />
     <button id="apply-promo-btn">Apply</button>
     <p id="promo-message" style="color: red;"></p>
   </section>
 
+  <br>
   <!-- 다음 단계 버튼 -->
-  <section style="max-width:600px; margin: 0 auto;">
+  <section class="next-step" style="margin-top:30px; max-width:600px; margin: 0 auto;">
     <button id="next-button">Next</button>
   </section>
 
+  <!-- 외부 JavaScript 파일 로드 -->
   <script src="choose.js"></script>
 </body>
 </html>
