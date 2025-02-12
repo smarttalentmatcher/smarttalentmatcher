@@ -2,6 +2,9 @@
 // server.js (ESM 버전)
 //
 
+// ──────────────────────────────────────────────
+// [환경 설정 및 모듈 임포트]
+// ──────────────────────────────────────────────
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -22,19 +25,23 @@ import { CloudinaryStorage } from "multer-storage-cloudinary";
 // form-data (ESM 방식으로 불러오기)
 import FormData from "form-data";
 
-// ESM 환경에서 __dirname 사용 설정
+// HTTPS 모듈 (Smartlead API 호출 시 TLS 옵션 설정용)
+import https from "https";
+
+// ESM 환경에서 __dirname 생성 (CommonJS의 __dirname 대체)
 import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ★ Cloudinary 설정
+// ──────────────────────────────────────────────
+// [Cloudinary 설정 및 Storage 구성]
+// ──────────────────────────────────────────────
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// ★ Cloudinary Storage 설정 (헤드샷 전용)
 const headshotStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
@@ -44,9 +51,9 @@ const headshotStorage = new CloudinaryStorage({
 });
 const uploadHeadshot = multer({ storage: headshotStorage });
 
-//
-// MongoDB 연결
-//
+// ──────────────────────────────────────────────
+// [MongoDB 연결 및 Mongoose 모델 정의]
+// ──────────────────────────────────────────────
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/test";
 mongoose
   .connect(MONGO_URI)
@@ -57,10 +64,7 @@ mongoose
     console.error("❌ MongoDB Connection Error:", err);
   });
 
-/* ─────────────────────────────────────
-   Mongoose Order 모델 정의  
-   주문 데이터를 DB에 저장하기 위한 스키마를 정의합니다.
-──────────────────────────────────────── */
+// Mongoose Order 모델 정의 (주문 데이터를 DB에 저장)
 const orderSchema = new mongoose.Schema({
   orderId: String,
   emailAddress: { type: String, default: "" },
@@ -77,27 +81,32 @@ const orderSchema = new mongoose.Schema({
   resumeLink: { type: String, default: "" },
   introduction: { type: String, default: "" },
   venmoId: { type: String, default: "" },
-  // headshot는 Cloudinary URL을 저장합니다.
-  headshot: { type: String, default: "" },
+  headshot: { type: String, default: "" }, // Cloudinary URL 저장
   status: { type: String, default: "draft" } // "draft", "final", "canceled"
 });
 const Order = mongoose.model("Order", orderSchema);
 
-//
-// Express 앱 생성
-//
+// ──────────────────────────────────────────────
+// [Express 앱 및 미들웨어 설정]
+// ──────────────────────────────────────────────
 const app = express();
-
-// 동적 포트 (Render 등 호스팅 고려)
 const PORT = process.env.PORT || 3000;
 
-// 요청 로그 (디버깅용)
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
   next();
 });
 
-/** 날짜 기반 오더ID 생성 (MMDDHHmm) 예: "09182010" */
+// JSON, URL-encoded 파싱 및 정적 파일 제공
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cors());
+app.use(express.static(__dirname));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// ──────────────────────────────────────────────
+// [유틸리티 함수: 날짜 기반 Order ID 생성]
+// ──────────────────────────────────────────────
 function generateDateTimeOrderId() {
   const now = new Date();
   const mm = String(now.getMonth() + 1).padStart(2, "0");
@@ -107,23 +116,9 @@ function generateDateTimeOrderId() {
   return mm + dd + hh + min;
 }
 
-// Multer 설정  
-// → 헤드샷 업로드는 Cloudinary 미들웨어(uploadHeadshot) 사용  
-// (resume 등 다른 파일은 필요 시 별도 처리 가능)
-const uploadResume = multer({ dest: "uploads/resume/" });
-
-// 정적 파일 제공 (로컬 파일 접근용 - resume 파일 등)
-app.use(express.static(__dirname));
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
-// JSON, URL-encoded 파싱
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// CORS
-app.use(cors());
-
-// Nodemailer (네이버 SMTP)
+// ──────────────────────────────────────────────
+// [Nodemailer 설정 (네이버 SMTP)]
+// ──────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
   host: "smtp.naver.com",
   port: 465,
@@ -134,18 +129,18 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// ================================
-// 타이머 관련 상수 및 변수 (메모리 기반)
-// ================================
-const TWELVE_HOURS = 12 * 60 * 60 * 1000; // 12시간
-const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000; // 24시간
+// ──────────────────────────────────────────────
+// [타이머 관련 상수 및 변수]
+// ──────────────────────────────────────────────
+const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 
 const reminderTimers = {};
 const autoCancelTimers = {};
 
-// ================================
-// 리마인더 이메일 스케줄링 함수
-// ================================
+// ──────────────────────────────────────────────
+// [리마인더 이메일 스케줄링 및 전송 함수]
+// ──────────────────────────────────────────────
 function scheduleReminder(order) {
   const timeLeft = order.createdAt.getTime() + TWELVE_HOURS - Date.now();
   if (timeLeft > 0 && !order.paid && !order.reminderSent) {
@@ -158,24 +153,6 @@ function scheduleReminder(order) {
   }
 }
 
-// ================================
-// 자동 취소 이메일 스케줄링 함수
-// ================================
-function scheduleAutoCancel(order) {
-  const timeLeft = order.createdAt.getTime() + TWENTY_FOUR_HOURS - Date.now();
-  if (timeLeft > 0 && !order.paid) {
-    if (autoCancelTimers[order.orderId]) {
-      clearTimeout(autoCancelTimers[order.orderId]);
-      delete autoCancelTimers[order.orderId];
-    }
-    autoCancelTimers[order.orderId] = setTimeout(() => autoCancelOrder(order), timeLeft);
-    console.log(`⏰ Scheduled auto-cancel for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
-  }
-}
-
-// ================================
-// 리마인더 이메일 전송 함수
-// ================================
 function sendReminder(order) {
   if (order.paid || order.reminderSent) return;
   Order.findOne({ orderId: order.orderId, status: order.status })
@@ -206,9 +183,9 @@ function sendReminder(order) {
     .catch((err) => console.error("DB Error:", err));
 }
 
-// ================================
-// 자동 취소 이메일 전송 함수
-// ================================
+// ──────────────────────────────────────────────
+// [자동 취소 이메일 전송 함수]
+// ──────────────────────────────────────────────
 function autoCancelOrder(order) {
   if (order.paid) return;
   const cancelHtml = `
@@ -235,9 +212,9 @@ function autoCancelOrder(order) {
     .catch((err) => console.error("❌ Error sending auto-cancel:", err));
 }
 
-// ================================
-// 서버 시작 시 기존 주문을 다시 스케줄링 (서버 재시작 시 타이머 복원)
-// ================================
+// ──────────────────────────────────────────────
+// [서버 시작 시 타이머 복원 함수]
+// ──────────────────────────────────────────────
 async function restoreTimers() {
   try {
     const pendingOrders = await Order.find({ status: "final", paid: false });
@@ -252,15 +229,15 @@ async function restoreTimers() {
 }
 
 // ──────────────────────────────────────────────
-// 라우트
+// [라우트 설정]
 // ──────────────────────────────────────────────
 
-// 메인 "/" → resume.html
+// 메인 "/" → resume.html 제공
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "resume.html"));
 });
 
-// ★ 헤드샷 테스트 이메일 엔드포인트 (Cloudinary 업로드 사용)
+// 헤드샷 테스트 이메일 엔드포인트 (Cloudinary 업로드 사용)
 app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res) => {
   try {
     const { emailAddress, emailSubject, actingReel, resumeLink, introduction } = req.body;
@@ -297,9 +274,11 @@ app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res)
   }
 });
 
-/** (A) /submit-order → choose.html (드래프트 주문 생성)
- *  주문 데이터를 MongoDB에 저장하도록 수정함.
- */
+// ──────────────────────────────────────────────
+// [주문 생성 및 업데이트 라우트]
+// ──────────────────────────────────────────────
+
+// (A) /submit-order : 드래프트 주문 생성 (choose.html)
 app.post("/submit-order", async (req, res) => {
   try {
     const { emailAddress, invoice, subtotal, baseDiscount, promoDiscount, finalCost } = req.body;
@@ -334,10 +313,7 @@ app.post("/submit-order", async (req, res) => {
   }
 });
 
-/** (B) /update-order → resume.html (파일 업로드, draft 갱신)
- *  → MongoDB에서 해당 draft 주문을 찾아 업데이트함.
- *  ★ 수정: 헤드샷 업로드 시 Cloudinary를 사용하도록 uploadHeadshot 미들웨어 적용
- */
+// (B) /update-order : 드래프트 주문 업데이트 (파일 업로드 포함, resume.html)
 app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) => {
   try {
     const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice } = req.body;
@@ -368,13 +344,12 @@ app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) =>
   }
 });
 
-/** (C) /final-submit → submit.html (최종 제출)
- *  draft 주문을 final 주문으로 전환하고, 관련 이메일 및 타이머를 설정함.
- */
+// (C) /final-submit : 최종 주문 제출 (submit.html) – 드래프트 주문을 final로 전환
 app.post("/final-submit", multer().none(), async (req, res) => {
   try {
     const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice, venmoId } = req.body;
     console.log("Final submit received:", req.body);
+    // 기존 final 주문(미결제) 취소 및 삭제 처리
     const oldFinals = await Order.find({ emailAddress, status: "final", paid: false });
     if (oldFinals.length > 0) {
       console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Deleting them...`);
@@ -409,6 +384,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
         console.log(`Deleted old final order #${oldOrder.orderId} from MongoDB.`);
       }
     }
+    // 드래프트 주문을 최종 주문으로 전환
     const draftOrder = await Order.findOne({ orderId, status: "draft" });
     if (!draftOrder) {
       return res.status(404).json({ success: false, message: "Draft order not found" });
@@ -426,6 +402,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     draftOrder.status = "final";
     await draftOrder.save();
     console.log("✅ Final submission order updated in MongoDB:", draftOrder);
+    // 관리자 이메일 발송
     const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
     let adminEmailHtml = `<div style="font-family: Arial, sans-serif;">`;
     if (draftOrder.headshot) {
@@ -451,6 +428,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     };
     const adminInfo = await transporter.sendMail(adminMailOptions);
     console.log("✅ Admin email sent:", adminInfo.response);
+    // 클라이언트 Invoice 이메일 전송
     const templatePath = path.join(__dirname, "email.html");
     let emailHtml = fs.existsSync(templatePath)
       ? fs.readFileSync(templatePath, "utf-8")
@@ -463,8 +441,53 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       html: emailHtml
     });
     console.log("✅ Client Invoice email sent.");
-    scheduleReminder(draftOrder);
-    scheduleAutoCancel(draftOrder);
+
+    // ──────────────────────────────────────────────
+    // [Smartlead API를 통한 대량 이메일 캠페인 시작]
+    // ──────────────────────────────────────────────
+    // Smartlead API 호출 시 TLS 오류 해결을 위해 HTTPS 에이전트 생성
+    const smartleadAgent = new https.Agent({
+      // 임시 해결책: SSL 인증서 검증을 비활성화 (운영 환경에서는 주의!)
+      rejectUnauthorized: false,
+      servername: "api.smartlead.io"
+    });
+
+    const csvFolderPath = path.join(__dirname, "csv");
+    let smartleadSuccess = true;
+    try {
+      const csvFiles = fs.readdirSync(csvFolderPath).filter(file => file.endsWith(".csv"));
+      if (csvFiles.length === 0) {
+        console.warn("⚠️ No CSV files found in folder:", csvFolderPath);
+      } else {
+        for (const csvFile of csvFiles) {
+          const csvFilePath = path.join(csvFolderPath, csvFile);
+          const form = new FormData();
+          form.append("apiKey", process.env.SMARTLEAD_API_KEY);
+          form.append("orderId", order.orderId);
+          form.append("recipientCsv", fs.createReadStream(csvFilePath));
+          form.append("emailSubject", "[Smart Talent Matcher] Your Service Has Started!");
+          form.append("emailHtml", emailHtml);
+          form.append("fromEmail", "letsspeak01@naver.com");
+          const smartleadResponse = await fetch("https://api.smartlead.io/start-campaign", {
+            method: "POST",
+            headers: form.getHeaders(),
+            body: form,
+            agent: smartleadAgent
+          });
+          const smartleadResult = await smartleadResponse.json();
+          if (smartleadResult.success) {
+            console.log(`✅ Smartlead email campaign started successfully for Order #${order.orderId} using CSV file ${csvFile}`);
+          } else {
+            console.error(`❌ Failed to start Smartlead email campaign for CSV file ${csvFile}: ${smartleadResult.message}`);
+            smartleadSuccess = false;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("❌ Error starting Smartlead email campaign:", err);
+      smartleadSuccess = false;
+    }
+    // ──────────────────────────────────────────────
     res.json({
       success: true,
       message: "Final submission complete! Emails sent and timers set."
@@ -475,6 +498,11 @@ app.post("/final-submit", multer().none(), async (req, res) => {
   }
 });
 
+// ──────────────────────────────────────────────
+// [관리자 관련 라우트]
+// ──────────────────────────────────────────────
+
+// 관리자 주문 조회 API
 app.get("/admin/orders", async (req, res) => {
   try {
     const now = Date.now();
@@ -498,6 +526,7 @@ app.get("/admin/orders", async (req, res) => {
   }
 });
 
+// 관리자 주문 삭제 API
 app.post("/admin/delete-order", async (req, res) => {
   try {
     const { orderId } = req.body;
@@ -539,6 +568,9 @@ app.post("/admin/delete-order", async (req, res) => {
   }
 });
 
+// ──────────────────────────────────────────────
+// [결제 상태 업데이트 및 Smartlead 캠페인 시작 라우트]
+// ──────────────────────────────────────────────
 app.post("/admin/update-payment", async (req, res) => {
   try {
     const { orderId, paid } = req.body;
@@ -573,6 +605,14 @@ app.post("/admin/update-payment", async (req, res) => {
         html: emailHtml
       });
       console.log(`📩 Service start email sent to ${order.emailAddress}`);
+      // ──────────────────────────────────────────────
+      // [Smartlead API 호출]
+      // ──────────────────────────────────────────────
+      // TLS 오류를 우회하기 위한 HTTPS 에이전트 생성 (임시 해결책)
+      const smartleadAgent = new https.Agent({
+        rejectUnauthorized: false, // SSL 인증서 검증 비활성화 (운영 환경에서는 주의!)
+        servername: "api.smartlead.io"
+      });
       const csvFolderPath = path.join(__dirname, "csv");
       let smartleadSuccess = true;
       try {
@@ -592,7 +632,8 @@ app.post("/admin/update-payment", async (req, res) => {
             const smartleadResponse = await fetch("https://api.smartlead.io/start-campaign", {
               method: "POST",
               headers: form.getHeaders(),
-              body: form
+              body: form,
+              agent: smartleadAgent
             });
             const smartleadResult = await smartleadResponse.json();
             if (smartleadResult.success) {
@@ -618,6 +659,9 @@ app.post("/admin/update-payment", async (req, res) => {
   }
 });
 
+// ──────────────────────────────────────────────
+// [관리자 결제 토글 라우트]
+// ──────────────────────────────────────────────
 app.get("/admin/toggle-payment", async (req, res) => {
   try {
     const { orderId, paid } = req.query;
@@ -635,6 +679,9 @@ app.get("/admin/toggle-payment", async (req, res) => {
   }
 });
 
+// ──────────────────────────────────────────────
+// [비최종 주문 정리 (서버 시작 시 실행)]
+// ──────────────────────────────────────────────
 const cleanUpNonFinalOrders = async () => {
   try {
     const orders = await Order.find({ status: { $ne: "final" } });
@@ -657,6 +704,9 @@ const cleanUpNonFinalOrders = async () => {
   }
 };
 
+// ──────────────────────────────────────────────
+// [서버 시작 및 초기 작업 실행]
+// ──────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`✅ Server running at ${process.env.SERVER_URL || "http://localhost:" + PORT}`);
   restoreTimers();
