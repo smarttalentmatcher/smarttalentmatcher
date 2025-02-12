@@ -9,8 +9,7 @@
       width: 90%;
       max-width: 1800px;
       margin: 40px auto;
-      /* (수정) 전체 높이를 250px → 600px 으로 늘려서 여러 행이 보이도록 함 */
-  
+      /* (수정) height 제한 제거 또는 적당히 지정 가능 */
       overflow-y: auto;
     }
     .orders-table {
@@ -44,14 +43,11 @@
       padding: 6px 10px;
       border-radius: 4px;
     }
-    /* 
-      (수정) Invoice 셀에서 내용이 길면 세로/가로 스크롤을 생성하고,
-      셀 높이를 일정 부분 제한 (max-height: 150px)
-    */
+    /* Invoice 셀에서 내용이 길면 세로/가로 스크롤을 생성 */
     .scroll-cell {
       overflow-x: auto;
-      overflow-y: auto; /* 추가됨 */
-      max-height: 250px; /* 추가됨 */
+      overflow-y: auto; /* (수정) 세로 스크롤 추가 */
+      max-height: 250px; /* (수정) 인보이스 셀 높이 제한 */
       word-wrap: break-word;
     }
     .filter-container {
@@ -70,7 +66,7 @@
     <h1>Admin Panel - Orders</h1>
   </header>
 
-  <!-- 필터 (검색창 제거됨) -->
+  <!-- 필터 -->
   <div class="filter-container">
     <select id="filter-status">
       <option value="all">All Orders</option>
@@ -119,7 +115,7 @@
   <script>
     let ordersData = [];
 
-    // 주문 데이터 불러오기
+    // (서버에서) 주문 데이터 불러오기
     fetch('/admin/orders')
       .then(response => response.json())
       .then(orders => {
@@ -140,7 +136,7 @@
         const timeSinceCreation = Date.now() - new Date(order.createdAt).getTime();
         const isExpired = timeSinceCreation >= 24 * 60 * 60 * 1000;
         
-        // 주문 정보 추가 (특정 필드만 사용)
+        // 주문 정보 (필드) 추가
         ["orderId", "venmoId", "emailAddress", "emailSubject", "actingReel", "resumeLink", "introduction"].forEach(field => {
           const td = document.createElement('td');
           td.textContent = order[field] || "";
@@ -160,23 +156,21 @@
         }
         tr.appendChild(headshotTd);
 
-        // Invoice 셀
+        // Invoice (scroll-cell)
         const invoiceTd = document.createElement('td');
-        invoiceTd.classList.add("scroll-cell"); // 세로/가로 스크롤 가능
+        invoiceTd.classList.add("scroll-cell");
         invoiceTd.innerHTML = order.invoice || "";
         tr.appendChild(invoiceTd);
 
-        // Payment / Delete 셀
+        // Payment / Delete
         const paymentTd = document.createElement('td');
         if (timeSinceCreation >= 48 * 60 * 60 * 1000) {
-          // 48시간 지난 주문은 행을 아예 제거
+          // 48시간 지난 주문은 표시 없이 바로 제거
           tr.remove();
-          return; // 다음 주문으로 넘어감
+          return; 
         } else if (isExpired) {
-          // 24시간 경과된 미결제 주문이라면 "24hrs" 표시
           paymentTd.innerHTML = `<span style="color:red; font-weight:bold;">24hrs</span>`;
         } else {
-          // 일반 상태
           let finalCost = order.finalCost || "";
           if (finalCost !== "") {
             finalCost = "$" + parseFloat(finalCost).toFixed(2);
@@ -190,15 +184,17 @@
               Paid
             </label>
             <br>
+            <!-- 딜리트 버튼 -->
             <button class="delete-button" data-order-id="${order.orderId}">Delete</button>
           `;
         }
         tr.appendChild(paymentTd);
+
         tbody.appendChild(tr);
       });
       
-      // 체크박스 이벤트 핸들러 연결
-      attachPaymentCheckboxHandlers();
+      attachPaymentCheckboxHandlers();  
+      attachDeleteButtonHandlers();  // (추가) 삭제 버튼 핸들러 등록
     }
 
     function attachPaymentCheckboxHandlers() {
@@ -207,12 +203,14 @@
         checkbox.addEventListener('change', function() {
           const orderId = this.dataset.orderId;
           const paid = this.checked;
-          // 체크박스 변경 시 GET 요청으로 결제 상태 업데이트
+
+          // GET 요청으로 결제 상태 토글
           fetch(`/admin/toggle-payment?orderId=${orderId}&paid=${paid}`, { method: 'GET' })
             .then(response => response.json())
             .then(data => {
               console.log(data.message);
-              // 결제 상태가 true이면 update-payment 엔드포인트 호출 (이메일 발송 등)
+
+              // paid === true 이면 /admin/update-payment 호출
               if (paid) {
                 fetch('/admin/update-payment', {
                   method: 'POST',
@@ -231,6 +229,35 @@
             .catch(error => {
               console.error("Error updating payment:", error);
             });
+        });
+      });
+    }
+
+    // (추가) 딜리트 버튼 핸들러
+    function attachDeleteButtonHandlers() {
+      const deleteButtons = document.querySelectorAll('.delete-button');
+      deleteButtons.forEach(button => {
+        button.addEventListener('click', function() {
+          const orderId = this.dataset.orderId;
+          // /admin/delete-order로 POST 요청
+          fetch('/admin/delete-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId })
+          })
+          .then(res => res.json())
+          .then(data => {
+            console.log('Delete response:', data);
+            if (data.success) {
+              // UI에서 해당 행 제거
+              this.closest('tr').remove();
+            } else {
+              alert(data.message || 'Deletion failed');
+            }
+          })
+          .catch(err => {
+            console.error('Error deleting order:', err);
+          });
         });
       });
     }
