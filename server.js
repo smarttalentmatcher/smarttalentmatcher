@@ -385,18 +385,11 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice, venmoId } = req.body;
     console.log("Final submit received:", req.body);
 
-    // 해당 이메일의 기존 최종 주문들 조회 (status: "final")
-    const oldFinals = await Order.find({ emailAddress, status: "final" });
+    // 기존 최종 주문 취소 (해당 이메일의 final 주문들) 및 삭제 (MongoDB + Cloudinary)
+    const oldFinals = await Order.find({ emailAddress, status: "final", paid: false });
     if (oldFinals.length > 0) {
-      console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Processing them...`);
-      
+      console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Deleting them...`);
       for (const oldOrder of oldFinals) {
-        // paid 체크된 주문은 삭제하지 않음
-        if (oldOrder.paid) {
-          console.log(`Skipping deletion of paid order #${oldOrder.orderId}`);
-          continue;
-        }
-
         // 취소 이메일 전송
         const cancelHtml = `
           <div style="font-family: Arial, sans-serif;">
@@ -414,7 +407,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
           html: cancelHtml
         });
         console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
-        
+
         // Cloudinary에서 헤드샷 삭제 (이미지 존재하는 경우)
         if (oldOrder.headshot) {
           const parts = oldOrder.headshot.split('/');
