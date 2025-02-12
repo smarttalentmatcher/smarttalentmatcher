@@ -83,7 +83,7 @@ function updateCost() {
         }
       }
 
-      // rateText에 대해 작고 회색 스타일 적용 (예: for invalid/long-targeting emails adjustment과 동일)
+      // rateText에 대해 작고 회색 스타일 적용
       let rateHTML = "";
       if (rateText) {
         rateHTML = `<span style="font-size:0.85em; color:#666;">${rateText}</span>`;
@@ -95,7 +95,7 @@ function updateCost() {
         costsHTML += "<br>";
       }
       namesHTML += prefix + label + " " + rateHTML;
-      costsHTML += `$${cost.toFixed(2)}`;
+      costsHTML += `$${cost.toFixed(2)}`; // 이미 $ 추가됨
 
       sum += cost;
     }
@@ -105,37 +105,42 @@ function updateCost() {
   selectedNamesDiv.innerHTML = namesHTML;
   selectedCostsDiv.innerHTML = costsHTML;
 
-  // Subtotal 업데이트 (HTML에선 이미 "<span id='subtotal'>0</span> USD" 형태)
-  subtotalEl.textContent = sum.toFixed(2);
-
-  // 기본 할인 및 프로모 할인 계산
+  // Subtotal 업데이트 
   const baseDiscountAmount = sum * BASE_DISCOUNT_RATE;
   const discountedAfterBase = sum - baseDiscountAmount;
+
+  // 프로모 할인 계산
   const promoPercentDiscount = sum * promoRate;
   let finalAfterPercent = discountedAfterBase - promoPercentDiscount;
   if (finalAfterPercent < 0) finalAfterPercent = 0;
 
-  baseDiscountEl.textContent = baseDiscountAmount.toFixed(2);
+  // (수정) subtotal에도 '$' 추가
+  subtotalEl.textContent = `$${sum.toFixed(2)}`;
+
+  // (수정) baseDiscount에도 '$' 추가
+  baseDiscountEl.textContent = `$${baseDiscountAmount.toFixed(2)}`;
 
   if (promoPercentDiscount > 0) {
-    promoDiscountLine.style.display = "flex"; // 프로모 할인 라인 표시
+    promoDiscountLine.style.display = "flex"; 
     promoDiscountLabel.textContent = `Promo Discount: -${(promoRate * 100).toFixed(0)}%`;
-    promoDiscountEl.textContent = `${promoPercentDiscount.toFixed(2)}`;
+    // (수정) promoDiscount에도 '$' 추가
+    promoDiscountEl.textContent = `$${promoPercentDiscount.toFixed(2)}`;
   } else {
-    promoDiscountLine.style.display = "none"; // 프로모 할인 적용 안되면 숨김
+    promoDiscountLine.style.display = "none";
   }
 
-  finalCostEl.textContent = finalAfterPercent.toFixed(2);
+  // (수정) finalCost에도 '$' 추가
+  finalCostEl.textContent = `$${finalAfterPercent.toFixed(2)}`;
 }
 
 // Next 버튼 클릭 시 서버에 주문 데이터 전송 후 resume.html로 이동
 document.getElementById("next-button").addEventListener("click", () => {
   console.log("Next 버튼 클릭됨");
 
-  const subtotalVal = parseFloat(subtotalEl.textContent || "0");
-  const baseDiscountVal = parseFloat(baseDiscountEl.textContent || "0");
-  const promoDiscountVal = parseFloat(promoDiscountEl.textContent || "0");
-  const finalCostVal = parseFloat(finalCostEl.textContent || "0");
+  const subtotalVal = parseFloat(subtotalEl.textContent.replace("$", "") || "0");  // (수정) $ 제거 파싱
+  const baseDiscountVal = parseFloat(baseDiscountEl.textContent.replace("$", "") || "0"); // (수정)
+  const promoDiscountVal = parseFloat(promoDiscountEl.textContent.replace("$", "") || "0"); // (수정)
+  const finalCostVal = parseFloat(finalCostEl.textContent.replace("$", "") || "0"); // (수정)
 
   // 인보이스(영수증) HTML을 현재 보여지는 디자인 그대로 저장
   const invoiceHTML = document.querySelector(".cost-summary").outerHTML;
