@@ -1,5 +1,5 @@
 //
-// server.js (ESM 버전)
+// server.js (ESM 버전) - 12시간 리마인드 + 24시간 자동취소 + Smartlead SSL 수정 + order is not defined 에러 해결
 //
 
 // ──────────────────────────────────────────────
@@ -64,7 +64,7 @@ mongoose
     console.error("❌ MongoDB Connection Error:", err);
   });
 
-// Mongoose Order 모델 정의 (주문 데이터를 DB에 저장)
+// Mongoose Order 모델 정의
 const orderSchema = new mongoose.Schema({
   orderId: String,
   emailAddress: { type: String, default: "" },
@@ -97,7 +97,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// JSON, URL-encoded 파싱 및 정적 파일 제공
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
@@ -130,7 +129,7 @@ const transporter = nodemailer.createTransport({
 });
 
 // ──────────────────────────────────────────────
-// [타이머 관련 상수 및 변수]
+// [타이머 관련 상수 & 변수]
 // ──────────────────────────────────────────────
 const TWELVE_HOURS = 12 * 60 * 60 * 1000;
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
@@ -139,7 +138,7 @@ const reminderTimers = {};
 const autoCancelTimers = {};
 
 // ──────────────────────────────────────────────
-// [리마인더 이메일 스케줄링 및 전송 함수]
+// [12시간 후 리마인드 이메일 스케줄링 / 전송]
 // ──────────────────────────────────────────────
 function scheduleReminder(order) {
   const timeLeft = order.createdAt.getTime() + TWELVE_HOURS - Date.now();
@@ -184,10 +183,30 @@ function sendReminder(order) {
 }
 
 // ──────────────────────────────────────────────
-// [자동 취소 이메일 전송 함수]
+// [24시간 후 자동취소 스케줄링 / 실행]
 // ──────────────────────────────────────────────
+function scheduleAutoCancel(order) {
+  // 24시간 후 - 지금까지 남은 시간
+  const timeLeft = order.createdAt.getTime() + TWENTY_FOUR_HOURS - Date.now();
+  // 아직 24시간이 안 지나고, paid가 아니면 스케줄
+  if (timeLeft > 0 && !order.paid) {
+    // 기존 타이머 있으면 제거
+    if (autoCancelTimers[order.orderId]) {
+      clearTimeout(autoCancelTimers[order.orderId]);
+      delete autoCancelTimers[order.orderId];
+    }
+    autoCancelTimers[order.orderId] = setTimeout(() => autoCancelOrder(order), timeLeft);
+    console.log(
+      `⏰ Scheduled auto-cancel for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`
+    );
+  }
+}
+
 function autoCancelOrder(order) {
+  // 이미 결제됐으면 취소 X
   if (order.paid) return;
+
+  // 자동취소 메일
   const cancelHtml = `
     <div style="font-family: Arial, sans-serif;">
       <p>Hello,</p>
@@ -202,18 +221,20 @@ function autoCancelOrder(order) {
     subject: "[Smart Talent Matcher] Invoice Auto-Canceled (24h Passed)",
     html: cancelHtml
   };
+
   transporter.sendMail(mailOptions)
-    .then((info) => {
+    .then(async (info) => {
       console.log(`🚨 Auto-cancel email sent for #${order.orderId}:`, info.response);
-      Order.deleteOne({ orderId: order.orderId, status: order.status })
-        .then(() => console.log(`Order #${order.orderId} removed from DB.`))
-        .catch((err) => console.error("❌ Error deleting order:", err));
+
+      // DB에서 해당 주문 삭제
+      await Order.deleteOne({ orderId: order.orderId, status: order.status });
+      console.log(`Order #${order.orderId} removed from DB.`);
     })
     .catch((err) => console.error("❌ Error sending auto-cancel:", err));
 }
 
 // ──────────────────────────────────────────────
-// [서버 시작 시 타이머 복원 함수]
+// [서버 시작 시, 미결제 final 주문에 대해 리마인더/자동취소 스케줄 복원]
 // ──────────────────────────────────────────────
 async function restoreTimers() {
   try {
@@ -349,7 +370,8 @@ app.post("/final-submit", multer().none(), async (req, res) => {
   try {
     const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice, venmoId } = req.body;
     console.log("Final submit received:", req.body);
-    // 기존 final 주문(미결제) 취소 및 삭제 처리
+
+    // 기존 final 주문(미결제) 취소 및 삭제 처리 (중복 방지)
     const oldFinals = await Order.find({ emailAddress, status: "final", paid: false });
     if (oldFinals.length > 0) {
       console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Deleting them...`);
@@ -370,28 +392,34 @@ app.post("/final-submit", multer().none(), async (req, res) => {
           html: cancelHtml
         });
         console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
+
+        // Cloudinary 이미지 삭제
         if (oldOrder.headshot) {
           const parts = oldOrder.headshot.split('/');
           const uploadIndex = parts.findIndex(part => part === "upload");
           if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
-            const fileNameWithExtension = parts.slice(uploadIndex + 2).join('/'); 
+            const fileNameWithExtension = parts.slice(uploadIndex + 2).join('/');
             const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, "");
             console.log("Deleting Cloudinary resource with public_id:", publicId);
             await cloudinary.uploader.destroy(publicId);
           }
         }
+
         await Order.deleteOne({ _id: oldOrder._id });
         console.log(`Deleted old final order #${oldOrder.orderId} from MongoDB.`);
       }
     }
+
     // 드래프트 주문을 최종 주문으로 전환
     const draftOrder = await Order.findOne({ orderId, status: "draft" });
     if (!draftOrder) {
       return res.status(404).json({ success: false, message: "Draft order not found" });
     }
+
     if (invoice && invoice.trim() !== "") {
       draftOrder.invoice = invoice;
     }
+    // 새 final Order ID 발급
     const newFinalOrderId = generateDateTimeOrderId();
     draftOrder.orderId = newFinalOrderId;
     draftOrder.emailSubject = emailSubject || "";
@@ -402,6 +430,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     draftOrder.status = "final";
     await draftOrder.save();
     console.log("✅ Final submission order updated in MongoDB:", draftOrder);
+
     // 관리자 이메일 발송
     const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
     let adminEmailHtml = `<div style="font-family: Arial, sans-serif;">`;
@@ -428,7 +457,8 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     };
     const adminInfo = await transporter.sendMail(adminMailOptions);
     console.log("✅ Admin email sent:", adminInfo.response);
-    // 클라이언트 Invoice 이메일 전송
+
+    // 클라이언트 Invoice 이메일
     const templatePath = path.join(__dirname, "email.html");
     let emailHtml = fs.existsSync(templatePath)
       ? fs.readFileSync(templatePath, "utf-8")
@@ -442,14 +472,17 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     });
     console.log("✅ Client Invoice email sent.");
 
+    // 12시간 리마인더/24시간 자동취소 스케줄링
+    scheduleReminder(draftOrder);
+    scheduleAutoCancel(draftOrder);
+
     // ──────────────────────────────────────────────
     // [Smartlead API를 통한 대량 이메일 캠페인 시작]
     // ──────────────────────────────────────────────
-    // Smartlead API 호출 시 TLS 오류 해결을 위해 HTTPS 에이전트 생성
     const smartleadAgent = new https.Agent({
-      // 임시 해결책: SSL 인증서 검증을 비활성화 (운영 환경에서는 주의!)
-      rejectUnauthorized: false,
-      servername: "api.smartlead.io"
+      // 임시로 SSL 인증서 무시
+      rejectUnauthorized: false
+      // servername: "api.smartlead.io"
     });
 
     const csvFolderPath = path.join(__dirname, "csv");
@@ -463,20 +496,22 @@ app.post("/final-submit", multer().none(), async (req, res) => {
           const csvFilePath = path.join(csvFolderPath, csvFile);
           const form = new FormData();
           form.append("apiKey", process.env.SMARTLEAD_API_KEY);
-          form.append("orderId", order.orderId);
+          form.append("orderId", draftOrder.orderId); // 중요: order 대신 draftOrder
           form.append("recipientCsv", fs.createReadStream(csvFilePath));
           form.append("emailSubject", "[Smart Talent Matcher] Your Service Has Started!");
           form.append("emailHtml", emailHtml);
           form.append("fromEmail", "letsspeak01@naver.com");
+
           const smartleadResponse = await fetch("https://api.smartlead.io/start-campaign", {
             method: "POST",
             headers: form.getHeaders(),
             body: form,
             agent: smartleadAgent
           });
+
           const smartleadResult = await smartleadResponse.json();
           if (smartleadResult.success) {
-            console.log(`✅ Smartlead email campaign started successfully for Order #${order.orderId} using CSV file ${csvFile}`);
+            console.log(`✅ Smartlead email campaign started successfully for Order #${draftOrder.orderId} using CSV file ${csvFile}`);
           } else {
             console.error(`❌ Failed to start Smartlead email campaign for CSV file ${csvFile}: ${smartleadResult.message}`);
             smartleadSuccess = false;
@@ -487,10 +522,10 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       console.error("❌ Error starting Smartlead email campaign:", err);
       smartleadSuccess = false;
     }
-    // ──────────────────────────────────────────────
+
     res.json({
       success: true,
-      message: "Final submission complete! Emails sent and timers set."
+      message: "Final submission complete! Emails sent, reminders scheduled, and campaign started."
     });
   } catch (error) {
     console.error("❌ Error in final submission:", error);
@@ -509,16 +544,20 @@ app.get("/admin/orders", async (req, res) => {
     const orders = await Order.find({ status: "final" });
     const processedOrders = orders.map((order) => {
       const timeSinceCreation = now - order.createdAt.getTime();
+      // 24시간 넘은 경우 'expired' 표시(자동취소는 이미 scheduleAutoCancel로 처리됨)
       const expired = !order.paid && timeSinceCreation >= 24 * 60 * 60 * 1000 ? "24hrs" : "";
       return { ...order.toObject(), expired };
     });
+
+    // 48시간 넘은 미결제 주문은 DB에서 삭제
     const deletedOrders = await Order.deleteMany({
-      paid: false, 
+      paid: false,
       createdAt: { $lt: new Date(now - 48 * 60 * 60 * 1000) }
     });
     if (deletedOrders.deletedCount > 0) {
       console.log(`🗑️ Deleted ${deletedOrders.deletedCount} expired orders (48h old).`);
     }
+
     res.json(processedOrders);
   } catch (err) {
     console.error("❌ Error fetching orders:", err);
@@ -535,6 +574,7 @@ app.post("/admin/delete-order", async (req, res) => {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
     const emailAddress = order.emailAddress;
+
     const cancelHtml = `
       <div style="font-family: Arial, sans-serif;">
         <p>Hello,</p>
@@ -549,6 +589,8 @@ app.post("/admin/delete-order", async (req, res) => {
       subject: "[Smart Talent Matcher] Invoice Canceled (Admin)",
       html: cancelHtml
     });
+
+    // Cloudinary에 업로드된 이미지 제거
     if (order.headshot) {
       const parts = order.headshot.split('/');
       const uploadIndex = parts.findIndex(part => part === "upload");
@@ -559,8 +601,10 @@ app.post("/admin/delete-order", async (req, res) => {
         await cloudinary.uploader.destroy(publicId);
       }
     }
+
     await Order.deleteOne({ orderId, status: "final" });
     console.log("✅ Order deleted:", order.orderId);
+
     res.json({ success: true, message: `Order #${order.orderId} deleted. Cancel email sent.` });
   } catch (err) {
     console.error("❌ Error deleting order:", err);
@@ -568,9 +612,7 @@ app.post("/admin/delete-order", async (req, res) => {
   }
 });
 
-// ──────────────────────────────────────────────
-// [결제 상태 업데이트 및 Smartlead 캠페인 시작 라우트]
-// ──────────────────────────────────────────────
+// [결제 상태 업데이트 & Smartlead 캠페인 시작]
 app.post("/admin/update-payment", async (req, res) => {
   try {
     const { orderId, paid } = req.body;
@@ -581,6 +623,7 @@ app.post("/admin/update-payment", async (req, res) => {
     order.paid = Boolean(paid);
     await order.save();
     console.log(`✅ Order #${orderId} payment status updated to ${order.paid}`);
+
     if (order.paid) {
       let emailHtml = `
         <div style="font-size: 1.2rem; font-weight: bold; margin-top: 20px;">
@@ -598,6 +641,8 @@ app.post("/admin/update-payment", async (req, res) => {
         <p>Best Regards,</p>
         <p><strong>Smart Talent Matcher Team</strong></p>
       `;
+
+      // 결제 완료 이메일 발송
       await transporter.sendMail({
         from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
         to: order.emailAddress,
@@ -605,13 +650,10 @@ app.post("/admin/update-payment", async (req, res) => {
         html: emailHtml
       });
       console.log(`📩 Service start email sent to ${order.emailAddress}`);
-      // ──────────────────────────────────────────────
-      // [Smartlead API 호출]
-      // ──────────────────────────────────────────────
-      // TLS 오류를 우회하기 위한 HTTPS 에이전트 생성 (임시 해결책)
+
+      // Smartlead API 호출
       const smartleadAgent = new https.Agent({
-        rejectUnauthorized: false, // SSL 인증서 검증 비활성화 (운영 환경에서는 주의!)
-        servername: "api.smartlead.io"
+        rejectUnauthorized: false
       });
       const csvFolderPath = path.join(__dirname, "csv");
       let smartleadSuccess = true;
@@ -629,6 +671,7 @@ app.post("/admin/update-payment", async (req, res) => {
             form.append("emailSubject", "[Smart Talent Matcher] Your Service Has Started!");
             form.append("emailHtml", emailHtml);
             form.append("fromEmail", "letsspeak01@naver.com");
+
             const smartleadResponse = await fetch("https://api.smartlead.io/start-campaign", {
               method: "POST",
               headers: form.getHeaders(),
@@ -649,9 +692,10 @@ app.post("/admin/update-payment", async (req, res) => {
         smartleadSuccess = false;
       }
     }
-    res.json({ 
-      success: true, 
-      message: "Payment status updated, service start email sent, and email campaign started if paid." 
+
+    res.json({
+      success: true,
+      message: "Payment status updated, service start email sent, and email campaign started if paid."
     });
   } catch (err) {
     console.error("❌ Error updating payment, sending email, or starting campaign:", err);
@@ -659,9 +703,7 @@ app.post("/admin/update-payment", async (req, res) => {
   }
 });
 
-// ──────────────────────────────────────────────
-// [관리자 결제 토글 라우트]
-// ──────────────────────────────────────────────
+// 관리자 결제 토글 라우트 (테스트용)
 app.get("/admin/toggle-payment", async (req, res) => {
   try {
     const { orderId, paid } = req.query;
@@ -684,6 +726,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
 // ──────────────────────────────────────────────
 const cleanUpNonFinalOrders = async () => {
   try {
+    // draft 상태 등 final 이 아닌 것 모두 정리
     const orders = await Order.find({ status: { $ne: "final" } });
     for (const order of orders) {
       if (order.headshot) {
