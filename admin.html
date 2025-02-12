@@ -9,7 +9,8 @@
       width: 90%;
       max-width: 1800px;
       margin: 40px auto;
-      max-height: 250px;
+      /* (수정) 전체 높이를 250px → 600px 으로 늘려서 여러 행이 보이도록 함 */
+  
       overflow-y: auto;
     }
     .orders-table {
@@ -43,9 +44,14 @@
       padding: 6px 10px;
       border-radius: 4px;
     }
-    /* Invoice 셀의 내용이 넘칠 경우 가로 스크롤 생성 */
+    /* 
+      (수정) Invoice 셀에서 내용이 길면 세로/가로 스크롤을 생성하고,
+      셀 높이를 일정 부분 제한 (max-height: 150px)
+    */
     .scroll-cell {
       overflow-x: auto;
+      overflow-y: auto; /* 추가됨 */
+      max-height: 250px; /* 추가됨 */
       word-wrap: break-word;
     }
     .filter-container {
@@ -154,20 +160,23 @@
         }
         tr.appendChild(headshotTd);
 
-        // Invoice (colgroup에 의해 200px 고정, 내용이 넘치면 가로 스크롤)
+        // Invoice 셀
         const invoiceTd = document.createElement('td');
-        invoiceTd.classList.add("scroll-cell");
+        invoiceTd.classList.add("scroll-cell"); // 세로/가로 스크롤 가능
         invoiceTd.innerHTML = order.invoice || "";
         tr.appendChild(invoiceTd);
 
-        // Payment / Delete
+        // Payment / Delete 셀
         const paymentTd = document.createElement('td');
         if (timeSinceCreation >= 48 * 60 * 60 * 1000) {
-          tr.remove(); // 48시간 지난 주문 삭제
+          // 48시간 지난 주문은 행을 아예 제거
+          tr.remove();
           return; // 다음 주문으로 넘어감
         } else if (isExpired) {
+          // 24시간 경과된 미결제 주문이라면 "24hrs" 표시
           paymentTd.innerHTML = `<span style="color:red; font-weight:bold;">24hrs</span>`;
         } else {
+          // 일반 상태
           let finalCost = order.finalCost || "";
           if (finalCost !== "") {
             finalCost = "$" + parseFloat(finalCost).toFixed(2);
