@@ -386,7 +386,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     console.log("Final submit received:", req.body);
 
     // 기존 최종 주문 취소 (해당 이메일의 final 주문들) 및 삭제 (MongoDB + Cloudinary)
-    const oldFinals = await Order.find({ emailAddress, status: "final", paid: false });
+    const oldFinals = await Order.find({ emailAddress, status: "final" });
     if (oldFinals.length > 0) {
       console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Deleting them...`);
       for (const oldOrder of oldFinals) {
