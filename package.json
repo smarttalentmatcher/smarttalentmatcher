@@ -23,7 +23,8 @@
     "multer-storage-cloudinary": "^4.0.0",
     "node-cron": "^3.0.3",
     "node-fetch": "^3.3.2",
-    "nodemailer": "^6.10.0"
+    "nodemailer": "^6.10.0",
+    "nodemailer-mailgun-transport": "^2.1.5"
   },
   "repository": {
     "type": "git",
