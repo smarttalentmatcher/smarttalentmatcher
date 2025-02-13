@@ -162,33 +162,31 @@
         invoiceTd.innerHTML = order.invoice || "";
         tr.appendChild(invoiceTd);
 
-        // Payment / Delete
-        const paymentTd = document.createElement('td');
-        if (timeSinceCreation >= 48 * 60 * 60 * 1000) {
-          // 48시간 지난 주문은 표시 없이 바로 제거
-          tr.remove();
-          return; 
-        } else if (isExpired) {
-          paymentTd.innerHTML = `<span style="color:red; font-weight:bold;">24hrs</span>`;
-        } else {
-          let finalCost = order.finalCost || "";
-          if (finalCost !== "") {
-            finalCost = "$" + parseFloat(finalCost).toFixed(2);
-          }
-          const checkedAttr = order.paid ? "checked" : "";
-          paymentTd.innerHTML = `
-            ${finalCost}
-            <br>
-            <label>
-              <input type="checkbox" class="payment-checkbox" data-order-id="${order.orderId}" ${checkedAttr}>
-              Paid
-            </label>
-            <br>
-            <!-- 딜리트 버튼 -->
-            <button class="delete-button" data-order-id="${order.orderId}">Delete</button>
-          `;
-        }
-        tr.appendChild(paymentTd);
+      // Payment / Delete
+const paymentTd = document.createElement('td');
+if (timeSinceCreation >= 48 * 60 * 60 * 1000) {
+  // 48시간 지난 주문은 표시 없이 바로 제거
+  tr.remove();
+  return; 
+} else {
+  let finalCost = order.finalCost || "";
+  if (finalCost !== "") {
+    finalCost = "$" + parseFloat(finalCost).toFixed(2);
+  }
+  // isExpired 조건 없이 항상 체크박스와 Delete 버튼을 표시합니다.
+  paymentTd.innerHTML = `
+    ${finalCost}
+    <br>
+    <label>
+      <input type="checkbox" class="payment-checkbox" data-order-id="${order.orderId}" ${order.paid ? "checked" : ""}>
+      Paid
+    </label>
+    <br>
+    <!-- 딜리트 버튼 -->
+    <button class="delete-button" data-order-id="${order.orderId}">Delete</button>
+  `;
+}
+tr.appendChild(paymentTd);
 
         tbody.appendChild(tr);
       });
