@@ -173,9 +173,11 @@ if (timeSinceCreation >= 48 * 60 * 60 * 1000) {
   if (finalCost !== "") {
     finalCost = "$" + parseFloat(finalCost).toFixed(2);
   }
-  // isExpired 조건 없이 항상 체크박스와 Delete 버튼을 표시합니다.
+  // 만약 24시간이 경과했다면 "24hrs" 텍스트를 추가합니다.
+  const expiredText = isExpired ? `<div style="color:red; font-weight:bold;">24hrs</div>` : "";
   paymentTd.innerHTML = `
     ${finalCost}
+    ${expiredText}
     <br>
     <label>
       <input type="checkbox" class="payment-checkbox" data-order-id="${order.orderId}" ${order.paid ? "checked" : ""}>
