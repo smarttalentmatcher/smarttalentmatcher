@@ -1,5 +1,5 @@
 //
-// server.js (ESM 버전) - 12시간 리마인드 + 24시간 자동취소 + Smartlead SSL 수정 + order is not defined 에러 해결
+// server.js (ESM 버전) - 12시간 리마인드 + 24시간 자동취소 + Mailgun 연동
 //
 
 // ──────────────────────────────────────────────
@@ -10,6 +10,7 @@ dotenv.config();
 
 import express from "express";
 import nodemailer from "nodemailer";
+import mailgunTransport from "nodemailer-mailgun-transport"; // Mailgun Transport 추가
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -116,17 +117,16 @@ function generateDateTimeOrderId() {
 }
 
 // ──────────────────────────────────────────────
-// [Nodemailer 설정 (네이버 SMTP)]
+// [Nodemailer 설정 (Mailgun Transport)]
 // ──────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-  host: "smtp.naver.com",
-  port: 465,
-  secure: true,
+const mailgunAuth = {
   auth: {
-    user: process.env.NODemailer_USER,
-    pass: process.env.NODemailer_PASS
+    api_key: process.env.MAILGUN_API_KEY,      // .env에 저장
+    domain: process.env.MAILGUN_DOMAIN        // .env에 저장
   }
-});
+};
+
+const transporter = nodemailer.createTransport(mailgunTransport(mailgunAuth));
 
 // ──────────────────────────────────────────────
 // [타이머 관련 상수 & 변수]
@@ -166,14 +166,14 @@ function sendReminder(order) {
         : "<html><body><p>Invoice details not available.</p></body></html>";
       reminderEmailHtml = reminderEmailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
       const mailOptions = {
-        from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
+        from: `"Smart Talent Matcher" <info@smarttalentmatcher.com>`,
         to: savedOrder.emailAddress,
         subject: "**Reminder** [Smart Talent Matcher] Invoice for Your Submission",
         html: reminderEmailHtml
       };
       transporter.sendMail(mailOptions)
         .then((info) => {
-          console.log(`✅ Reminder email sent for #${order.orderId}:`, info.response);
+          console.log(`✅ Reminder email sent for #${order.orderId}:`, info);
           savedOrder.reminderSent = true;
           return savedOrder.save();
         })
@@ -216,7 +216,7 @@ function autoCancelOrder(order) {
     </div>
   `;
   const mailOptions = {
-    from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
+    from: `"Smart Talent Matcher" <info@smarttalentmatcher.com>`,
     to: order.emailAddress,
     subject: "[Smart Talent Matcher] Invoice Auto-Canceled (24h Passed)",
     html: cancelHtml
@@ -224,7 +224,7 @@ function autoCancelOrder(order) {
 
   transporter.sendMail(mailOptions)
     .then(async (info) => {
-      console.log(`🚨 Auto-cancel email sent for #${order.orderId}:`, info.response);
+      console.log(`🚨 Auto-cancel email sent for #${order.orderId}:`, info);
 
       // DB에서 해당 주문 삭제
       await Order.deleteOne({ orderId: order.orderId, status: order.status });
@@ -280,24 +280,20 @@ app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res)
     `;
     emailHtml += `</div>`;
     const mailOptions = {
-      from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
+      from: `"Smart Talent Matcher" <info@smarttalentmatcher.com>`,
       to: emailAddress,
       subject: emailSubject,
       html: emailHtml
     };
     console.log("Sending test email to:", emailAddress);
     const info = await transporter.sendMail(mailOptions);
-    console.log("Test Email sent:", info.response);
+    console.log("Test Email sent:", info);
     res.json({ success: true, message: "Test email sent successfully!" });
   } catch (error) {
     console.error("Error sending test email:", error);
     res.status(500).json({ error: "Failed to send test email" });
   }
 });
-
-// ──────────────────────────────────────────────
-// [주문 생성 및 업데이트 라우트]
-// ──────────────────────────────────────────────
 
 // (A) /submit-order : 드래프트 주문 생성 (choose.html)
 app.post("/submit-order", async (req, res) => {
@@ -386,7 +382,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
           </div>
         `;
         await transporter.sendMail({
-          from: `"Smart Talent Matcher" <${process.env.NODemailer_USER || "letsspeak01@naver.com"}>`,
+          from: `"Smart Talent Matcher" <info@smarttalentmatcher.com>`,
           to: emailAddress,
           subject: "[Smart Talent Matcher] Previous Invoice Canceled",
           html: cancelHtml
@@ -431,7 +427,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     await draftOrder.save();
     console.log("✅ Final submission order updated in MongoDB:", draftOrder);
 
-    // 관리자 이메일 발송
+    // 관리자 이메일 발송 (to admin: info@smarttalentmatcher.com)
     const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
     let adminEmailHtml = `<div style="font-family: Arial, sans-serif;">`;
     if (draftOrder.headshot) {
@@ -450,13 +446,13 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     `;
     adminEmailHtml += `</div>`;
     const adminMailOptions = {
-      from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
-      to: "letsspeak01@naver.com",
+      from: `"Smart Talent Matcher" <info@smarttalentmatcher.com>`,
+      to: "info@smarttalentmatcher.com",
       subject: emailSubject || "[No Subject Provided]",
       html: adminEmailHtml
     };
     const adminInfo = await transporter.sendMail(adminMailOptions);
-    console.log("✅ Admin email sent:", adminInfo.response);
+    console.log("✅ Admin email sent:", adminInfo);
 
     // 클라이언트 Invoice 이메일
     const templatePath = path.join(__dirname, "email.html");
@@ -465,7 +461,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       : "<html><body><p>Invoice details not available.</p></body></html>";
     emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, draftOrder.invoice);
     await transporter.sendMail({
-      from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
+      from: `"Smart Talent Matcher" <info@smarttalentmatcher.com>`,
       to: draftOrder.emailAddress,
       subject: "[Smart Talent Matcher] Invoice for Your Submission",
       html: emailHtml
@@ -482,7 +478,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     const smartleadAgent = new https.Agent({
       // 임시로 SSL 인증서 무시
       rejectUnauthorized: false
-      // servername: "api.smartlead.io"
     });
 
     const csvFolderPath = path.join(__dirname, "csv");
@@ -496,11 +491,11 @@ app.post("/final-submit", multer().none(), async (req, res) => {
           const csvFilePath = path.join(csvFolderPath, csvFile);
           const form = new FormData();
           form.append("apiKey", process.env.SMARTLEAD_API_KEY);
-          form.append("orderId", draftOrder.orderId); // 중요: order 대신 draftOrder
+          form.append("orderId", draftOrder.orderId);
           form.append("recipientCsv", fs.createReadStream(csvFilePath));
           form.append("emailSubject", "[Smart Talent Matcher] Your Service Has Started!");
           form.append("emailHtml", emailHtml);
-          form.append("fromEmail", "letsspeak01@naver.com");
+          form.append("fromEmail", "info@smarttalentmatcher.com");
 
           const smartleadResponse = await fetch("https://api.smartlead.io/start-campaign", {
             method: "POST",
@@ -532,10 +527,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     res.status(500).json({ success: false, error: "Failed to process final submission." });
   }
 });
-
-// ──────────────────────────────────────────────
-// [관리자 관련 라우트]
-// ──────────────────────────────────────────────
 
 // 관리자 주문 조회 API
 app.get("/admin/orders", async (req, res) => {
@@ -584,7 +575,7 @@ app.post("/admin/delete-order", async (req, res) => {
       </div>
     `;
     await transporter.sendMail({
-      from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
+      from: `"Smart Talent Matcher" <info@smarttalentmatcher.com>`,
       to: emailAddress,
       subject: "[Smart Talent Matcher] Invoice Canceled (Admin)",
       html: cancelHtml
@@ -644,7 +635,7 @@ app.post("/admin/update-payment", async (req, res) => {
 
       // 결제 완료 이메일 발송
       await transporter.sendMail({
-        from: `"Smart Talent Matcher" <letsspeak01@naver.com>`,
+        from: `"Smart Talent Matcher" <info@smarttalentmatcher.com>`,
         to: order.emailAddress,
         subject: "[Smart Talent Matcher] Your Service Has Started!",
         html: emailHtml
@@ -670,7 +661,7 @@ app.post("/admin/update-payment", async (req, res) => {
             form.append("recipientCsv", fs.createReadStream(csvFilePath));
             form.append("emailSubject", "[Smart Talent Matcher] Your Service Has Started!");
             form.append("emailHtml", emailHtml);
-            form.append("fromEmail", "letsspeak01@naver.com");
+            form.append("fromEmail", "info@smarttalentmatcher.com");
 
             const smartleadResponse = await fetch("https://api.smartlead.io/start-campaign", {
               method: "POST",
