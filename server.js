@@ -121,10 +121,19 @@ function generateDateTimeOrderId() {
 const transporter = nodemailer.createTransport({
   host: "smtp.elasticemail.com",
   port: 2525, // 필요에 따라 2525, 587, 465 등으로 조정
-  secure: false, // 포트 465를 사용하면 true로 변경
+  secure: false, // 포트 465 사용 시 true로 변경
   auth: {
     user: process.env.ELASTIC_EMAIL_USER, // 예: info@smarttalentmatcher.com
     pass: process.env.ELASTIC_EMAIL_API_KEY
+  }
+});
+
+// SMTP 연결 확인 (테스트용)
+transporter.verify((error, success) => {
+  if (error) {
+    console.error("SMTP 연결 에러:", error);
+  } else {
+    console.log("SMTP 서버 연결 성공, 메일 발송 준비 완료!");
   }
 });
 
@@ -423,7 +432,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     await draftOrder.save();
     console.log("✅ Final submission order updated in MongoDB:", draftOrder);
 
-    // 관리자 이메일 발송 (여기서 letsspeak01@naver.com 대신 ELASTIC_EMAIL_USER 사용)
+    // 관리자 이메일 발송 (관리자 이메일을 ELASTIC_EMAIL_USER로 설정)
     const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
     let adminEmailHtml = `<div style="font-family: Arial, sans-serif;">`;
     if (draftOrder.headshot) {
@@ -443,7 +452,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     adminEmailHtml += `</div>`;
     const adminMailOptions = {
       from: `Smart Talent Matcher <${process.env.ELASTIC_EMAIL_USER || "info@smarttalentmatcher.com"}>`,
-      to: process.env.ELASTIC_EMAIL_USER, // 변경: 관리자 이메일 주소를 ELASTIC_EMAIL_USER로 설정
+      to: process.env.ELASTIC_EMAIL_USER,
       subject: emailSubject || "[No Subject Provided]",
       html: adminEmailHtml
     };
@@ -472,7 +481,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     // [Smartlead API를 통한 대량 이메일 캠페인 시작]
     // ──────────────────────────────────────────────
     const smartleadAgent = new https.Agent({
-      // 임시로 SSL 인증서 무시
       rejectUnauthorized: false
     });
 
@@ -499,7 +507,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
             body: form,
             agent: smartleadAgent
           });
-
           const smartleadResult = await smartleadResponse.json();
           if (smartleadResult.success) {
             console.log(`✅ Smartlead email campaign started successfully for Order #${draftOrder.orderId} using CSV file ${csvFile}`);
