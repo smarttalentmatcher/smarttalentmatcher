@@ -9,7 +9,6 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
-import nodemailer from "nodemailer";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -116,26 +115,31 @@ function generateDateTimeOrderId() {
 }
 
 // ──────────────────────────────────────────────
-// [Nodemailer 설정 (Elastic Email SMTP)]
+// [Elastic Email API를 이용한 이메일 발송 유틸리티 함수]
 // ──────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-  host: "smtp.elasticemail.com",
-  port: 2525, // 필요에 따라 2525, 587, 465 등으로 조정
-  secure: false, // 포트 465 사용 시 true로 변경
-  auth: {
-    user: process.env.ELASTIC_EMAIL_USER, // 예: info@smarttalentmatcher.com
-    pass: process.env.ELASTIC_EMAIL_API_KEY
-  }
-});
+async function sendEmailAPI({ subject, from, fromName, to, bodyHtml, isTransactional = true }) {
+  const url = "https://api.elasticemail.com/v2/email/send";
+  const params = new URLSearchParams();
+  params.append("apikey", process.env.ELASTIC_EMAIL_API_KEY);
+  params.append("subject", subject);
+  params.append("from", from || process.env.ELASTIC_EMAIL_USER);
+  params.append("fromName", fromName || "Smart Talent Matcher");
+  params.append("to", to);
+  params.append("bodyHtml", bodyHtml);
+  params.append("isTransactional", isTransactional ? "true" : "false");
 
-// SMTP 연결 확인 (테스트용)
-transporter.verify((error, success) => {
-  if (error) {
-    console.error("SMTP 연결 에러:", error);
-  } else {
-    console.log("SMTP 서버 연결 성공, 메일 발송 준비 완료!");
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      body: params
+    });
+    const data = await response.json();
+    return data;
+  } catch (err) {
+    console.error("Error sending email via API:", err);
+    throw err;
   }
-});
+}
 
 // ──────────────────────────────────────────────
 // [타이머 관련 상수 & 변수]
@@ -174,15 +178,19 @@ function sendReminder(order) {
         ? fs.readFileSync(templatePath, "utf-8")
         : "<html><body><p>Invoice details not available.</p></body></html>";
       reminderEmailHtml = reminderEmailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
-      const mailOptions = {
-        from: `Smart Talent Matcher <${process.env.ELASTIC_EMAIL_USER || "info@smarttalentmatcher.com"}>`,
-        to: savedOrder.emailAddress,
+      
+      const mailData = {
         subject: "**Reminder** [Smart Talent Matcher] Invoice for Your Submission",
-        html: reminderEmailHtml
+        from: process.env.ELASTIC_EMAIL_USER,
+        fromName: "Smart Talent Matcher",
+        to: savedOrder.emailAddress,
+        bodyHtml: reminderEmailHtml,
+        isTransactional: true
       };
-      transporter.sendMail(mailOptions)
-        .then((info) => {
-          console.log(`✅ Reminder email sent for #${order.orderId}:`, info.response);
+
+      sendEmailAPI(mailData)
+        .then((data) => {
+          console.log(`✅ Reminder email sent for #${order.orderId}:`, data);
           savedOrder.reminderSent = true;
           return savedOrder.save();
         })
@@ -202,9 +210,7 @@ function scheduleAutoCancel(order) {
       delete autoCancelTimers[order.orderId];
     }
     autoCancelTimers[order.orderId] = setTimeout(() => autoCancelOrder(order), timeLeft);
-    console.log(
-      `⏰ Scheduled auto-cancel for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`
-    );
+    console.log(`⏰ Scheduled auto-cancel for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
   }
 }
 
@@ -218,16 +224,19 @@ function autoCancelOrder(order) {
       <p>Regards,<br>Smart Talent Matcher</p>
     </div>
   `;
-  const mailOptions = {
-    from: `Smart Talent Matcher <${process.env.ELASTIC_EMAIL_USER || "info@smarttalentmatcher.com"}>`,
-    to: order.emailAddress,
+  
+  const mailData = {
     subject: "[Smart Talent Matcher] Invoice Auto-Canceled (24h Passed)",
-    html: cancelHtml
+    from: process.env.ELASTIC_EMAIL_USER,
+    fromName: "Smart Talent Matcher",
+    to: order.emailAddress,
+    bodyHtml: cancelHtml,
+    isTransactional: true
   };
 
-  transporter.sendMail(mailOptions)
-    .then(async (info) => {
-      console.log(`🚨 Auto-cancel email sent for #${order.orderId}:`, info.response);
+  sendEmailAPI(mailData)
+    .then(async (data) => {
+      console.log(`🚨 Auto-cancel email sent for #${order.orderId}:`, data);
       await Order.deleteOne({ orderId: order.orderId, status: order.status });
       console.log(`Order #${order.orderId} removed from DB.`);
     })
@@ -280,15 +289,18 @@ app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res)
       <p>${formattedIntro}</p>
     `;
     emailHtml += `</div>`;
-    const mailOptions = {
-      from: `Smart Talent Matcher <${process.env.ELASTIC_EMAIL_USER || "info@smarttalentmatcher.com"}>`,
-      to: emailAddress,
+    
+    const mailData = {
       subject: emailSubject,
-      html: emailHtml
+      from: process.env.ELASTIC_EMAIL_USER,
+      fromName: "Smart Talent Matcher",
+      to: emailAddress,
+      bodyHtml: emailHtml,
+      isTransactional: true
     };
-    console.log("Sending test email to:", emailAddress);
-    const info = await transporter.sendMail(mailOptions);
-    console.log("Test Email sent:", info.response);
+
+    const result = await sendEmailAPI(mailData);
+    console.log("Test Email sent:", result);
     res.json({ success: true, message: "Test email sent successfully!" });
   } catch (error) {
     console.error("Error sending test email:", error);
@@ -386,11 +398,13 @@ app.post("/final-submit", multer().none(), async (req, res) => {
             <p>Regards,<br>Smart Talent Matcher</p>
           </div>
         `;
-        await transporter.sendMail({
-          from: `Smart Talent Matcher <${process.env.ELASTIC_EMAIL_USER || "info@smarttalentmatcher.com"}>`,
-          to: emailAddress,
+        await sendEmailAPI({
           subject: "[Smart Talent Matcher] Previous Invoice Canceled",
-          html: cancelHtml
+          from: process.env.ELASTIC_EMAIL_USER,
+          fromName: "Smart Talent Matcher",
+          to: emailAddress,
+          bodyHtml: cancelHtml,
+          isTransactional: true
         });
         console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
 
@@ -432,7 +446,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     await draftOrder.save();
     console.log("✅ Final submission order updated in MongoDB:", draftOrder);
 
-    // 관리자 이메일 발송 (관리자 이메일을 ELASTIC_EMAIL_USER로 설정)
+    // 관리자 이메일 발송 (관리자 이메일을 ELASTIC_EMAIL_USER로 사용)
     const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
     let adminEmailHtml = `<div style="font-family: Arial, sans-serif;">`;
     if (draftOrder.headshot) {
@@ -450,14 +464,15 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       <p>${formattedIntro}</p>
     `;
     adminEmailHtml += `</div>`;
-    const adminMailOptions = {
-      from: `Smart Talent Matcher <${process.env.ELASTIC_EMAIL_USER || "info@smarttalentmatcher.com"}>`,
-      to: process.env.ELASTIC_EMAIL_USER,
+    await sendEmailAPI({
       subject: emailSubject || "[No Subject Provided]",
-      html: adminEmailHtml
-    };
-    const adminInfo = await transporter.sendMail(adminMailOptions);
-    console.log("✅ Admin email sent:", adminInfo.response);
+      from: process.env.ELASTIC_EMAIL_USER,
+      fromName: "Smart Talent Matcher",
+      to: process.env.ELASTIC_EMAIL_USER, // 관리자 수신: ELASTIC_EMAIL_USER로 설정
+      bodyHtml: adminEmailHtml,
+      isTransactional: true
+    });
+    console.log("✅ Admin email sent.");
 
     // 클라이언트 Invoice 이메일
     const templatePath = path.join(__dirname, "email.html");
@@ -465,11 +480,13 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       ? fs.readFileSync(templatePath, "utf-8")
       : "<html><body><p>Invoice details not available.</p></body></html>";
     emailHtml = emailHtml.replace(/{{\s*invoice\s*}}/g, draftOrder.invoice);
-    await transporter.sendMail({
-      from: `Smart Talent Matcher <${process.env.ELASTIC_EMAIL_USER || "info@smarttalentmatcher.com"}>`,
-      to: draftOrder.emailAddress,
+    await sendEmailAPI({
       subject: "[Smart Talent Matcher] Invoice for Your Submission",
-      html: emailHtml
+      from: process.env.ELASTIC_EMAIL_USER,
+      fromName: "Smart Talent Matcher",
+      to: draftOrder.emailAddress,
+      bodyHtml: emailHtml,
+      isTransactional: true
     });
     console.log("✅ Client Invoice email sent.");
 
@@ -499,8 +516,8 @@ app.post("/final-submit", multer().none(), async (req, res) => {
           form.append("recipientCsv", fs.createReadStream(csvFilePath));
           form.append("emailSubject", "[Smart Talent Matcher] Your Service Has Started!");
           form.append("emailHtml", emailHtml);
-          form.append("fromEmail", process.env.ELASTIC_EMAIL_USER || "info@smarttalentmatcher.com");
-
+          form.append("fromEmail", process.env.ELASTIC_EMAIL_USER);
+          
           const smartleadResponse = await fetch("https://api.smartlead.io/start-campaign", {
             method: "POST",
             headers: form.getHeaders(),
@@ -579,11 +596,13 @@ app.post("/admin/delete-order", async (req, res) => {
         <p>Regards,<br>Smart Talent Matcher</p>
       </div>
     `;
-    await transporter.sendMail({
-      from: `Smart Talent Matcher <${process.env.ELASTIC_EMAIL_USER || "info@smarttalentmatcher.com"}>`,
-      to: emailAddress,
+    await sendEmailAPI({
       subject: "[Smart Talent Matcher] Invoice Canceled (Admin)",
-      html: cancelHtml
+      from: process.env.ELASTIC_EMAIL_USER,
+      fromName: "Smart Talent Matcher",
+      to: emailAddress,
+      bodyHtml: cancelHtml,
+      isTransactional: true
     });
 
     if (order.headshot) {
@@ -637,11 +656,13 @@ app.post("/admin/update-payment", async (req, res) => {
         <p><strong>Smart Talent Matcher Team</strong></p>
       `;
 
-      await transporter.sendMail({
-        from: `Smart Talent Matcher <${process.env.ELASTIC_EMAIL_USER || "info@smarttalentmatcher.com"}>`,
-        to: order.emailAddress,
+      await sendEmailAPI({
         subject: "[Smart Talent Matcher] Your Service Has Started!",
-        html: emailHtml
+        from: process.env.ELASTIC_EMAIL_USER,
+        fromName: "Smart Talent Matcher",
+        to: order.emailAddress,
+        bodyHtml: emailHtml,
+        isTransactional: true
       });
       console.log(`📩 Service start email sent to ${order.emailAddress}`);
 
@@ -663,8 +684,8 @@ app.post("/admin/update-payment", async (req, res) => {
             form.append("recipientCsv", fs.createReadStream(csvFilePath));
             form.append("emailSubject", "[Smart Talent Matcher] Your Service Has Started!");
             form.append("emailHtml", emailHtml);
-            form.append("fromEmail", process.env.ELASTIC_EMAIL_USER || "info@smarttalentmatcher.com");
-
+            form.append("fromEmail", process.env.ELASTIC_EMAIL_USER);
+  
             const smartleadResponse = await fetch("https://api.smartlead.io/start-campaign", {
               method: "POST",
               headers: form.getHeaders(),
