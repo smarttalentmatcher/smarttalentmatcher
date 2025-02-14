@@ -166,8 +166,8 @@ function uploadCSVToDB() {
 }
 
 // ───────── [타이머 관련 상수 & 변수] ─────────
-const TWELVE_HOURS = 1 * 60 * 1000;
-const TWENTY_FOUR_HOURS = 2 * 60 * 1000;
+const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 const reminderTimers = {};
 const autoCancelTimers = {};
 
@@ -238,8 +238,6 @@ function autoCancelOrder(order) {
 <table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: Arial, sans-serif; background-color:#f9f9f9; color: #333; line-height:1.6;">
   <tr>
     <td align="center" style="padding: 30px;">
-
-      <!-- 실제 내용이 들어가는 컨테이너 테이블 -->
       <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color:#ffffff; border-radius:8px; padding:20px;">
         <tr>
           <td align="center" style="padding: 20px;">
@@ -247,21 +245,25 @@ function autoCancelOrder(order) {
             <h2 style="color:#d9534f; margin-top:0;">
               Your Invoice (Order #${order.orderId}) Has Been Canceled!
             </h2>
-
+            <br><br>
             <p style="margin:0 0 15px 0;">
               Hello ${order.emailAddress ? order.emailAddress.split("@")[0] : ""},
             </p>
-
+            <br>
             <p style="margin:0 0 15px 0;">
-              We noticed you haven't completed your payment within 24 hours, so your invoice for 
-              <strong>Order #${order.orderId}</strong> has been 
+              We noticed you haven't completed your payment within 24 hours, <br>
+              so your invoice for <strong>Order #${order.orderId}</strong> has been 
               <strong>automatically canceled</strong>.
             </p>
-
+            <br>
             <p style="margin:0 0 15px 0;">
               However, we don't want you to miss out on this great opportunity.<br>
-              If you've been on the fence, we'd like to offer you a second chance with a special 
-              <strong>10% discount</strong> using our promo code:
+              If you've been on the fence, we'd like to offer you a second chance <br>
+              with a special <strong>10% discount</strong> using our promo code:
+            </p>
+
+            <p style="color:#28a745; font-weight:bold; margin:0 0 10px 0;">
+              This discount code helps you save 10% on your next order!
             </p>
 
             <!-- 프로모 코드 영역 (초록색 박스) -->
@@ -282,7 +284,7 @@ function autoCancelOrder(order) {
               Simply apply this code when creating a new order.<br>
               Re-submit your order now and take advantage of this discount while it lasts!
             </p>
-
+            <br><br>
             <!-- CTA 버튼 -->
             <a 
               href="https://track.smarttalentmatcher.com/redirect?to=smarttalentmatcher.com" 
@@ -305,23 +307,20 @@ function autoCancelOrder(order) {
             >
               Get Started
             </a>
-
+<br><br>
             <p style="margin:30px 0 0 0;">
               Best Regards,<br>
               Smart Talent Matcher
             </p>
-
           </td>
         </tr>
       </table>
-
     </td>
   </tr>
 </table>
   `;
 
   const mailData = {
-    // 제목에 프로모 코드 안내
     subject: "[Smart Talent Matcher] Invoice Auto-Canceled (24h) - Enjoy 10% Off with WELCOME10",
     from: process.env.ELASTIC_EMAIL_USER,
     fromName: "Smart Talent Matcher",
@@ -330,15 +329,8 @@ function autoCancelOrder(order) {
     isTransactional: true
   };
 
-  sendEmailAPI(mailData)
-    .then(async (data) => {
-      console.log(`🚨 Auto-cancel email sent for #${order.orderId}:`, data);
-      await Order.deleteOne({ orderId: order.orderId, status: order.status });
-      console.log(`Order #${order.orderId} removed from DB.`);
-    })
-    .catch((err) => console.error("❌ Error sending auto-cancel:", err));
+  // ...
 }
-
 // ───────── [서버 시작 시, 미결제 final 주문 리마인더/자동취소 복원] ─────────
 async function restoreTimers() {
   try {
