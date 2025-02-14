@@ -152,7 +152,7 @@
         const timeSinceCreation = Date.now() - new Date(order.createdAt).getTime();
 
         // [테스트 환경] 3분 경과 & unpaid인 경우 "24hrs" 표시
-        const isExpiredUnpaid = (timeSinceCreation >= 3 * 60 * 1000) && (!order.paid);
+        const isExpiredUnpaid = (timeSinceCreation >= 24 * 60 * 60 * 1000) && (!order.paid);
 
         // 열 순서대로 생성
         // 1) orderId
@@ -305,7 +305,7 @@
       const filter = this.value;
       const now = Date.now();
       // 테스트 모드: 3분
-      const expiredThreshold = 3 * 60 * 1000;
+      const expiredThreshold = 24 * 60 * 60 * 1000;
 
       const filteredOrders = ordersData.filter(order => {
         const timeSinceCreation = now - new Date(order.createdAt).getTime();

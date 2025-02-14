@@ -166,9 +166,9 @@ function uploadCSVToDB() {
 
 // ───────── [타이머 관련 상수 & 변수] ─────────
 // (테스트용으로 1분, 3분, 5분으로 설정 - 실제 운영시 12시간, 24시간, 48시간으로 변경)
-const TWELVE_HOURS = 1 * 60 * 1000;      
-const TWENTY_FOUR_HOURS = 3 * 60 * 1000; 
-const FORTY_EIGHT_HOURS = 5 * 60 * 1000; 
+const TWELVE_HOURS = 12 * 60 * 60 * 1000;      
+const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000; 
+const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000; 
 
 const reminderTimers = {};
 const autoCancelTimers = {};
@@ -382,7 +382,7 @@ async function restoreTimers() {
 // ───────── [추가: 미제출(불완전한) 주문 정리 함수] ─────────
 async function cleanUpIncompleteOrders() {
   // 24시간 전 시각 (실제 운영에서는 24시간, 테스트에서는 TWENTY_FOUR_HOURS 대신 직접 계산)
-  const cutoff = new Date(Date.now() - (3 * 60 * 1000));
+  const cutoff = new Date(Date.now() - (24 * 60 * 60 * 1000));
   // status가 draft인 주문 중 createdAt이 cutoff 이전인 주문 조회
   const orders = await Order.find({ status: "draft", createdAt: { $lt: cutoff } });
   for (const order of orders) {
@@ -723,22 +723,35 @@ app.post("/admin/delete-order", async (req, res) => {
   }
 });
 
-// ───────── [admin/toggle-payment 라우트 - 결제 상태 토글] ─────────
-app.get("/admin/toggle-payment", async (req, res) => {
-  try {
-    const { orderId } = req.query;
-    const order = await Order.findOne({ orderId });
-    if (!order) {
-      return res.status(404).json({ success: false, message: "Order not found" });
+async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, delayMs = 1000) {
+  let sentCount = 0;
+  for (let i = 0; i < emails.length; i += chunkSize) {
+    const chunk = emails.slice(i, i + chunkSize);
+
+    // 동시에 20통씩 보내기 (동시 요청 20개)
+    const promises = chunk.map((recipientEmail) => {
+      const mailData = { ...mailDataTemplate, to: recipientEmail };
+      return sendEmailAPI(mailData)
+        .then(() => {
+          sentCount++;
+          console.log(`✅ Sent to ${recipientEmail} [${sentCount}/${emails.length}]`);
+        })
+        .catch(err => {
+          console.error(`❌ Failed to send to ${recipientEmail}`, err);
+        });
+    });
+
+    // 이 chunk가 모두 끝날 때까지 대기
+    await Promise.all(promises);
+
+    // 다음 chunk 전 1초 쉬기
+    if (i + chunkSize < emails.length) {
+      console.log(">>> Waiting 1s before next chunk...");
+      await new Promise(resolve => setTimeout(resolve, delayMs));
     }
-    order.paid = !order.paid;
-    await order.save();
-    res.json({ success: true, order });
-  } catch (error) {
-    console.error("Error in /admin/toggle-payment:", error);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
   }
-});
+  console.log("✅ All bulk emails sent with chunk approach!");
+}
 
 // ───────── [서버 리슨 및 초기 정리 작업] ─────────
 app.listen(PORT, () => {
