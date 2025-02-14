@@ -166,8 +166,8 @@ function uploadCSVToDB() {
 }
 
 // ───────── [타이머 관련 상수 & 변수] ─────────
-const TWELVE_HOURS = 12 * 60 * 60 * 1000;
-const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+const TWELVE_HOURS = 1 * 60 * 1000;
+const TWENTY_FOUR_HOURS = 2 * 60 * 1000;
 const reminderTimers = {};
 const autoCancelTimers = {};
 
@@ -287,7 +287,7 @@ function autoCancelOrder(order) {
             <br><br>
             <!-- CTA 버튼 -->
             <a 
-              href="https://track.smarttalentmatcher.com/redirect?to=smarttalentmatcher.com" 
+              href="smarttalentmatcher.com" 
               target="_blank" 
               style="
                 display: inline-block;
