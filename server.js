@@ -1,9 +1,5 @@
 //
-// server.js (ESM 버전)
-// 12h(1분) → 리마인드
-// 24h(2분) → 이메일만
-// 48h(3분) → DB+Cloud 삭제
-// + 서버 재시작 시 "DB에 없는 headshot"을 Cloudinary에서 제거
+// server.js (ESM 버전) - 전체 코드 (admin/orders 디버깅 포함)
 //
 
 // ───────── [필요한 import들 & dotenv 설정] ─────────
@@ -44,7 +40,6 @@ const uploadHeadshot = multer({ storage: headshotStorage });
 
 // ───────── [MongoDB 연결 & Mongoose 모델 정의] ─────────
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/test";
-
 console.log(">>>> [DEBUG] MONGO_URI =", MONGO_URI);
 
 mongoose
@@ -168,16 +163,16 @@ function uploadCSVToDB() {
 }
 
 // ───────── [타이머 관련 상수 & 변수] ─────────
-// 테스트: 12h=1분, 24h=2분, 48h=3분
-const TWELVE_HOURS = 1 * 60 * 1000;     // 1분
-const TWENTY_FOUR_HOURS = 2 * 60 * 1000; // 2분
-const FORTY_EIGHT_HOURS = 3 * 60 * 1000; // 3분
+// 실제 운영에서는 아래 상수를 12h, 24h, 48h로 설정합니다.
+const TWELVE_HOURS = 1 * 60 * 1000;      // 12시간
+const TWENTY_FOUR_HOURS = 3 * 60 * 1000;   // 24시간
+const FORTY_EIGHT_HOURS = 5 * 60 * 1000;     // 48시간
 
 const reminderTimers = {};
 const autoCancelTimers = {};
-const finalDeleteTimers = {};
+const autoDeleteTimers = {};
 
-// ───────── [12시간(1분) 후 리마인드 & 전송 함수] ─────────
+// ───────── [12시간 후 리마인더 이메일 & 전송 함수] ─────────
 function scheduleReminder(order) {
   const timeLeft = order.createdAt.getTime() + TWELVE_HOURS - Date.now();
   if (timeLeft > 0 && !order.paid && !order.reminderSent) {
@@ -203,7 +198,6 @@ function sendReminder(order) {
         ? fs.readFileSync(templatePath, "utf-8")
         : "<html><body><p>Invoice details not available.</p></body></html>";
       reminderEmailHtml = reminderEmailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
-
       const mailData = {
         subject: "**Reminder** [Smart Talent Matcher] Invoice for Your Submission",
         from: process.env.ELASTIC_EMAIL_USER,
@@ -223,7 +217,7 @@ function sendReminder(order) {
     .catch((err) => console.error("DB Error:", err));
 }
 
-// ───────── [24시간(2분) 후 "자동취소" 메일만 보내기] ─────────
+// ───────── [24시간 후 자동 캔슬 & 프로모 코드 이메일 스케줄링] ─────────
 function scheduleAutoCancel(order) {
   console.log(`>>> scheduleAutoCancel called for order #${order.orderId}`);
   const timeLeft = order.createdAt.getTime() + TWENTY_FOUR_HOURS - Date.now();
@@ -241,11 +235,79 @@ function autoCancelOrder(order) {
   if (order.paid) return;
 
   const cancelHtml = `
-<!-- 생략 -->
-<h2 style="color:#d9534f; margin-top:0;">
-  Your Invoice (Order #${order.orderId}) Has Been Canceled!
-</h2>
-<!-- 이하 동일 -->
+<!-- 테이블 100% 폭, 가운데 정렬 -->
+<table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: Arial, sans-serif; background-color:#f9f9f9; color: #333; line-height:1.6;">
+  <tr>
+    <td align="center" style="padding: 30px;">
+      <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color:#ffffff; border-radius:8px; padding:20px;">
+        <tr>
+          <td align="center" style="padding: 20px;">
+            <h2 style="color:#d9534f; margin-top:0;">
+              Your Invoice (Order #${order.orderId}) Has Been Canceled!
+            </h2>
+            <br><br>
+            <p style="margin:0 0 15px 0;">
+              Hello ${order.emailAddress ? order.emailAddress.split("@")[0] : ""},
+            </p>
+            <br>
+            <p style="margin:0 0 15px 0;">
+              We noticed you haven't completed your payment within 24 hours,<br>
+              so your invoice for <strong>Order #${order.orderId}</strong> has been 
+              <strong>automatically canceled</strong>.
+            </p>
+            <br>
+            <p style="margin:0 0 15px 0;">
+              However, we don’t want you to miss out on this opportunity.<br>
+              Use the promo code below to get <strong>10% off</strong> on your next order:
+            </p>
+            <div style="
+              font-size: 1.4rem; 
+              font-weight: bold; 
+              background:#28a745; 
+              color:#ffffff;
+              border-radius:8px;
+              display:inline-block;
+              padding:10px 20px; 
+              margin:15px 0;
+            ">
+              WELCOME10
+            </div>
+            <p style="margin:15px 0 20px 0;">
+              Simply apply this code when creating a new order.
+            </p>
+            <br><br>
+            <a 
+              href="smarttalentmatcher.com" 
+              target="_blank" 
+              style="
+                display: inline-block;
+                background: #00BCD4;
+                color: #FFFFFF;
+                padding: 20px 40px;
+                font-size: 1.5rem;
+                font-weight: bold;
+                font-style: italic;
+                border-radius: 30px;
+                border: 4px solid #001f3f;
+                transition: background 0.3s ease;
+                box-shadow: 0 8px 12px rgba(0,0,0,0.4);
+                text-decoration: none;
+              "
+              rel="noopener noreferrer"
+            >
+              Get Started
+            </a>
+            <br><br>
+            <p style="margin:30px 0 0 0;">
+              Best Regards,<br>
+              Smart Talent Matcher
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
   `;
 
   const mailData = {
@@ -258,122 +320,67 @@ function autoCancelOrder(order) {
   };
 
   sendEmailAPI(mailData)
-    .then(async (data) => {
-      console.log(`🚨 Auto-cancel email sent for #${order.orderId}:`, data);
-      // DB/Cloudinary는 여기서 안 지움
+    .then((data) => {
+      console.log(`✅ Auto-cancel email sent for #${order.orderId}:`, data);
+      // (옵션) 주문 상태를 "canceled"로 업데이트할 수 있습니다.
     })
-    .catch((err) => console.error("❌ Error sending auto-cancel:", err));
+    .catch((err) => console.error("❌ Error sending auto-cancel email:", err));
 }
 
-// ───────── [48시간(3분) 후 실제 DB + Cloudinary 삭제] ─────────
-function scheduleFinalDelete(order) {
+// ───────── [48시간 후 주문 자동 삭제 함수 (DB & Cloudinary)] ─────────
+function scheduleAutoDelete(order) {
   const timeLeft = order.createdAt.getTime() + FORTY_EIGHT_HOURS - Date.now();
   if (timeLeft > 0 && !order.paid) {
-    if (finalDeleteTimers[order.orderId]) {
-      clearTimeout(finalDeleteTimers[order.orderId]);
-      delete finalDeleteTimers[order.orderId];
+    if (autoDeleteTimers[order.orderId]) {
+      clearTimeout(autoDeleteTimers[order.orderId]);
+      delete autoDeleteTimers[order.orderId];
     }
-    finalDeleteTimers[order.orderId] = setTimeout(() => finalDeleteOrder(order), timeLeft);
-    console.log(`⏰ Scheduled final delete for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
+    autoDeleteTimers[order.orderId] = setTimeout(() => autoDeleteOrder(order), timeLeft);
+    console.log(`⏰ Scheduled auto-delete for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
   }
 }
 
-async function finalDeleteOrder(order) {
+async function autoDeleteOrder(order) {
   if (order.paid) return;
 
-  console.log(`>>> finalDeleteOrder triggered for #${order.orderId}. Deleting DB & Cloudinary...`);
-
-  const foundOrder = await Order.findOne({ _id: order._id });
-  if (!foundOrder) {
-    console.log(`Order #${order.orderId} already deleted, skipping finalDelete.`);
-    return;
-  }
-
-  // Delete Cloudinary
-  if (foundOrder.headshot) {
-    const parts = foundOrder.headshot.split("/");
+  console.log(`>>> autoDeleteOrder called for order #${order.orderId}`);
+  // Cloudinary 업로드(헤드샷) 삭제
+  if (order.headshot) {
+    const parts = order.headshot.split("/");
     const uploadIndex = parts.findIndex((part) => part === "upload");
     if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
       const fileNameWithExtension = parts.slice(uploadIndex + 2).join("/");
       const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, "");
-      await cloudinary.uploader.destroy(publicId);
-      console.log(`Cloudinary image removed for #${foundOrder.orderId}`);
+      console.log("Deleting Cloudinary resource with public_id:", publicId);
+      try {
+        await cloudinary.uploader.destroy(publicId);
+      } catch (err) {
+        console.error("Error deleting Cloudinary resource:", err);
+      }
     }
   }
-
-  // Delete from DB
-  await Order.deleteOne({ _id: foundOrder._id });
-  console.log(`Order #${foundOrder.orderId} fully removed (48h).`);
+  // 주문을 DB에서 삭제
+  try {
+    await Order.deleteOne({ orderId: order.orderId });
+    console.log(`✅ Order #${order.orderId} auto-deleted from DB after 48 hours.`);
+  } catch (err) {
+    console.error("Error auto-deleting order from DB:", err);
+  }
 }
 
-// ───────── [서버 시작 시, 미결제 final 주문 리마인더/취소/삭제 복원] ─────────
+// ───────── [서버 시작 시, 미결제 final 주문에 대해 타이머 복원] ─────────
 async function restoreTimers() {
   try {
     const pendingOrders = await Order.find({ status: "final", paid: false });
     console.log(`>>> [DEBUG] restoreTimers: found ${pendingOrders.length} final/pending orders.`);
-
     pendingOrders.forEach((order) => {
       if (!order.reminderSent) scheduleReminder(order);
       scheduleAutoCancel(order);
-      scheduleFinalDelete(order);
+      scheduleAutoDelete(order);
     });
-
-    console.log(`✅ Restored ${pendingOrders.length} orders with pending timers.`);
+    console.log(`✅ Restored ${pendingOrders.length} orders with pending reminders, cancellations, and auto-deletions.`);
   } catch (err) {
     console.error("❌ Error restoring timers:", err);
-  }
-}
-
-// ───────── [CLEANUP: 서버 재시작 시, DB에 없는 Cloudinary 이미지 제거] ─────────
-// 🍀 CHANGED: 새 함수
-async function cleanupOrphanedCloudinaryImages() {
-  try {
-    console.log(">>> cleanupOrphanedCloudinaryImages called.");
-    // 1) DB에서 모든 order의 headshot 경로를 모으기
-    const allOrders = await Order.find({});
-    const usedPublicIds = new Set();
-
-    for (const order of allOrders) {
-      if (order.headshot) {
-        const parts = order.headshot.split("/");
-        const uploadIndex = parts.findIndex((part) => part === "upload");
-        if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
-          const fileNameWithExtension = parts.slice(uploadIndex + 2).join("/");
-          const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, "");
-          usedPublicIds.add(publicId);
-        }
-      }
-    }
-
-    // 2) Cloudinary에서 "SmartTalentMatcher/headshots" 폴더의 모든 파일 목록 가져오기
-    //    search API 사용 예시
-    let nextCursor = null;
-    let totalDeleted = 0;
-
-    do {
-      const result = await cloudinary.search
-        .expression('folder="SmartTalentMatcher/headshots"')
-        .max_results(100)
-        .nextCursor(nextCursor)
-        .execute();
-
-      if (result && result.resources) {
-        for (const res of result.resources) {
-          // res.public_id
-          if (!usedPublicIds.has(res.public_id)) {
-            // DB에 없는 이미지 → 삭제
-            await cloudinary.uploader.destroy(res.public_id);
-            console.log(`Orphan Cloudinary image removed: ${res.public_id}`);
-            totalDeleted++;
-          }
-        }
-      }
-      nextCursor = result.next_cursor;
-    } while (nextCursor);
-
-    console.log(`>>> cleanupOrphanedCloudinaryImages done. Orphaned images deleted: ${totalDeleted}`);
-  } catch (err) {
-    console.error("❌ Error in cleanupOrphanedCloudinaryImages:", err);
   }
 }
 
@@ -560,7 +567,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     draftOrder.resumeLink = resumeLink || "";
     draftOrder.introduction = introduction || "";
     draftOrder.venmoId = venmoId || "";
-
     draftOrder.status = "final";
 
     console.log(">>> [final-submit] Step 4: Saving order with status=final to DB");
@@ -591,13 +597,13 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       subject: emailSubject || "[No Subject Provided]",
       from: process.env.ELASTIC_EMAIL_USER,
       fromName: "Smart Talent Matcher",
-      to: process.env.ELASTIC_EMAIL_USER, // 관리자(운영자) 이메일
+      to: process.env.ELASTIC_EMAIL_USER, // 관리자 이메일
       bodyHtml: adminEmailHtml,
       isTransactional: true
     });
     console.log("✅ Admin email sent.");
 
-    // (2) 클라이언트(주문자)에게 인보이스 이메일
+    // (2) 클라이언트(주문자)에게 인보이스 이메일 전송
     console.log(">>> [final-submit] Step 6: Sending client invoice email");
     const templatePath = path.join(__dirname, "email.html");
     let clientEmailHtml;
@@ -608,7 +614,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       console.error(">>> email.html NOT found at:", templatePath);
       clientEmailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
     }
-
     clientEmailHtml = clientEmailHtml.replace(/{{\s*invoice\s*}}/g, draftOrder.invoice);
 
     await sendEmailAPI({
@@ -621,18 +626,19 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     });
     console.log("✅ Client Invoice email sent.");
 
-    // (3) 12h/24h/48h
-    console.log(">>> [final-submit] Step 7: Scheduling reminder & auto-cancel & final-delete timers");
+    // (3) 12시간 리마인드, 24시간 자동 취소, 48시간 자동 삭제 스케줄링
+    console.log(">>> [final-submit] Step 7: Scheduling timers for reminder, auto-cancel, and auto-delete");
     scheduleReminder(draftOrder);
     scheduleAutoCancel(draftOrder);
-    scheduleFinalDelete(draftOrder);
+    scheduleAutoDelete(draftOrder);
 
     // (4) 최종 응답
     console.log(">>> [final-submit] Step 8: Returning success response");
     return res.json({
       success: true,
-      message: "Final submission complete! Admin/client emails sent, reminders scheduled."
+      message: "Final submission complete! Admin/client emails sent, timers scheduled."
     });
+
   } catch (error) {
     console.error("❌ Error in final submission:", error);
     return res.status(500).json({ success: false, error: "Failed to process final submission." });
@@ -645,7 +651,6 @@ app.get("/admin/orders", async (req, res) => {
     console.log(">>> [DEBUG] /admin/orders called.");
     const orders = await Order.find({});
     console.log(">>> [DEBUG] /admin/orders - orders found:", orders);
-
     return res.json({ success: true, orders });
   } catch (error) {
     console.error("Error in /admin/orders:", error);
@@ -660,7 +665,6 @@ app.post("/admin/delete-order", async (req, res) => {
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
-
     if (order.headshot) {
       const parts = order.headshot.split("/");
       const uploadIndex = parts.findIndex((part) => part === "upload");
@@ -670,7 +674,6 @@ app.post("/admin/delete-order", async (req, res) => {
         await cloudinary.uploader.destroy(publicId);
       }
     }
-
     await Order.deleteOne({ orderId });
     res.json({ success: true, message: `Order #${orderId} deleted.` });
   } catch (err) {
@@ -697,24 +700,20 @@ app.get("/admin/toggle-payment", async (req, res) => {
 
 // ───────── [cleanUpNonFinalOrders & 서버 리슨] ─────────
 const cleanUpNonFinalOrders = async () => {
-  // 필요시 구현
+  // 필요시 구현 (예: 일정 시간 지난 draft 주문 삭제 등)
 };
 
 app.listen(PORT, () => {
   console.log(`✅ Server running at ${process.env.SERVER_URL || "http://localhost:" + PORT}`);
-
   uploadCSVToDB()
     .then(() => {
       console.log("Bulk email recipients updated from CSV (Full Refresh).");
       restoreTimers();
-      // 🍀 CHANGED: 서버 재시작 시 Cloudinary orphan 정리
-      cleanupOrphanedCloudinaryImages();
       cleanUpNonFinalOrders();
     })
     .catch(err => {
       console.error("Error uploading CSV to DB:", err);
       restoreTimers();
-      cleanupOrphanedCloudinaryImages();
       cleanUpNonFinalOrders();
     });
 });
