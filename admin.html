@@ -9,7 +9,6 @@
       width: 90%;
       max-width: 1800px;
       margin: 40px auto;
-      /* (수정) height 제한 제거 또는 적당히 지정 가능 */
       overflow-y: auto;
     }
     .orders-table {
@@ -18,9 +17,10 @@
       margin: 0 auto;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
       border-radius: 8px;
-      table-layout: fixed; /* 고정 레이아웃: colgroup의 너비를 강제 적용 */
+      table-layout: fixed;
     }
-    .orders-table th, .orders-table td {
+    .orders-table th,
+    .orders-table td {
       padding: 10px 8px;
       border: 1px solid #ccc;
       text-align: center;
@@ -43,11 +43,10 @@
       padding: 6px 10px;
       border-radius: 4px;
     }
-    /* Invoice 셀에서 내용이 길면 세로/가로 스크롤을 생성 */
     .scroll-cell {
       overflow-x: auto;
-      overflow-y: auto; /* (수정) 세로 스크롤 추가 */
-      max-height: 250px; /* (수정) 인보이스 셀 높이 제한 */
+      overflow-y: auto;
+      max-height: 250px;
       word-wrap: break-word;
     }
     .filter-container {
@@ -79,7 +78,6 @@
 
   <div class="orders-container">
     <table class="orders-table">
-      <!-- colgroup을 사용하여 각 열의 너비 지정 -->
       <colgroup>
         <col style="width: 100px;">  <!-- Order ID -->
         <col style="width: 100px;">  <!-- Venmo Account -->
@@ -118,13 +116,20 @@
     // (서버에서) 주문 데이터 불러오기
     fetch('/admin/orders')
       .then(response => response.json())
-      .then(orders => {
-        ordersData = orders;
-        renderOrders(orders);
+      .then(data => {
+        // data는 { success: true, orders: [...] } 구조
+        if (!data.success) {
+          document.getElementById('orders-tbody').innerHTML =
+            "<tr><td colspan='10'>Failed to load orders (success=false).</td></tr>";
+          return;
+        }
+        ordersData = data.orders; // 여기가 배열
+        renderOrders(ordersData);
       })
       .catch(error => {
         console.error("Error fetching orders:", error);
-        document.getElementById('orders-tbody').innerHTML = "<tr><td colspan='10'>Failed to load orders.</td></tr>";
+        document.getElementById('orders-tbody').innerHTML =
+          "<tr><td colspan='10'>Failed to load orders.</td></tr>";
       });
 
     function renderOrders(orders) {
@@ -134,8 +139,8 @@
       orders.forEach(order => {
         const tr = document.createElement('tr');
         const timeSinceCreation = Date.now() - new Date(order.createdAt).getTime();
-        const isExpired = timeSinceCreation >= 24 * 60 * 60 * 1000;
-        
+        const isExpired = (timeSinceCreation >= 24 * 60 * 60 * 1000);
+
         // 주문 정보 (필드) 추가
         ["orderId", "venmoId", "emailAddress", "emailSubject", "actingReel", "resumeLink", "introduction"].forEach(field => {
           const td = document.createElement('td');
@@ -159,42 +164,44 @@
         // Invoice (scroll-cell)
         const invoiceTd = document.createElement('td');
         invoiceTd.classList.add("scroll-cell");
+        // invoice HTML 그대로 렌더링할 때는 innerHTML 사용
         invoiceTd.innerHTML = order.invoice || "";
         tr.appendChild(invoiceTd);
 
-      // Payment / Delete
-const paymentTd = document.createElement('td');
-if (timeSinceCreation >= 48 * 60 * 60 * 1000) {
-  // 48시간 지난 주문은 표시 없이 바로 제거
-  tr.remove();
-  return; 
-} else {
-  let finalCost = order.finalCost || "";
-  if (finalCost !== "") {
-    finalCost = "$" + parseFloat(finalCost).toFixed(2);
-  }
-  // 만약 24시간이 경과했다면 "24hrs" 텍스트를 추가합니다.
-  const expiredText = isExpired ? `<div style="color:red; font-weight:bold;">24hrs</div>` : "";
-  paymentTd.innerHTML = `
-    ${finalCost}
-    ${expiredText}
-    <br>
-    <label>
-      <input type="checkbox" class="payment-checkbox" data-order-id="${order.orderId}" ${order.paid ? "checked" : ""}>
-      Paid
-    </label>
-    <br>
-    <!-- 딜리트 버튼 -->
-    <button class="delete-button" data-order-id="${order.orderId}">Delete</button>
-  `;
-}
-tr.appendChild(paymentTd);
+        // Payment / Delete
+        const paymentTd = document.createElement('td');
+
+        // 48시간 지난 주문은 표시 없이 바로 제거 (원래 로직 유지하셨다면)
+        if (timeSinceCreation >= 48 * 60 * 60 * 1000) {
+          tr.remove();
+          return;
+        } else {
+          let finalCost = order.finalCost || "";
+          if (finalCost !== "") {
+            finalCost = "$" + parseFloat(finalCost).toFixed(2);
+          }
+          // 24시간이 경과했다면 "24hrs" 텍스트를 추가
+          const expiredText = isExpired ? `<div style="color:red; font-weight:bold;">24hrs</div>` : "";
+
+          paymentTd.innerHTML = `
+            ${finalCost}
+            ${expiredText}
+            <br>
+            <label>
+              <input type="checkbox" class="payment-checkbox" data-order-id="${order.orderId}" ${order.paid ? "checked" : ""}>
+              Paid
+            </label>
+            <br>
+            <button class="delete-button" data-order-id="${order.orderId}">Delete</button>
+          `;
+        }
+        tr.appendChild(paymentTd);
 
         tbody.appendChild(tr);
       });
       
       attachPaymentCheckboxHandlers();  
-      attachDeleteButtonHandlers();  // (추가) 삭제 버튼 핸들러 등록
+      attachDeleteButtonHandlers();
     }
 
     function attachPaymentCheckboxHandlers() {
@@ -208,9 +215,9 @@ tr.appendChild(paymentTd);
           fetch(`/admin/toggle-payment?orderId=${orderId}&paid=${paid}`, { method: 'GET' })
             .then(response => response.json())
             .then(data => {
-              console.log(data.message);
+              console.log("toggle-payment response:", data);
 
-              // paid === true 이면 /admin/update-payment 호출
+              // paid === true 이면 /admin/update-payment 호출 (원래 로직이라 가정)
               if (paid) {
                 fetch('/admin/update-payment', {
                   method: 'POST',
@@ -219,7 +226,7 @@ tr.appendChild(paymentTd);
                 })
                 .then(response => response.json())
                 .then(result => {
-                  console.log(result.message);
+                  console.log("/admin/update-payment result:", result);
                 })
                 .catch(err => {
                   console.error("Error in update-payment:", err);
