@@ -238,6 +238,7 @@ function autoCancelOrder(order) {
   <h2 style="text-align:center; color:#d9534f;">
     Your Invoice (Order #${order.orderId}) Has Been Canceled!
   </h2>
+
   <p>
     Hello ${order.emailAddress ? order.emailAddress.split("@")[0] : ""},
   </p>
@@ -253,44 +254,58 @@ function autoCancelOrder(order) {
     <strong>10% discount</strong> using our promo code:
   </p>
 
-  <!-- 프로모 코드 영역 -->
+  <!-- 프로모 코드 영역 (초록색 박스) -->
   <div style="
     text-align: center;
     font-size: 1.4rem;
     font-weight: bold;
-    color: #d9534f;
-    margin: 15px 0;
+    color: #ffffff;           /* 글자색 흰색 */
+    background-color: #28a745;/* 배경 초록색 */
+    display: inline-block;    /* 내부 컨텐츠 크기만큼 박스 */
+    padding: 10px 20px;
+    border-radius: 8px;
+    box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+    margin: 15px auto;        /* 위아래 15px, 좌우 가운데 정렬 */
   ">
     WELCOME10
   </div>
+  
+  <br>
 
   <p>
     Simply apply this code when creating a new order.<br>
     Re-submit your order now and take advantage of this discount while it lasts!
   </p>
-  <br>
+  
+  <br><br>
 
   <!-- CTA 섹션 -->
   <section style="text-align: center; margin-bottom: 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
-    <a href="https://smarttalentmatcher.com/" style="
-      display: inline-block;
-      background: #00BCD4;
-      color: #FFFFFF;
-      padding: 20px 40px;
-      font-size: 1.5rem;
-      font-weight: bold;
-      font-style: italic;
-      border-radius: 30px;
-      border: 4px solid #001f3f;
-      transition: background 0.3s ease;
-      box-shadow: 0 8px 12px rgba(0,0,0,0.4);
-      text-decoration: none;
-    ">
+    <a 
+      href="https://smarttalentmatcher.com/" 
+      target="_blank"
+      style="
+        display: inline-block;
+        background: #00BCD4;
+        color: #FFFFFF;
+        padding: 20px 40px;
+        font-size: 1.5rem;
+        font-weight: bold;
+        font-style: italic;
+        border-radius: 30px;
+        border: 4px solid #001f3f;
+        transition: background 0.3s ease;
+        box-shadow: 0 8px 12px rgba(0,0,0,0.4);
+        text-decoration: none;
+        margin: 0 auto; /* 혹시나 해서 추가 */
+      "
+      rel="noopener noreferrer"  <!-- 보안상 권장 -->
+    >
       Get Started
     </a>
   </section>
 
-  <br><br>
+  <br><br><br>
   <p>
     Best Regards,<br>
     Smart Talent Matcher
