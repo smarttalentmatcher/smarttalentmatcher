@@ -80,7 +80,10 @@ const BulkEmailRecipient = mongoose.model("BulkEmailRecipient", bulkEmailRecipie
 
 // ───────── [Express 앱 설정] ─────────
 const app = express();
+
+// ⬇️ [CHANGED] Render가 할당하는 포트를 사용하고, 0.0.0.0로 바인딩
 const PORT = process.env.PORT || 3000;
+
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
   next();
@@ -90,6 +93,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 app.use(express.static(__dirname));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 
 // ───────── [유틸 함수: 날짜 기반 Order ID 생성] ─────────
 function generateDateTimeOrderId() {
@@ -900,4 +904,24 @@ app.get("/admin/toggle-payment", async (req, res) => {
     console.error("❌ [DEBUG] Error in /admin/toggle-payment:", err);
     res.status(500).json({ success: false, message: "Internal Server Error" });
   }
+});
+// ───────── [서버 리슨 및 초기 정리 작업] ─────────
+// ⬇️ [CHANGED] Render가 포트 개방 여부를 인식할 수 있도록 "0.0.0.0"로 바인딩
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Server running on port ${PORT}`);
+  uploadCSVToDB()
+    .then(() => {
+      console.log("Bulk email recipients updated from CSV (Full Refresh).");
+      restoreTimers();               
+      cleanUpIncompleteOrders();     
+      syncCloudinaryWithDB();        
+      cleanUpNonFinalOrders();       
+    })
+    .catch(err => {
+      console.error("Error uploading CSV to DB:", err);
+      restoreTimers();
+      cleanUpIncompleteOrders();
+      syncCloudinaryWithDB();
+      cleanUpNonFinalOrders();
+    });
 });
