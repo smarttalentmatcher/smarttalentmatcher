@@ -1,5 +1,5 @@
 //
-// server.js (ESM 버전) - 12시간 리마인드 + 24시간 자동취소 + CSV → DB 자동 업로드 + 대량 이메일 발송
+// server.js (ESM 버전) - 12시간 리마인드 + 24시간 자동취소 + CSV → DB 자동 업로드 후 대량 이메일 발송
 //
 
 // --------------------------------------------
@@ -88,31 +88,30 @@ const Order = mongoose.model("Order", orderSchema);
 
 // --------------------------------------------
 // [BulkEmailRecipient 스키마 & 모델 정의]
-//   (이메일 + 나라) 정보를 함께 저장하여 중복 관리하기
+//    ※ unique 인덱스 제거 (중복 허용)
 // --------------------------------------------
 const bulkEmailRecipientSchema = new mongoose.Schema({
   email: { type: String, required: true },
   countryOrSource: { type: String, default: "" }
 });
 
-// 🍀 (email, countryOrSource) 복합 unique 인덱스
-bulkEmailRecipientSchema.index({ email: 1, countryOrSource: 1 }, { unique: true });
+// 아래 코드(복합 unique 인덱스)는 삭제하여 중복 허용
+// bulkEmailRecipientSchema.index({ email: 1, countryOrSource: 1 }, { unique: true });
 
 const BulkEmailRecipient = mongoose.model("BulkEmailRecipient", bulkEmailRecipientSchema);
 
 // --------------------------------------------
-// [CSV 파일을 읽어들여서 DB에 업로드하는 함수]
+// [CSV 파일을 읽어들여서 DB에 '중복 없이'가 아니라
+//  '각 줄마다 새 Document'를 insert 하기]
 //   - 서버 시작 시 한 번 or 필요할 때마다 호출
 // --------------------------------------------
 function uploadCSVToDB() {
   return new Promise((resolve, reject) => {
-    // 🍀 변경점 ①: CSV 폴더를 __dirname 기준 ./csv 로 설정
     const csvFolderPath = path.join(__dirname, "csv");
 
     fs.readdir(csvFolderPath, (err, files) => {
       if (err) return reject(err);
 
-      // 🍀 확장자가 .csv 인 파일만 필터링
       const csvFiles = files.filter(file => file.endsWith(".csv"));
       if (csvFiles.length === 0) {
         console.log("No CSV files found in folder:", csvFolderPath);
@@ -121,43 +120,32 @@ function uploadCSVToDB() {
 
       let filesProcessed = 0;
 
-      // 🍀 폴더 내 CSV 파일을 순회
       csvFiles.forEach(async (file) => {
-        // 나라/출처 식별용 이름 (파일명에서 .csv 제거)
         const fileNameWithoutExt = file.replace(".csv", "");
+        // 만약 "이 나라(파일) 기존걸 싹 지우고" 다시 넣고 싶다면
+        // 아래 한 줄 주석 해제:
+        // await BulkEmailRecipient.deleteMany({ countryOrSource: fileNameWithoutExt });
 
-        // (선택) 기존 문서 중 countryOrSource가 동일한 것 삭제
-        await BulkEmailRecipient.deleteMany({ countryOrSource: fileNameWithoutExt });
-
-        const upsertPromises = [];
+        const createPromises = [];
         fs.createReadStream(path.join(csvFolderPath, file))
-          // 🍀 변경점 ②: CSV 헤더가 없으므로 headers: ["email"] 지정
-          .pipe(csvParser({ headers: ["email"] }))
+          .pipe(csvParser({ headers: ["email"] })) // CSV 헤더 없음 가정
           .on("data", (row) => {
-            // 🍀 이제 row.email 이 각 라인에 담긴 값
-            //     "Email" 헤더가 없는 대신, 임의로 'email' 이라는 필드를 부여
             if (row.email) {
-              upsertPromises.push(
-                BulkEmailRecipient.updateOne(
-                  {
-                    email: row.email.trim(),
-                    countryOrSource: fileNameWithoutExt
-                  },
-                  {
-                    email: row.email.trim(),
-                    countryOrSource: fileNameWithoutExt
-                  },
-                  { upsert: true }
-                )
+              // 매 줄마다 새 문서 생성 (중복 상관 없음)
+              createPromises.push(
+                BulkEmailRecipient.create({
+                  email: row.email.trim(),
+                  countryOrSource: fileNameWithoutExt
+                })
               );
             }
           })
           .on("end", async () => {
             try {
-              await Promise.all(upsertPromises);
+              await Promise.all(createPromises);
               filesProcessed++;
               if (filesProcessed === csvFiles.length) {
-                console.log("✅ All CSV files uploaded to DB (with countryOrSource).");
+                console.log("✅ All CSV lines inserted into DB (no deduping).");
                 resolve();
               }
             } catch (err) {
@@ -639,7 +627,7 @@ app.get("/admin/orders", async (req, res) => {
 });
 
 //
-// [관리자 페이지: 특정 final 주문을 강제 삭제(취소)]
+// [관리자 페이지: 특정 final 주문 강제 삭제(취소)]
 //
 app.post("/admin/delete-order", async (req, res) => {
   try {
@@ -736,7 +724,7 @@ const cleanUpNonFinalOrders = async () => {
 
 // --------------------------------------------
 // [서버 리슨 시작]
-//   - CSV 업로드 후
+//   - CSV 업로드 (중복 없이가 아니라, CSV 파일 각각의 줄을 그대로 insert)
 //   - 리마인더/자동취소 타이머 복원
 //   - draft 정리
 // --------------------------------------------
@@ -745,7 +733,7 @@ app.listen(PORT, () => {
 
   uploadCSVToDB()
     .then(() => {
-      console.log("Bulk email recipients updated from CSV.");
+      console.log("Bulk email recipients updated from CSV (duplicates allowed).");
       restoreTimers();
       cleanUpNonFinalOrders();
     })
