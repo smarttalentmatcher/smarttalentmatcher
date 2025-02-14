@@ -234,49 +234,68 @@ function autoCancelOrder(order) {
   if (order.paid) return;
 
   const cancelHtml = `
-    <div style="font-family: Arial, sans-serif; line-height:1.6; color:#333;">
-      <h2 style="text-align:center; color:#d9534f;">Your Invoice (Order #${order.orderId}) Has Been Canceled!</h2>
-      <p>Hello ${order.emailAddress ? order.emailAddress.split("@")[0] : ""},</p>
-      
-      <p>
-        We noticed you haven't completed your payment within 24 hours, so your invoice for 
-        <strong>Order #${order.orderId}</strong> has been <strong>automatically canceled</strong>.
-      </p>
+<div style="font-family: Arial, sans-serif; line-height:1.6; color:#333;">
+  <h2 style="text-align:center; color:#d9534f;">
+    Your Invoice (Order #${order.orderId}) Has Been Canceled!
+  </h2>
+  <p>
+    Hello ${order.emailAddress ? order.emailAddress.split("@")[0] : ""},
+  </p>
+  
+  <p>
+    We noticed you haven't completed your payment within 24 hours, so your invoice for 
+    <strong>Order #${order.orderId}</strong> has been <strong>automatically canceled</strong>.
+  </p>
 
-      <p>
-        However, we don't want you to miss out on this great opportunity. 
-        If you've been on the fence, we'd like to offer you a second chance with a special 
-        <strong>10% discount</strong> using our promo code: <strong>WELCOME10</strong>.
-      </p>
+  <p>
+    However, we don't want you to miss out on this great opportunity.<br>
+    If you've been on the fence, we'd like to offer you a second chance with a special 
+    <strong>10% discount</strong> using our promo code:
+  </p>
 
-      <p>
-        Simply apply this code when creating a new order. Don't let this slip away — 
-        re-submit your order now and take advantage of this discount while it lasts!
-      </p>
+  <!-- 프로모 코드 영역 -->
+  <div style="
+    text-align: center;
+    font-size: 1.4rem;
+    font-weight: bold;
+    color: #d9534f;
+    margin: 15px 0;
+  ">
+    WELCOME10
+  </div>
 
-      <!-- CTA 섹션 -->
-      <section style="text-align: center; margin-bottom: 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
-        <a href="https://www.smarttalentmatcher.com/choose.html" style="
-          display: inline-block;
-          background: #00BCD4;
-          color: #FFFFFF;
-          padding: 20px 40px;
-          font-size: 1.5rem;
-          font-weight: bold;
-          font-style: italic;
-          border-radius: 30px;
-          border: 4px solid #001f3f;
-          transition: background 0.3s ease;
-          box-shadow: 0 8px 12px rgba(0,0,0,0.4);
-          text-decoration: none;
-        ">
-          Get Started
-        </a>
-      </section>
+  <p>
+    Simply apply this code when creating a new order.<br>
+    Re-submit your order now and take advantage of this discount while it lasts!
+  </p>
+  <br>
 
-      <br>
-      <p>Best Regards,<br>Smart Talent Matcher</p>
-    </div>
+  <!-- CTA 섹션 -->
+  <section style="text-align: center; margin-bottom: 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
+    <a href="https://smarttalentmatcher.com/" style="
+      display: inline-block;
+      background: #00BCD4;
+      color: #FFFFFF;
+      padding: 20px 40px;
+      font-size: 1.5rem;
+      font-weight: bold;
+      font-style: italic;
+      border-radius: 30px;
+      border: 4px solid #001f3f;
+      transition: background 0.3s ease;
+      box-shadow: 0 8px 12px rgba(0,0,0,0.4);
+      text-decoration: none;
+    ">
+      Get Started
+    </a>
+  </section>
+
+  <br><br>
+  <p>
+    Best Regards,<br>
+    Smart Talent Matcher
+  </p>
+</div>
   `;
 
   const mailData = {
