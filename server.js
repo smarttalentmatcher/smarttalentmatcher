@@ -209,7 +209,6 @@ function sendReminder(order) {
 }
 
 // ───────── [24시간 후 자동취소 이메일 스케줄링] ─────────
-// 🍀 scheduleAutoCancel를 다시 추가했습니다! (누락되어서 에러 발생)
 function scheduleAutoCancel(order) {
   console.log(`>>> scheduleAutoCancel called for order #${order.orderId}`);
   const timeLeft = order.createdAt.getTime() + TWENTY_FOUR_HOURS - Date.now();
@@ -316,6 +315,7 @@ app.post("/submit-order", async (req, res) => {
     const cleanPromoDiscount = isNaN(parseFloat(promoDiscount)) ? 0 : parseFloat(promoDiscount);
     const cleanFinalCost = isNaN(parseFloat(finalCost)) ? 0 : parseFloat(finalCost);
     const invoiceData = invoice && invoice.trim() !== "" ? invoice : "<p>Invoice details not available.</p>";
+
     const newOrder = new Order({
       orderId,
       emailAddress: emailAddress || "",
@@ -387,7 +387,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     } = req.body;
     console.log(">>> [final-submit] Step 1: Request body received:", req.body);
 
-    // 이미 "final" 상태의 (paid되지 않은) 중복 주문 찾아서 모두 취소
     console.log(">>> [final-submit] Step 2: Checking for old final (unpaid) orders with same emailAddress");
     const oldFinals = await Order.find({ emailAddress, status: "final", paid: false });
     if (oldFinals.length > 0) {
@@ -434,7 +433,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       }
     }
 
-    // draftOrder 찾아서 final로 전환
     console.log(">>> [final-submit] Step 3: Finding draftOrder by orderId:", orderId);
     const draftOrder = await Order.findOne({ orderId, status: "draft" });
     if (!draftOrder) {
@@ -442,21 +440,25 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       return res.status(404).json({ success: false, message: "Draft order not found" });
     }
 
+    // 🍀 CHANGED: 기존에 newFinalOrderId를 생성하여 orderId를 덮어쓰던 로직 제거
+    // const newFinalOrderId = generateDateTimeOrderId();
+    // draftOrder.orderId = newFinalOrderId;
+
     if (invoice && invoice.trim() !== "") {
       draftOrder.invoice = invoice;
     }
-    const newFinalOrderId = generateDateTimeOrderId();
-    draftOrder.orderId = newFinalOrderId;
     draftOrder.emailSubject = emailSubject || "";
     draftOrder.actingReel = actingReel || "";
     draftOrder.resumeLink = resumeLink || "";
     draftOrder.introduction = introduction || "";
     draftOrder.venmoId = venmoId || "";
+
+    // 🍀 CHANGED: status만 "final"로 변경 (orderId는 그대로 유지)
     draftOrder.status = "final";
 
-    console.log(">>> [final-submit] Step 4: Saving new final order (now final) to DB");
+    console.log(">>> [final-submit] Step 4: Saving order with status=final to DB");
     await draftOrder.save();
-    console.log("✅ Final submission order updated in MongoDB:", draftOrder);
+    console.log("✅ Final submission order updated in MongoDB (status=final):", draftOrder);
 
     // (1) 관리자에게 배우 자료 이메일 전송
     console.log(">>> [final-submit] Step 5: Sending admin email with actor info");
@@ -531,22 +533,67 @@ app.post("/final-submit", multer().none(), async (req, res) => {
 });
 
 // ───────── [admin/orders, delete-order, toggle-payment 등 기존 라우트들 그대로] ─────────
-
 app.get("/admin/orders", async (req, res) => {
-  // ...
+  try {
+    // 필요에 따라 아래와 같이 모든 주문을 가져오거나,
+    // 특정 status 조건으로 분류하고 싶다면 { status: { $in: ["draft","final"] } } 처럼
+    // 쿼리를 수정하시면 됩니다.
+
+    const orders = await Order.find({});
+    res.json({ success: true, orders });
+  } catch (error) {
+    console.error("Error in /admin/orders:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
 });
 
 app.post("/admin/delete-order", async (req, res) => {
-  // ...
+  try {
+    const { orderId } = req.body;
+    const order = await Order.findOne({ orderId });
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    // 만약 Cloudinary에 저장된 headshot을 함께 삭제하려면 아래 코드 추가
+    if (order.headshot) {
+      const parts = order.headshot.split("/");
+      const uploadIndex = parts.findIndex((part) => part === "upload");
+      if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
+        const fileNameWithExtension = parts.slice(uploadIndex + 2).join("/");
+        const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, "");
+        await cloudinary.uploader.destroy(publicId);
+      }
+    }
+
+    await Order.deleteOne({ orderId });
+    res.json({ success: true, message: `Order #${orderId} deleted.` });
+  } catch (err) {
+    console.error("Error in /admin/delete-order:", err);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
 });
 
 app.get("/admin/toggle-payment", async (req, res) => {
-  // ...
+  try {
+    const { orderId } = req.query;
+    const order = await Order.findOne({ orderId });
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    order.paid = !order.paid;
+    await order.save();
+    res.json({ success: true, order });
+  } catch (error) {
+    console.error("Error in /admin/toggle-payment:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
 });
 
 // ───────── [cleanUpNonFinalOrders & 서버 리슨] ─────────
 const cleanUpNonFinalOrders = async () => {
-  // ...
+  // 원하시는 로직이 있다면 여기에 구현하세요.
+  // (예: 특정 기간 지난 draft 들을 삭제한다든지 하는...)
 };
 
 app.listen(PORT, () => {
