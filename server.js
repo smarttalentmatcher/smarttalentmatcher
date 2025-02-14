@@ -1,5 +1,5 @@
 //
-// server.js (ESM 버전) - 12시간 리마인드 + 24시간 자동취소 + CSV → DB 자동 업로드 후 대량 이메일 발송 (Elastic Email API 사용)
+// server.js (ESM 버전) - 12시간 리마인드 + 24시간 자동취소 + CSV → DB 자동 업로드 + 대량 이메일 발송
 //
 
 // --------------------------------------------
@@ -64,18 +64,6 @@ mongoose
 
 //
 // [Order 스키마/모델 정의]
-//   - orderId: 주문 식별자
-//   - emailAddress: 고객 이메일
-//   - invoice: 인보이스 HTML
-//   - subtotal / baseDiscount / promoDiscount / finalCost: 가격 관련 정보
-//   - createdAt: 주문 생성 시각
-//   - paid: 결제 여부
-//   - reminderSent: 12시간 리마인드 메일 발송 여부
-//   - emailSubject: 최종 이메일 제목
-//   - actingReel / resumeLink / introduction: 배우 릴/이력서/소개글
-//   - venmoId: 벤모아이디
-//   - headshot: 클라우드 업로드된 이미지 URL
-//   - status: "draft" | "final"
 //
 const orderSchema = new mongoose.Schema({
   orderId: String,
@@ -99,37 +87,32 @@ const orderSchema = new mongoose.Schema({
 const Order = mongoose.model("Order", orderSchema);
 
 // --------------------------------------------
-// 1) BulkEmailRecipient 스키마 & 모델 정의
-//    (이메일 + 나라) 정보를 함께 저장하여 중복 관리하기
+// [BulkEmailRecipient 스키마 & 모델 정의]
+//   (이메일 + 나라) 정보를 함께 저장하여 중복 관리하기
 // --------------------------------------------
 const bulkEmailRecipientSchema = new mongoose.Schema({
-  // 🍀 이메일 필드
   email: { type: String, required: true },
-  // 🍀 나라 or 파일명 구분용 필드 (기본은 빈 문자열)
   countryOrSource: { type: String, default: "" }
 });
 
-// 🍀 (이메일, countryOrSource) 복합 unique 인덱스
-//    => 같은 나라에서 같은 이메일이 여러 번 들어오는 건 막고,
-//       나라가 다르면 중복 허용하게 됩니다.
+// 🍀 (email, countryOrSource) 복합 unique 인덱스
 bulkEmailRecipientSchema.index({ email: 1, countryOrSource: 1 }, { unique: true });
 
 const BulkEmailRecipient = mongoose.model("BulkEmailRecipient", bulkEmailRecipientSchema);
 
 // --------------------------------------------
-// 2) CSV 파일을 읽어들여서 DB에 업로드하는 함수
-//    (서버 시작 시 한 번 or 필요할 때마다 호출)
+// [CSV 파일을 읽어들여서 DB에 업로드하는 함수]
+//   - 서버 시작 시 한 번 or 필요할 때마다 호출
 // --------------------------------------------
 function uploadCSVToDB() {
   return new Promise((resolve, reject) => {
-    // 🍀 CSV가 들어있는 폴더 경로를 지정하세요
-    //    예) "/Users/kimsungah/Desktop/SmartTalentMatcher/csv"
-    const csvFolderPath = "/Users/kimsungah/Desktop/SmartTalentMatcher/csv";
+    // 🍀 변경점 ①: CSV 폴더를 __dirname 기준 ./csv 로 설정
+    const csvFolderPath = path.join(__dirname, "csv");
 
     fs.readdir(csvFolderPath, (err, files) => {
       if (err) return reject(err);
 
-      // 🍀 .csv 확장자로 끝나는 파일만 골라냄
+      // 🍀 확장자가 .csv 인 파일만 필터링
       const csvFiles = files.filter(file => file.endsWith(".csv"));
       if (csvFiles.length === 0) {
         console.log("No CSV files found in folder:", csvFolderPath);
@@ -140,48 +123,39 @@ function uploadCSVToDB() {
 
       // 🍀 폴더 내 CSV 파일을 순회
       csvFiles.forEach(async (file) => {
-        // 나라(또는 파일) 식별용 문자열 (확장자 제거)
+        // 나라/출처 식별용 이름 (파일명에서 .csv 제거)
         const fileNameWithoutExt = file.replace(".csv", "");
 
-        // -----------------------------------------------------------------------------------------
-        // 🍀 (선택) 현재 나라(파일)와 같은 countryOrSource의 기존 문서들을 지운 뒤 새로 업로드
-        //     => "영국.csv" 업로드 전, countryOrSource가 "영국"인 걸 지워서 갱신하는 식
-        //     원치 않으면 아래 줄 주석 처리
-        // -----------------------------------------------------------------------------------------
+        // (선택) 기존 문서 중 countryOrSource가 동일한 것 삭제
         await BulkEmailRecipient.deleteMany({ countryOrSource: fileNameWithoutExt });
 
-        // csv-parser를 이용해 CSV 파일 스트림 처리
         const upsertPromises = [];
         fs.createReadStream(path.join(csvFolderPath, file))
-          .pipe(csvParser())
+          // 🍀 변경점 ②: CSV 헤더가 없으므로 headers: ["email"] 지정
+          .pipe(csvParser({ headers: ["email"] }))
           .on("data", (row) => {
-            // 🍀 CSV 헤더가 'email'인지 'Email'인지 확인!
-            //    아래 예시는 헤더가 'Email'이라고 가정
-            if (row.Email) {
+            // 🍀 이제 row.email 이 각 라인에 담긴 값
+            //     "Email" 헤더가 없는 대신, 임의로 'email' 이라는 필드를 부여
+            if (row.email) {
               upsertPromises.push(
                 BulkEmailRecipient.updateOne(
-                  // 🍀 (email, countryOrSource) 쌍을 조건으로 검색
                   {
-                    email: row.Email.trim(),
+                    email: row.email.trim(),
                     countryOrSource: fileNameWithoutExt
                   },
-                  // 🍀 값을 그대로 세팅 (중복 시 갱신, 없으면 새로 생성)
                   {
-                    email: row.Email.trim(),
+                    email: row.email.trim(),
                     countryOrSource: fileNameWithoutExt
                   },
-                  { upsert: true } // upsert 옵션
+                  { upsert: true }
                 )
               );
             }
           })
           .on("end", async () => {
             try {
-              // 🍀 모든 업서트가 끝날 때까지 대기
               await Promise.all(upsertPromises);
               filesProcessed++;
-
-              // 전체 CSV 파일을 모두 처리했다면 완료
               if (filesProcessed === csvFiles.length) {
                 console.log("✅ All CSV files uploaded to DB (with countryOrSource).");
                 resolve();
@@ -201,7 +175,7 @@ function uploadCSVToDB() {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 요청 메서드 및 URL 로깅 미들웨어
+// 로깅 미들웨어
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
   next();
@@ -241,7 +215,7 @@ async function sendEmailAPI({ subject, from, fromName, to, bodyHtml, isTransacti
   try {
     const response = await fetch(url, { method: "POST", body: params });
     const data = await response.json();
-    return data; // {success: bool, message: '', etc.}
+    return data; 
   } catch (err) {
     console.error("Error sending email via API:", err);
     throw err;
@@ -250,20 +224,14 @@ async function sendEmailAPI({ subject, from, fromName, to, bodyHtml, isTransacti
 
 // --------------------------------------------
 // [타이머 관련 상수 & 변수]
-//   - 12시간 & 24시간 후에 이메일 보내야 하므로, ms로 변환
-//
-const TWELVE_HOURS = 12 * 60 * 60 * 1000;     // 12시간
-const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000; // 24시간
+const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 
-// reminderTimers, autoCancelTimers: orderId별 타이머를 저장
 const reminderTimers = {};
 const autoCancelTimers = {};
 
 // --------------------------------------------
 // [12시간 후 리마인드 이메일 스케줄링]
-//   - scheduleReminder: order.createdAt + 12시간 후에 자동 실행
-//   - sendReminder: 실제 이메일 전송
-//
 function scheduleReminder(order) {
   const timeLeft = order.createdAt.getTime() + TWELVE_HOURS - Date.now();
   if (timeLeft > 0 && !order.paid && !order.reminderSent) {
@@ -277,7 +245,7 @@ function scheduleReminder(order) {
 }
 
 function sendReminder(order) {
-  if (order.paid || order.reminderSent) return; // 이미 결제됐거나 보냈다면 skip
+  if (order.paid || order.reminderSent) return; 
 
   Order.findOne({ orderId: order.orderId, status: order.status })
     .then((savedOrder) => {
@@ -487,9 +455,6 @@ app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) =>
 
 //
 // [draft → final 제출 라우트]
-//   - 기존 final이 있으면 모두 취소 후 새 final 저장
-//   - admin에게 배우 자료 이메일 / 클라이언트에게 인보이스 이메일 / 대량 이메일
-//   - 12h 리마인더, 24h 자동취소 스케줄링
 //
 app.post("/final-submit", multer().none(), async (req, res) => {
   try {
@@ -502,7 +467,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Deleting them...`);
 
       for (const oldOrder of oldFinals) {
-        // 1) 취소메일
         const cancelHtml = `
           <div style="font-family: Arial, sans-serif;">
             <p>Hello,</p>
@@ -522,7 +486,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
         });
         console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
 
-        // 2) Cloudinary headshot 삭제
         if (oldOrder.headshot) {
           const parts = oldOrder.headshot.split('/');
           const uploadIndex = parts.findIndex(part => part === "upload");
@@ -534,16 +497,15 @@ app.post("/final-submit", multer().none(), async (req, res) => {
           }
         }
 
-        // 3) DB에서 oldOrder 삭제
         await Order.deleteOne({ _id: oldOrder._id });
         console.log(`Deleted old final order #${oldOrder.orderId} from MongoDB.`);
 
-        // [추가] 3초 대기 (캔슬메일 먼저 보낼 시간 확보)
+        // 3초 대기
         await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
 
-    // 현재 draftOrder 찾아서 final로 전환
+    // 현재 draftOrder 찾아서 final 전환
     const draftOrder = await Order.findOne({ orderId, status: "draft" });
     if (!draftOrder) {
       return res.status(404).json({ success: false, message: "Draft order not found" });
@@ -564,7 +526,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     await draftOrder.save();
     console.log("✅ Final submission order updated in MongoDB:", draftOrder);
 
-    // 1) 관리자에게 배우 자료 이메일
+    // [관리자에게 배우 자료 이메일]
     const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
     let adminEmailHtml = `<div style="font-family: Arial, sans-serif;">`;
     if (draftOrder.headshot) {
@@ -587,13 +549,13 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       subject: emailSubject || "[No Subject Provided]",
       from: process.env.ELASTIC_EMAIL_USER,
       fromName: "Smart Talent Matcher",
-      to: process.env.ELASTIC_EMAIL_USER, // 관리자 이메일
+      to: process.env.ELASTIC_EMAIL_USER,
       bodyHtml: adminEmailHtml,
       isTransactional: true
     });
     console.log("✅ Admin email sent.");
 
-    // 2) 클라이언트(주문자)에게 인보이스 이메일
+    // [클라이언트 인보이스 이메일]
     const templatePath = path.join(__dirname, "email.html");
     let clientEmailHtml = fs.existsSync(templatePath)
       ? fs.readFileSync(templatePath, "utf-8")
@@ -610,11 +572,11 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     });
     console.log("✅ Client Invoice email sent.");
 
-    // 3) 12시간 리마인드 + 24시간 자동취소 스케줄링
+    // [12시간 리마인드, 24시간 자동취소 스케줄링]
     scheduleReminder(draftOrder);
     scheduleAutoCancel(draftOrder);
 
-    // 4) 대량 이메일 발송 (CSV DB)
+    // [대량 이메일 발송: BulkEmailRecipient]
     const bulkSender = draftOrder.emailAddress; 
     const recipientsFromDB = await BulkEmailRecipient.find({});
     if (recipientsFromDB.length === 0) {
@@ -660,7 +622,7 @@ app.get("/admin/orders", async (req, res) => {
       return { ...order.toObject(), expired };
     });
 
-    // 48시간 지난 미결제 오더는 자동 삭제
+    // 48시간 지난 미결제 오더 삭제
     const deletedOrders = await Order.deleteMany({
       paid: false,
       createdAt: { $lt: new Date(now - 48 * 60 * 60 * 1000) }
