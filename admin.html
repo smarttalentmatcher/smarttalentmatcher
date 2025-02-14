@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Admin Panel - Orders</title>
+  <title>Admin Panel - Orders (Test: 1min/3min/5min)</title>
   <link rel="stylesheet" href="style.css">
   <style>
     .orders-container {
@@ -30,7 +30,7 @@
       overflow-wrap: break-word;
     }
     .orders-table th {
-      background-color: #FFFF00;
+      background-color: #ffff00;
       color: #000;
       font-weight: bold;
     }
@@ -58,18 +58,27 @@
       margin: 5px;
       font-size: 1rem;
     }
+    /* 간단한 스타일 */
+    .admin-header {
+      text-align: center;
+      background-color: #003366;
+      color: white;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
   </style>
 </head>
 <body>
   <header class="admin-header">
-    <h1>Admin Panel - Orders</h1>
+    <h1>Admin Panel - Orders (Test Mode)</h1>
   </header>
 
   <!-- 필터 -->
   <div class="filter-container">
     <select id="filter-status">
       <option value="all">All Orders</option>
-      <option value="expired">24hrs Passed</option>
+      <option value="expired">3+ Minutes Passed (Auto-cancel timing)</option>
       <option value="paid">Paid Orders</option>
       <option value="unpaid">Unpaid Orders</option>
       <option value="3weeks">Services Started Over 3 Weeks Ago</option>
@@ -79,27 +88,29 @@
   <div class="orders-container">
     <table class="orders-table">
       <colgroup>
-        <col style="width: 100px;">  <!-- Order ID -->
-        <col style="width: 100px;">  <!-- Venmo Account -->
-        <col style="width: 100px;">  <!-- Email Address -->
-        <col style="width: 100px;">  <!-- Email Subject -->
-        <col style="width: 100px;">  <!-- Acting Reel -->
-        <col style="width: 100px;">  <!-- Resume Link -->
-        <col style="width: 100px;">  <!-- Introduction -->
-        <col style="width: 100px;">  <!-- Headshot -->
-        <col style="width: 200px;">  <!-- Invoice -->
-        <col style="width: 100px;">  <!-- Payment / Delete -->
+        <col style="width: 100px;"> <!-- Order ID -->
+        <col style="width: 100px;"> <!-- Venmo Account -->
+        <col style="width: 120px;"> <!-- Email Address -->
+        <col style="width: 120px;"> <!-- Email Subject -->
+        <col style="width: 100px;"> <!-- Acting Reel -->
+        <col style="width: 100px;"> <!-- Resume Link -->
+        <col style="width: 120px;"> <!-- Introduction -->
+        <col style="width: 100px;"> <!-- Headshot -->
+        <col style="width: 90px;">  <!-- Status -->   <!-- [추가] status 컬럼 -->
+        <col style="width: 200px;"> <!-- Invoice -->
+        <col style="width: 120px;"> <!-- Payment / Delete -->
       </colgroup>
       <thead>
         <tr>
           <th>Order ID</th>
-          <th>Venmo Account</th>
-          <th>Email Address</th>
-          <th>Email Subject</th>
-          <th>Acting Reel</th>
-          <th>Resume Link</th>
-          <th>Introduction</th>
+          <th>Venmo</th>
+          <th>Email</th>
+          <th>Subject</th>
+          <th>Reel</th>
+          <th>Resume</th>
+          <th>Intro</th>
           <th>Headshot</th>
+          <th>Status</th> <!-- [추가] -->
           <th>Invoice</th>
           <th>Payment / Delete</th>
         </tr>
@@ -120,16 +131,16 @@
         // data는 { success: true, orders: [...] } 구조
         if (!data.success) {
           document.getElementById('orders-tbody').innerHTML =
-            "<tr><td colspan='10'>Failed to load orders (success=false).</td></tr>";
+            "<tr><td colspan='11'>Failed to load orders (success=false).</td></tr>";
           return;
         }
-        ordersData = data.orders; // 여기가 배열
+        ordersData = data.orders; // 배열
         renderOrders(ordersData);
       })
       .catch(error => {
         console.error("Error fetching orders:", error);
         document.getElementById('orders-tbody').innerHTML =
-          "<tr><td colspan='10'>Failed to load orders.</td></tr>";
+          "<tr><td colspan='11'>Failed to load orders.</td></tr>";
       });
 
     function renderOrders(orders) {
@@ -138,72 +149,120 @@
 
       orders.forEach(order => {
         const tr = document.createElement('tr');
+
+        // 현재 시각 - 주문 생성 시각
         const timeSinceCreation = Date.now() - new Date(order.createdAt).getTime();
-        const isExpired = (timeSinceCreation >= 24 * 60 * 60 * 1000);
 
-        // 주문 정보 (필드) 추가
-        ["orderId", "venmoId", "emailAddress", "emailSubject", "actingReel", "resumeLink", "introduction"].forEach(field => {
-          const td = document.createElement('td');
-          td.textContent = order[field] || "";
-          tr.appendChild(td);
-        });
+        // [테스트용] 3분 이상 경과한 주문을 'expired'로 간주
+        // (실제 운영 시에는 24 * 60 * 60 * 1000 = 86400000 로 계산)
+        const isExpired = (timeSinceCreation >= 3 * 60 * 1000);
 
-        // Headshot (이미지)
-        const headshotTd = document.createElement('td');
+        // [테스트용] 5분 이상이면 이미 auto-delete될 수 있지만,
+        // 여기서는 서버 쪽 로직이 진행되므로, 만약 DB에 남아있으면 표시는 됩니다.
+
+        // 순서대로 TD 생성
+        // 1) orderId
+        const tdOrderId = document.createElement('td');
+        tdOrderId.textContent = order.orderId || "";
+        tr.appendChild(tdOrderId);
+
+        // 2) venmoId
+        const tdVenmo = document.createElement('td');
+        tdVenmo.textContent = order.venmoId || "";
+        tr.appendChild(tdVenmo);
+
+        // 3) emailAddress
+        const tdEmail = document.createElement('td');
+        tdEmail.textContent = order.emailAddress || "";
+        tr.appendChild(tdEmail);
+
+        // 4) emailSubject
+        const tdSubject = document.createElement('td');
+        tdSubject.textContent = order.emailSubject || "";
+        tr.appendChild(tdSubject);
+
+        // 5) actingReel
+        const tdReel = document.createElement('td');
+        tdReel.textContent = order.actingReel || "";
+        tr.appendChild(tdReel);
+
+        // 6) resumeLink
+        const tdResume = document.createElement('td');
+        tdResume.textContent = order.resumeLink || "";
+        tr.appendChild(tdResume);
+
+        // 7) introduction
+        const tdIntro = document.createElement('td');
+        tdIntro.textContent = order.introduction || "";
+        tr.appendChild(tdIntro);
+
+        // 8) headshot
+        const tdHeadshot = document.createElement('td');
         if (order.headshot) {
           const img = document.createElement('img');
           img.src = order.headshot;
           img.alt = "Headshot Preview";
-          img.style.width = "100px";
-          headshotTd.appendChild(img);
+          img.style.width = "80px";
+          tdHeadshot.appendChild(img);
         } else {
-          headshotTd.textContent = "N/A";
+          tdHeadshot.textContent = "N/A";
         }
-        tr.appendChild(headshotTd);
+        tr.appendChild(tdHeadshot);
 
-        // Invoice (scroll-cell)
-        const invoiceTd = document.createElement('td');
-        invoiceTd.classList.add("scroll-cell");
-        // invoice HTML 그대로 렌더링할 때는 innerHTML 사용
-        invoiceTd.innerHTML = order.invoice || "";
-        tr.appendChild(invoiceTd);
-
-        // Payment / Delete
-        const paymentTd = document.createElement('td');
-
-        // 48시간 지난 주문은 표시 없이 바로 제거 (원래 로직 유지하셨다면)
-        if (timeSinceCreation >= 48 * 60 * 60 * 1000) {
-          tr.remove();
-          return;
-        } else {
-          let finalCost = order.finalCost || "";
-          if (finalCost !== "") {
-            finalCost = "$" + parseFloat(finalCost).toFixed(2);
-          }
-          // 24시간이 경과했다면 "24hrs" 텍스트를 추가
-          const expiredText = isExpired ? `<div style="color:red; font-weight:bold;">24hrs</div>` : "";
-
-          paymentTd.innerHTML = `
-            ${finalCost}
-            ${expiredText}
-            <br>
-            <label>
-              <input type="checkbox" class="payment-checkbox" data-order-id="${order.orderId}" ${order.paid ? "checked" : ""}>
-              Paid
-            </label>
-            <br>
-            <button class="delete-button" data-order-id="${order.orderId}">Delete</button>
-          `;
+        // 9) status 컬럼 [추가]
+        const tdStatus = document.createElement('td');
+        tdStatus.textContent = order.status || "";
+        // 만약 canceled_24hr이면 빨간색 강조
+        if (order.status === "canceled_24hr") {
+          tdStatus.style.color = "red";
+          tdStatus.style.fontWeight = "bold";
         }
-        tr.appendChild(paymentTd);
+        tr.appendChild(tdStatus);
 
+        // 10) invoice
+        const tdInvoice = document.createElement('td');
+        tdInvoice.classList.add("scroll-cell");
+        // invoice HTML 그대로 렌더링
+        tdInvoice.innerHTML = order.invoice || "";
+        tr.appendChild(tdInvoice);
+
+        // 11) Payment / Delete
+        const tdPayment = document.createElement('td');
+
+        // 이 주문이 48시간(테스트 5분) 지난 시점이면 서버 로직상 자동 삭제가 되었을 수도 있으나,
+        // 혹시 남아 있다면 표시만 진행
+        let finalCost = order.finalCost || "";
+        if (finalCost !== "") {
+          finalCost = "$" + parseFloat(finalCost).toFixed(2);
+        }
+        // 만약 3분 경과했다면 "24hrs" 텍스트를 표시(테스트 모드라 이름만 유지)
+        const expiredText = isExpired
+          ? `<div style="color:red; font-weight:bold;">24hrs</div>`
+          : "";
+
+        tdPayment.innerHTML = `
+          ${finalCost}
+          ${expiredText}
+          <br>
+          <label>
+            <input type="checkbox" class="payment-checkbox" data-order-id="${order.orderId}"
+              ${order.paid ? "checked" : ""}>
+            Paid
+          </label>
+          <br>
+          <button class="delete-button" data-order-id="${order.orderId}">Delete</button>
+        `;
+        tr.appendChild(tdPayment);
+
+        // 최종적으로 tr을 tbody에 붙임
         tbody.appendChild(tr);
       });
-      
-      attachPaymentCheckboxHandlers();  
+
+      attachPaymentCheckboxHandlers();
       attachDeleteButtonHandlers();
     }
 
+    // 결제 체크박스 핸들러
     function attachPaymentCheckboxHandlers() {
       const checkboxes = document.querySelectorAll('.payment-checkbox');
       checkboxes.forEach(checkbox => {
@@ -211,27 +270,14 @@
           const orderId = this.dataset.orderId;
           const paid = this.checked;
 
-          // GET 요청으로 결제 상태 토글
+          // /admin/toggle-payment (GET) 요청
           fetch(`/admin/toggle-payment?orderId=${orderId}&paid=${paid}`, { method: 'GET' })
             .then(response => response.json())
             .then(data => {
               console.log("toggle-payment response:", data);
 
-              // paid === true 이면 /admin/update-payment 호출 (원래 로직이라 가정)
-              if (paid) {
-                fetch('/admin/update-payment', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ orderId, paid })
-                })
-                .then(response => response.json())
-                .then(result => {
-                  console.log("/admin/update-payment result:", result);
-                })
-                .catch(err => {
-                  console.error("Error in update-payment:", err);
-                });
-              }
+              // paid === true 이면, 혹시 추가 API를 호출하거나
+              // 여기서는 그냥 상태만 토글한 것으로 가정
             })
             .catch(error => {
               console.error("Error updating payment:", error);
@@ -240,7 +286,7 @@
       });
     }
 
-    // (추가) 딜리트 버튼 핸들러
+    // Delete 버튼 핸들러
     function attachDeleteButtonHandlers() {
       const deleteButtons = document.querySelectorAll('.delete-button');
       deleteButtons.forEach(button => {
@@ -252,19 +298,19 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ orderId })
           })
-          .then(res => res.json())
-          .then(data => {
-            console.log('Delete response:', data);
-            if (data.success) {
-              // UI에서 해당 행 제거
-              this.closest('tr').remove();
-            } else {
-              alert(data.message || 'Deletion failed');
-            }
-          })
-          .catch(err => {
-            console.error('Error deleting order:', err);
-          });
+            .then(res => res.json())
+            .then(data => {
+              console.log('Delete response:', data);
+              if (data.success) {
+                // UI에서 해당 행 제거
+                this.closest('tr').remove();
+              } else {
+                alert(data.message || 'Deletion failed');
+              }
+            })
+            .catch(err => {
+              console.error('Error deleting order:', err);
+            });
         });
       });
     }
@@ -273,12 +319,24 @@
     document.getElementById("filter-status").addEventListener("change", function () {
       const filter = this.value;
       const now = Date.now();
+      // 테스트 모드: 3분 지나면 expired로 취급
+      const expiredThreshold = 3 * 60 * 1000; // 3분
+
       const filteredOrders = ordersData.filter(order => {
         const timeSinceCreation = now - new Date(order.createdAt).getTime();
-        if (filter === "expired") return timeSinceCreation >= 24 * 60 * 60 * 1000;
-        if (filter === "paid") return order.paid;
-        if (filter === "unpaid") return !order.paid;
-        if (filter === "3weeks") return timeSinceCreation >= 21 * 24 * 60 * 60 * 1000;
+        if (filter === "expired") {
+          return timeSinceCreation >= expiredThreshold;  // 3분~
+        }
+        if (filter === "paid") {
+          return order.paid;
+        }
+        if (filter === "unpaid") {
+          return !order.paid;
+        }
+        if (filter === "3weeks") {
+          return timeSinceCreation >= 21 * 24 * 60 * 60 * 1000;
+        }
+        // "all"
         return true;
       });
       renderOrders(filteredOrders);
