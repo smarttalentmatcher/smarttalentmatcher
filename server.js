@@ -723,13 +723,70 @@ app.post("/admin/delete-order", async (req, res) => {
   }
 });
 
+// [FIX #1] ───────── [admin/toggle-payment 라우트 - 결제 상태 토글 & 메일 발송] ─────────
+app.get("/admin/toggle-payment", async (req, res) => {
+  try {
+    const { orderId } = req.query;
+    const order = await Order.findOne({ orderId });
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    // 기존 결제 상태
+    const oldPaid = order.paid;
+    // 토글
+    order.paid = !oldPaid;
+    await order.save(); // DB에 실제로 반영
+
+    console.log(`>>> Toggled order #${orderId} paid from ${oldPaid} -> ${order.paid}`);
+
+    // (A) 만약 지금 막 false -> true 로 변했다면, "Your service has started!" 메일
+    if (!oldPaid && order.paid) {
+      // 단일 메일 예시
+      const startedHtml = `
+        <html>
+        <body style="font-family: Arial, sans-serif; line-height:1.6;">
+          <h2>Your service has started!</h2>
+          <p>Dear Customer,</p>
+          <p>We are pleased to inform you that your payment has been successfully processed,
+          and your service has now begun.</p>
+          <p>Once all emails corresponding to your selected region have been sent,
+          you will receive a confirmation email.</p>
+          <p>Thank you for trusting our service. We are committed to helping you find the right people.</p>
+          <br>
+          <p>Best Regards,<br>Smart Talent Matcher Team</p>
+        </body>
+        </html>
+      `;
+      const mailDataStart = {
+        subject: "[Smart Talent Matcher] Your Service Has Started!",
+        from: process.env.ELASTIC_EMAIL_USER, 
+        fromName: "",         // [FIX #2] fromName 제거
+        to: order.emailAddress,
+        bodyHtml: startedHtml,
+        isTransactional: true
+      };
+      await sendEmailAPI(mailDataStart);
+      console.log("✅ Service start email sent to:", order.emailAddress);
+
+      // 여기에 bulkEmail 전송 로직(필요시) 추가 가능
+      // ex) parse invoice -> find recipients -> sendBulkEmailsInChunks(...)
+    }
+
+    // 응답
+    return res.json({ success: true, order });
+  } catch (err) {
+    console.error("Error in /admin/toggle-payment:", err);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// ───────── [대량메일(Chunk) 유틸 함수] ─────────
 async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, delayMs = 1000) {
   let sentCount = 0;
   for (let i = 0; i < emails.length; i += chunkSize) {
     const chunk = emails.slice(i, i + chunkSize);
-
-    // 동시에 20통씩 보내기 (동시 요청 20개)
-    const promises = chunk.map((recipientEmail) => {
+    const promises = chunk.map(recipientEmail => {
       const mailData = { ...mailDataTemplate, to: recipientEmail };
       return sendEmailAPI(mailData)
         .then(() => {
@@ -740,11 +797,7 @@ async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, 
           console.error(`❌ Failed to send to ${recipientEmail}`, err);
         });
     });
-
-    // 이 chunk가 모두 끝날 때까지 대기
     await Promise.all(promises);
-
-    // 다음 chunk 전 1초 쉬기
     if (i + chunkSize < emails.length) {
       console.log(">>> Waiting 1s before next chunk...");
       await new Promise(resolve => setTimeout(resolve, delayMs));
@@ -759,10 +812,10 @@ app.listen(PORT, () => {
   uploadCSVToDB()
     .then(() => {
       console.log("Bulk email recipients updated from CSV (Full Refresh).");
-      restoreTimers();               // 미결제 주문 타이머 복원
-      cleanUpIncompleteOrders();     // 24시간 지난 미제출 주문 정리
-      syncCloudinaryWithDB();        // DB에 없는 orphan Cloudinary 이미지 삭제
-      cleanUpNonFinalOrders();       // 필요시 추가 정리 작업
+      restoreTimers();
+      cleanUpIncompleteOrders();
+      syncCloudinaryWithDB();
+      cleanUpNonFinalOrders();
     })
     .catch(err => {
       console.error("Error uploading CSV to DB:", err);
