@@ -128,8 +128,7 @@ async function sendEmailAPI({ subject, from, fromName, to, bodyHtml, isTransacti
 // ───────── [CSV → BulkEmailRecipient 업로드 함수] ─────────
 function uploadCSVToDB() {
   return new Promise((resolve, reject) => {
-    // [FIX] 절대 경로 대신, server.js와 같은 폴더 (혹은 하위)로 가정
-    // 예: server.js와 같은 디렉토리에 csv 폴더 존재
+    // server.js와 같은 디렉토리에 "csv" 폴더가 있다고 가정
     const csvFolderPath = path.join(__dirname, "csv");
 
     // 폴더 존재 여부 체크
@@ -152,19 +151,28 @@ function uploadCSVToDB() {
       BulkEmailRecipient.deleteMany({})
         .then(() => {
           let filesProcessed = 0;
+
+          // 모든 CSV 파일 순회
           csvFiles.forEach(file => {
             const filePath = path.join(csvFolderPath, file);
+            // 파일명에서 ".csv" 제거 → 지역명 추출
+            const regionName = path.basename(file, ".csv");
 
             fs.createReadStream(filePath)
-              .pipe(csvParser())
-              .on("data", (row) => {
-                if (row.email) {
-                  // email 필드가 있으면 upsert
-                  BulkEmailRecipient.updateOne(
-                    { email: row.email.trim() },
-                    { email: row.email.trim() },
-                    { upsert: true }
-                  ).catch(err => console.error("Error upserting email:", err));
+              // 헤더(첫 줄) 사용
+              .pipe(csvParser({ headers: true }))
+              .on("data", async (row) => {
+                // CSV 각 행에 email 칼럼이 있다고 가정
+                if (row.email && row.email.trim() !== "") {
+                  try {
+                    // 중복 허용: 동일 이메일이 여러 지역에 있으면 각각 삽입
+                    await BulkEmailRecipient.create({
+                      email: row.email.trim(),
+                      countryOrSource: regionName,
+                    });
+                  } catch (err) {
+                    console.error("Error inserting email:", err);
+                  }
                 }
               })
               .on("end", () => {
@@ -182,10 +190,11 @@ function uploadCSVToDB() {
   });
 }
 
-// ───────── [테스트 라우트, 필요한 라우트 추가 가능] ─────────
+// ───────── [테스트 라우트] ─────────
 app.get("/", (req, res) => {
   res.send("<h1>Hello from server.js - CSV Reload test</h1>");
 });
+
 // ───────── [타이머 관련 상수 & 변수] ─────────
 // (테스트용으로 1분, 3분, 5분으로 설정 - 실제 운영시 12시간, 24시간, 48시간으로 변경)
 const TWELVE_HOURS = 12 * 60 * 60 * 1000;      
