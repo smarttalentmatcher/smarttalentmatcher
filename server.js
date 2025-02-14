@@ -1,5 +1,5 @@
 //
-// server.js (ESM 버전) - 12시간 리마인드 + 24시간 자동취소 + CSV → DB 자동 업로드 후 대량 이메일 발송 (Elastic Email API 사용)
+// server.js (ESM 버전) - debug용 전체 코드 (admin/orders 디버깅)
 //
 
 // ───────── [필요한 import들 & dotenv 설정] ─────────
@@ -40,9 +40,17 @@ const uploadHeadshot = multer({ storage: headshotStorage });
 
 // ───────── [MongoDB 연결 & Mongoose 모델 정의] ─────────
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/test";
+
+// 🍀 CHANGED: DB 연결 과정에서 환경변수 로그 추가
+console.log(">>>> [DEBUG] MONGO_URI =", MONGO_URI);
+
 mongoose
   .connect(MONGO_URI)
-  .then(() => console.log("✅ Connected to MongoDB Atlas"))
+  .then(() => {
+    console.log("✅ Connected to MongoDB Atlas (or local)");
+    // 🍀 CHANGED: 연결된 DB 이름 출력 (mongoose.connection.name은 DB명이 맞지 않을 수 있으니, 한번 콘솔로 찍어보겠습니다.)
+    console.log(">>>> [DEBUG] DB Name (via mongoose.connection.name) =", mongoose.connection.name);
+  })
   .catch(err => console.error("❌ MongoDB Connection Error:", err));
 
 const orderSchema = new mongoose.Schema({
@@ -253,6 +261,7 @@ function autoCancelOrder(order) {
 async function restoreTimers() {
   try {
     const pendingOrders = await Order.find({ status: "final", paid: false });
+    console.log(`>>> [DEBUG] restoreTimers: found ${pendingOrders.length} final/pending orders.`);
     pendingOrders.forEach((order) => {
       if (!order.reminderSent) scheduleReminder(order);
       scheduleAutoCancel(order);
@@ -368,9 +377,7 @@ app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) =>
   }
 });
 
-// ──────────────────────────────────────────────
-// [draft → final 제출 라우트] (대량 이메일 발송 제거 버전 + scheduleAutoCancel 복원)
-//
+// [draft → final 제출 라우트]
 app.post("/final-submit", multer().none(), async (req, res) => {
   try {
     console.log(">>> [final-submit] Step 0: Endpoint called");
@@ -440,10 +447,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       return res.status(404).json({ success: false, message: "Draft order not found" });
     }
 
-    // 🍀 CHANGED: 기존에 newFinalOrderId를 생성하여 orderId를 덮어쓰던 로직 제거
-    // const newFinalOrderId = generateDateTimeOrderId();
-    // draftOrder.orderId = newFinalOrderId;
-
     if (invoice && invoice.trim() !== "") {
       draftOrder.invoice = invoice;
     }
@@ -453,7 +456,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     draftOrder.introduction = introduction || "";
     draftOrder.venmoId = venmoId || "";
 
-    // 🍀 CHANGED: status만 "final"로 변경 (orderId는 그대로 유지)
     draftOrder.status = "final";
 
     console.log(">>> [final-submit] Step 4: Saving order with status=final to DB");
@@ -532,15 +534,17 @@ app.post("/final-submit", multer().none(), async (req, res) => {
   }
 });
 
-// ───────── [admin/orders, delete-order, toggle-payment 등 기존 라우트들 그대로] ─────────
+// ───────── [admin/orders 라우트 - 관리자 조회] ─────────
 app.get("/admin/orders", async (req, res) => {
   try {
-    // 필요에 따라 아래와 같이 모든 주문을 가져오거나,
-    // 특정 status 조건으로 분류하고 싶다면 { status: { $in: ["draft","final"] } } 처럼
-    // 쿼리를 수정하시면 됩니다.
+    // 🍀 CHANGED: 디버깅용 로그 추가
+    console.log(">>> [DEBUG] /admin/orders called.");
 
     const orders = await Order.find({});
-    res.json({ success: true, orders });
+    // 🍀 CHANGED: 어떤 결과가 나오는지 콘솔 출력
+    console.log(">>> [DEBUG] /admin/orders - orders found:", orders);
+
+    return res.json({ success: true, orders });
   } catch (error) {
     console.error("Error in /admin/orders:", error);
     res.status(500).json({ success: false, message: "Internal Server Error" });
@@ -555,7 +559,6 @@ app.post("/admin/delete-order", async (req, res) => {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
 
-    // 만약 Cloudinary에 저장된 headshot을 함께 삭제하려면 아래 코드 추가
     if (order.headshot) {
       const parts = order.headshot.split("/");
       const uploadIndex = parts.findIndex((part) => part === "upload");
@@ -592,8 +595,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
 
 // ───────── [cleanUpNonFinalOrders & 서버 리슨] ─────────
 const cleanUpNonFinalOrders = async () => {
-  // 원하시는 로직이 있다면 여기에 구현하세요.
-  // (예: 특정 기간 지난 draft 들을 삭제한다든지 하는...)
+  // 필요시 구현
 };
 
 app.listen(PORT, () => {
