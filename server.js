@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------------
-// SERVER.JS (ESM 버전) - 전체 코드 (중요 수정: BulkEmailRecipient 스키마 & CSV 로직)
+// SERVER.JS (ESM 버전) - 전체 코드 (BulkEmailRecipient 스키마 & CSV 로직 - BOM 처리 포함)
 // --------------------------------------------------------------------------------
 
 // ───────── [필요한 import들 & dotenv 설정] ─────────
@@ -126,7 +126,7 @@ async function sendEmailAPI({ subject, from, fromName, to, bodyHtml, isTransacti
   }
 }
 
-// ───────── [CSV → BulkEmailRecipient 업로드 함수] ─────────
+// ───────── [CSV → BulkEmailRecipient 업로드 함수 (BOM처리, 로그 추가)] ─────────
 function uploadCSVToDB() {
   return new Promise((resolve, reject) => {
     // server.js와 같은 디렉토리에 "csv" 폴더가 있다고 가정
@@ -159,31 +159,55 @@ function uploadCSVToDB() {
             // 파일명에서 ".csv" 제거 → 지역명 추출
             const regionName = path.basename(file, ".csv");
 
+            let insertedCountThisFile = 0;
+
             fs.createReadStream(filePath)
-              // CSV 첫 줄을 헤더로 인식
-              .pipe(csvParser({ headers: true }))
+              // BOM 제거를 위해 bom: true 추가
+              .pipe(csvParser({ headers: true, bom: true }))
               .on("data", async (row) => {
-                // CSV 각 행에 email 칼럼이 있다고 가정
-                if (row.email && row.email.trim() !== "") {
+                // 디버그: 실제 파싱된 row 내용 확인
+                console.log("[CSV DEBUG] raw row:", row);
+
+                let emailVal = row.email;
+
+                // 혹시 한 개 키만 있고 그 키가 BOM이 섞여서 "﻿email" 식일 수 있으므로 보정
+                if (!emailVal && Object.keys(row).length === 1) {
+                  const weirdKey = Object.keys(row)[0];
+                  if (weirdKey && weirdKey.includes("email")) {
+                    const newKey = weirdKey.replace(/\ufeff/g, "").trim();
+                    emailVal = row[weirdKey];
+                    console.log(">>> Found weird BOM key:", weirdKey, "=> using as", newKey, "=", emailVal);
+                  }
+                }
+
+                if (emailVal && emailVal.trim() !== "") {
                   try {
                     // 중복 허용: 동일 이메일이 여러 지역에 있으면 각각 삽입
                     await BulkEmailRecipient.create({
-                      email: row.email.trim(),
+                      email: emailVal.trim(),
                       countryOrSource: regionName,
                     });
+                    insertedCountThisFile++;
                   } catch (err) {
                     console.error("Error inserting email:", err);
                   }
                 }
               })
-              .on("end", () => {
+              .on("end", async () => {
                 filesProcessed++;
+                console.log(`[CSV DEBUG] File '${file}' => insertedCountThisFile = ${insertedCountThisFile}`);
+
+                // 모든 CSV 파일 처리 끝나면 resolve
                 if (filesProcessed === csvFiles.length) {
-                  console.log("CSV files uploaded to DB.");
+                  const totalDocs = await BulkEmailRecipient.countDocuments();
+                  console.log(`CSV files uploaded to DB. Total BulkEmailRecipient docs = ${totalDocs}`);
                   resolve();
                 }
               })
-              .on("error", (err) => reject(err));
+              .on("error", (err) => {
+                console.error("Error reading CSV file:", err);
+                reject(err);
+              });
           });
         })
         .catch(err => reject(err));
@@ -197,7 +221,6 @@ app.get("/", (req, res) => {
 });
 
 // ───────── [타이머 관련 상수 & 변수] ─────────
-// (테스트용으로 1분, 3분, 5분으로 설정 - 실제 운영시 12시간, 24시간, 48시간으로 변경)
 const TWELVE_HOURS = 12 * 60 * 60 * 1000;      
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000; 
 const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000; 
@@ -779,7 +802,7 @@ async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, 
   for (let i = 0; i < emails.length; i += chunkSize) {
     const chunk = emails.slice(i, i + chunkSize);
     console.log(`>>> [DEBUG] Sending chunk from index ${i} to ${i + chunkSize - 1} (chunk size = ${chunk.length})`);
-    
+
     const promises = chunk.map((recipientEmail, idx) => {
       const mailData = { ...mailDataTemplate, to: recipientEmail };
       return sendEmailAPI(mailData)
@@ -930,10 +953,10 @@ app.listen(PORT, "0.0.0.0", () => {
   uploadCSVToDB()
     .then(() => {
       console.log("Bulk email recipients updated from CSV (Full Refresh).");
-      restoreTimers();               
-      cleanUpIncompleteOrders();     
-      syncCloudinaryWithDB();        
-      cleanUpNonFinalOrders();       
+      restoreTimers();
+      cleanUpIncompleteOrders();
+      syncCloudinaryWithDB();
+      cleanUpNonFinalOrders();
     })
     .catch(err => {
       console.error("Error uploading CSV to DB:", err);
