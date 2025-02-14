@@ -723,36 +723,94 @@ app.post("/admin/delete-order", async (req, res) => {
   }
 });
 
-// [FIX #1] ───────── [admin/toggle-payment 라우트 - 결제 상태 토글 & 메일 발송] ─────────
+// [1] invoice에서 <span id="selected-names">...</span> 텍스트를 추출하는 함수
+function parseSelectedName(invoiceHtml) {
+  if (!invoiceHtml) return "";
+  const match = invoiceHtml.match(/<span[^>]*id=["']selected-names["'][^>]*>(.*?)<\/span>/i);
+  if (!match || !match[1]) return "";
+  return match[1].trim();
+}
+
+// [2] (유틸) 대량 메일 (Chunk + Delay) 전송 함수, 디버깅 로그 추가
+async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, delayMs = 1000) {
+  console.log(">>> [DEBUG] sendBulkEmailsInChunks() called");
+  console.log(">>> [DEBUG] total emails to send:", emails.length);
+  if (emails.length === 0) {
+    console.log(">>> [DEBUG] No emails to send. Exiting sendBulkEmailsInChunks.");
+    return;
+  }
+
+  let sentCount = 0;
+  for (let i = 0; i < emails.length; i += chunkSize) {
+    const chunk = emails.slice(i, i + chunkSize);
+    console.log(`>>> [DEBUG] Sending chunk from index ${i} to ${i + chunkSize - 1} (chunk size = ${chunk.length})`);
+    
+    const promises = chunk.map((recipientEmail, idx) => {
+      const mailData = { ...mailDataTemplate, to: recipientEmail };
+      return sendEmailAPI(mailData)
+        .then(() => {
+          sentCount++;
+          console.log(`✅ [DEBUG] Sent to ${recipientEmail} [${sentCount}/${emails.length}]`);
+        })
+        .catch(err => {
+          console.error(`❌ [DEBUG] Failed to send to ${recipientEmail}`, err);
+        });
+    });
+
+    // 해당 chunk 모두 발송 종료까지 대기
+    await Promise.all(promises);
+
+    // 다음 chunk 전 대기
+    if (i + chunkSize < emails.length) {
+      console.log(`>>> [DEBUG] Waiting ${delayMs}ms before next chunk...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  console.log("✅ [DEBUG] All bulk emails sent with chunk approach!");
+}
+
+// [3] /admin/toggle-payment 라우트, 디버깅 로그를 단계별로 추가
 app.get("/admin/toggle-payment", async (req, res) => {
   try {
     const { orderId } = req.query;
+    console.log(">>> [DEBUG] /admin/toggle-payment called. orderId =", orderId);
+
+    // 1) 주문 찾기
     const order = await Order.findOne({ orderId });
     if (!order) {
+      console.error(">>> [DEBUG] Order not found for orderId:", orderId);
       return res.status(404).json({ success: false, message: "Order not found" });
     }
+    console.log(">>> [DEBUG] Found order:", order);
 
-    // 기존 결제 상태
+    // 2) 기존 paid 상태
     const oldPaid = order.paid;
     // 토글
     order.paid = !oldPaid;
-    await order.save(); // DB에 실제로 반영
+    await order.save();
+    console.log(`>>> [DEBUG] Toggled paid from ${oldPaid} to ${order.paid}`);
 
-    console.log(`>>> Toggled order #${orderId} paid from ${oldPaid} -> ${order.paid}`);
-
-    // (A) 만약 지금 막 false -> true 로 변했다면, "Your service has started!" 메일
+    // 3) false → true 인 경우
     if (!oldPaid && order.paid) {
-      // 단일 메일 예시
+      console.log(">>> [DEBUG] Payment changed from false -> true. Will send 'service started' email AND do bulk emailing.");
+
+      // (A) "Your service has started!" 메일
       const startedHtml = `
         <html>
         <body style="font-family: Arial, sans-serif; line-height:1.6;">
-          <h2>Your service has started!</h2>
+          <h2>🎉 Your service has started! 🎉</h2>
           <p>Dear Customer,</p>
-          <p>We are pleased to inform you that your payment has been successfully processed,
-          and your service has now begun.</p>
-          <p>Once all emails corresponding to your selected region have been sent,
-          you will receive a confirmation email.</p>
-          <p>Thank you for trusting our service. We are committed to helping you find the right people.</p>
+          <p>
+            We are pleased to inform you that your payment has been successfully processed,
+            and your service has now begun.
+          </p>
+          <p>
+            Once all emails corresponding to your selected region have been sent,
+            you will receive a confirmation email.
+          </p>
+          <p>
+            Thank you for trusting our service. We are committed to helping you find the right people.
+          </p>
           <br>
           <p>Best Regards,<br>Smart Talent Matcher Team</p>
         </body>
@@ -760,68 +818,86 @@ app.get("/admin/toggle-payment", async (req, res) => {
       `;
       const mailDataStart = {
         subject: "[Smart Talent Matcher] Your Service Has Started!",
-        from: process.env.ELASTIC_EMAIL_USER, 
-        fromName: "",         // [FIX #2] fromName 제거
+        from: process.env.ELASTIC_EMAIL_USER,
+        fromName: "", // 표시 이름 없이 이메일만
         to: order.emailAddress,
         bodyHtml: startedHtml,
         isTransactional: true
       };
+      console.log(">>> [DEBUG] Sending service-start email to:", order.emailAddress);
       await sendEmailAPI(mailDataStart);
-      console.log("✅ Service start email sent to:", order.emailAddress);
+      console.log("✅ [DEBUG] Service start email sent.");
 
-      // 여기에 bulkEmail 전송 로직(필요시) 추가 가능
-      // ex) parse invoice -> find recipients -> sendBulkEmailsInChunks(...)
+      // (B) 대량 이메일 로직
+      console.log(">>> [DEBUG] Starting Bulk Email Logic...");
+
+      // (i) invoice에서 selected-names 텍스트 추출 (예: "United States (+Canada)")
+      console.log(">>> [DEBUG] order.invoice length =", order.invoice.length);
+      const selectedName = parseSelectedName(order.invoice);
+      console.log(">>> [DEBUG] selectedName =", selectedName);
+
+      if (!selectedName) {
+        console.log(">>> [DEBUG] selectedName is empty. Skipping bulk emailing.");
+      } else {
+        // (ii) BulkEmailRecipient에서 countryOrSource= selectedName 인 애들 찾는 예시
+        // 여기서는 단순히 email만 있는 스키마라면, 다른 방식으로 해야 함
+        // (가령, if there's "countryOrSource" field) 
+        console.log(">>> [DEBUG] Finding recipients matching selectedName...");
+        const recipients = await BulkEmailRecipient.find({ countryOrSource: selectedName });
+        console.log(">>> [DEBUG] BulkEmailRecipient found:", recipients.length, "docs.");
+
+        if (recipients.length === 0) {
+          console.log(">>> [DEBUG] No recipients matched. Bulk emailing aborted.");
+        } else {
+          // 중복 제거
+          const emails = [
+            ...new Set(recipients.map(r => (r.email || "").trim().toLowerCase()))
+          ].filter(e => e);
+          console.log(">>> [DEBUG] uniqueEmails after dedup =", emails.length);
+
+          // 메일 내용(test-email과 동일)
+          const formattedIntro = order.introduction
+            ? order.introduction.replace(/\r?\n/g, "<br>")
+            : "";
+          let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
+          if (order.headshot) {
+            emailHtml += `
+              <div>
+                <img src="${order.headshot}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
+              </div>
+              <br>
+            `;
+          }
+          emailHtml += `
+            <p><strong>Acting Reel:</strong> <a href="${order.actingReel}" target="_blank">${order.actingReel}</a></p>
+            <p><strong>Resume:</strong> <a href="${order.resumeLink}" target="_blank">${order.resumeLink}</a></p>
+            <br>
+            <p>${formattedIntro}</p>
+          `;
+          emailHtml += `</div>`;
+
+          const bulkMailDataTemplate = {
+            subject: order.emailSubject || "[No Subject Provided]",
+            from: process.env.ELASTIC_EMAIL_USER,
+            fromName: "", // 표시 이름 없음
+            bodyHtml: emailHtml,
+            isTransactional: false
+          };
+
+          console.log(">>> [DEBUG] Starting to send Bulk Emails in Chunks...");
+          await sendBulkEmailsInChunks(emails, bulkMailDataTemplate, 20, 1000);
+          console.log("✅ [DEBUG] Bulk emailing completed!");
+        }
+      }
+
+    } else {
+      console.log(">>> [DEBUG] Payment either remains false or toggled true->false. No mailing logic triggered.");
     }
 
-    // 응답
-    return res.json({ success: true, order });
+    // 마지막 응답
+    res.json({ success: true, order });
   } catch (err) {
-    console.error("Error in /admin/toggle-payment:", err);
-    return res.status(500).json({ success: false, message: "Internal Server Error" });
+    console.error("❌ [DEBUG] Error in /admin/toggle-payment:", err);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
   }
-});
-
-// ───────── [대량메일(Chunk) 유틸 함수] ─────────
-async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, delayMs = 1000) {
-  let sentCount = 0;
-  for (let i = 0; i < emails.length; i += chunkSize) {
-    const chunk = emails.slice(i, i + chunkSize);
-    const promises = chunk.map(recipientEmail => {
-      const mailData = { ...mailDataTemplate, to: recipientEmail };
-      return sendEmailAPI(mailData)
-        .then(() => {
-          sentCount++;
-          console.log(`✅ Sent to ${recipientEmail} [${sentCount}/${emails.length}]`);
-        })
-        .catch(err => {
-          console.error(`❌ Failed to send to ${recipientEmail}`, err);
-        });
-    });
-    await Promise.all(promises);
-    if (i + chunkSize < emails.length) {
-      console.log(">>> Waiting 1s before next chunk...");
-      await new Promise(resolve => setTimeout(resolve, delayMs));
-    }
-  }
-  console.log("✅ All bulk emails sent with chunk approach!");
-}
-
-// ───────── [서버 리슨 및 초기 정리 작업] ─────────
-app.listen(PORT, () => {
-  console.log(`✅ Server running at ${process.env.SERVER_URL || "http://localhost:" + PORT}`);
-  uploadCSVToDB()
-    .then(() => {
-      console.log("Bulk email recipients updated from CSV (Full Refresh).");
-      restoreTimers();
-      cleanUpIncompleteOrders();
-      syncCloudinaryWithDB();
-      cleanUpNonFinalOrders();
-    })
-    .catch(err => {
-      console.error("Error uploading CSV to DB:", err);
-      restoreTimers();
-      cleanUpIncompleteOrders();
-      syncCloudinaryWithDB();
-      cleanUpNonFinalOrders();
-    });
 });
