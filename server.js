@@ -382,7 +382,7 @@ async function restoreTimers() {
 // ───────── [추가: 미제출(불완전한) 주문 정리 함수] ─────────
 async function cleanUpIncompleteOrders() {
   // 24시간 전 시각 (실제 운영에서는 24시간, 테스트에서는 TWENTY_FOUR_HOURS 대신 직접 계산)
-  const cutoff = new Date(Date.now() - (24 * 60 * 60 * 1000));
+  const cutoff = new Date(Date.now() - (3 * 60 * 1000));
   // status가 draft인 주문 중 createdAt이 cutoff 이전인 주문 조회
   const orders = await Order.find({ status: "draft", createdAt: { $lt: cutoff } });
   for (const order of orders) {

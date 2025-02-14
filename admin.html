@@ -74,11 +74,11 @@
     <h1>Admin Panel - Orders (Test Mode)</h1>
   </header>
 
-  <!-- 필터 -->
+  <!-- 필터 (여기서 "expired" 선택 시, unpaid이면서 3분 이상 지난 주문만 보이도록 할 예정) -->
   <div class="filter-container">
     <select id="filter-status">
       <option value="all">All Orders</option>
-      <option value="expired">3+ Minutes Passed (Auto-cancel timing)</option>
+      <option value="expired">3+ Minutes Passed (Unpaid)</option>
       <option value="paid">Paid Orders</option>
       <option value="unpaid">Unpaid Orders</option>
       <option value="3weeks">Services Started Over 3 Weeks Ago</option>
@@ -96,7 +96,7 @@
         <col style="width: 100px;"> <!-- Resume Link -->
         <col style="width: 120px;"> <!-- Introduction -->
         <col style="width: 100px;"> <!-- Headshot -->
-        <col style="width: 90px;">  <!-- Status -->   <!-- [추가] status 컬럼 -->
+        <col style="width: 90px;">  <!-- Status -->
         <col style="width: 200px;"> <!-- Invoice -->
         <col style="width: 120px;"> <!-- Payment / Delete -->
       </colgroup>
@@ -110,7 +110,7 @@
           <th>Resume</th>
           <th>Intro</th>
           <th>Headshot</th>
-          <th>Status</th> <!-- [추가] -->
+          <th>Status</th>
           <th>Invoice</th>
           <th>Payment / Delete</th>
         </tr>
@@ -134,7 +134,7 @@
             "<tr><td colspan='11'>Failed to load orders (success=false).</td></tr>";
           return;
         }
-        ordersData = data.orders; // 배열
+        ordersData = data.orders;
         renderOrders(ordersData);
       })
       .catch(error => {
@@ -149,18 +149,12 @@
 
       orders.forEach(order => {
         const tr = document.createElement('tr');
-
-        // 현재 시각 - 주문 생성 시각
         const timeSinceCreation = Date.now() - new Date(order.createdAt).getTime();
 
-        // [테스트용] 3분 이상 경과한 주문을 'expired'로 간주
-        // (실제 운영 시에는 24 * 60 * 60 * 1000 = 86400000 로 계산)
-        const isExpired = (timeSinceCreation >= 3 * 60 * 1000);
+        // [테스트 환경] 3분 경과 & unpaid인 경우 "24hrs" 표시
+        const isExpiredUnpaid = (timeSinceCreation >= 3 * 60 * 1000) && (!order.paid);
 
-        // [테스트용] 5분 이상이면 이미 auto-delete될 수 있지만,
-        // 여기서는 서버 쪽 로직이 진행되므로, 만약 DB에 남아있으면 표시는 됩니다.
-
-        // 순서대로 TD 생성
+        // 열 순서대로 생성
         // 1) orderId
         const tdOrderId = document.createElement('td');
         tdOrderId.textContent = order.orderId || "";
@@ -209,10 +203,10 @@
         }
         tr.appendChild(tdHeadshot);
 
-        // 9) status 컬럼 [추가]
+        // 9) status
         const tdStatus = document.createElement('td');
         tdStatus.textContent = order.status || "";
-        // 만약 canceled_24hr이면 빨간색 강조
+        // 만약 canceled_24hr이면 붉게 표시
         if (order.status === "canceled_24hr") {
           tdStatus.style.color = "red";
           tdStatus.style.fontWeight = "bold";
@@ -222,21 +216,18 @@
         // 10) invoice
         const tdInvoice = document.createElement('td');
         tdInvoice.classList.add("scroll-cell");
-        // invoice HTML 그대로 렌더링
         tdInvoice.innerHTML = order.invoice || "";
         tr.appendChild(tdInvoice);
 
-        // 11) Payment / Delete
+        // 11) payment/delete
         const tdPayment = document.createElement('td');
-
-        // 이 주문이 48시간(테스트 5분) 지난 시점이면 서버 로직상 자동 삭제가 되었을 수도 있으나,
-        // 혹시 남아 있다면 표시만 진행
         let finalCost = order.finalCost || "";
         if (finalCost !== "") {
           finalCost = "$" + parseFloat(finalCost).toFixed(2);
         }
-        // 만약 3분 경과했다면 "24hrs" 텍스트를 표시(테스트 모드라 이름만 유지)
-        const expiredText = isExpired
+
+        // 여기서 unpaid + 만료 시에만 "24hrs" 표시
+        const expiredText = isExpiredUnpaid
           ? `<div style="color:red; font-weight:bold;">24hrs</div>`
           : "";
 
@@ -252,9 +243,8 @@
           <br>
           <button class="delete-button" data-order-id="${order.orderId}">Delete</button>
         `;
-        tr.appendChild(tdPayment);
 
-        // 최종적으로 tr을 tbody에 붙임
+        tr.appendChild(tdPayment);
         tbody.appendChild(tr);
       });
 
@@ -262,7 +252,6 @@
       attachDeleteButtonHandlers();
     }
 
-    // 결제 체크박스 핸들러
     function attachPaymentCheckboxHandlers() {
       const checkboxes = document.querySelectorAll('.payment-checkbox');
       checkboxes.forEach(checkbox => {
@@ -275,9 +264,7 @@
             .then(response => response.json())
             .then(data => {
               console.log("toggle-payment response:", data);
-
-              // paid === true 이면, 혹시 추가 API를 호출하거나
-              // 여기서는 그냥 상태만 토글한 것으로 가정
+              // 여기서는 단순히 상태만 토글
             })
             .catch(error => {
               console.error("Error updating payment:", error);
@@ -286,7 +273,6 @@
       });
     }
 
-    // Delete 버튼 핸들러
     function attachDeleteButtonHandlers() {
       const deleteButtons = document.querySelectorAll('.delete-button');
       deleteButtons.forEach(button => {
@@ -302,8 +288,7 @@
             .then(data => {
               console.log('Delete response:', data);
               if (data.success) {
-                // UI에서 해당 행 제거
-                this.closest('tr').remove();
+                this.closest('tr').remove(); // UI에서 행 제거
               } else {
                 alert(data.message || 'Deletion failed');
               }
@@ -315,17 +300,21 @@
       });
     }
 
-    // 필터 기능
+    // 필터 이벤트
     document.getElementById("filter-status").addEventListener("change", function () {
       const filter = this.value;
       const now = Date.now();
-      // 테스트 모드: 3분 지나면 expired로 취급
-      const expiredThreshold = 3 * 60 * 1000; // 3분
+      // 테스트 모드: 3분
+      const expiredThreshold = 3 * 60 * 1000;
 
       const filteredOrders = ordersData.filter(order => {
         const timeSinceCreation = now - new Date(order.createdAt).getTime();
+        // (unpaid + 3분 경과) => expired
+        const isExpiredUnpaid = (timeSinceCreation >= expiredThreshold) && (!order.paid);
+
         if (filter === "expired") {
-          return timeSinceCreation >= expiredThreshold;  // 3분~
+          // 3분 이상 & 결제 안됨
+          return isExpiredUnpaid;
         }
         if (filter === "paid") {
           return order.paid;
@@ -334,6 +323,7 @@
           return !order.paid;
         }
         if (filter === "3weeks") {
+          // 실제 운영이면 21일 => 21*24*60*60*1000
           return timeSinceCreation >= 21 * 24 * 60 * 60 * 1000;
         }
         // "all"
