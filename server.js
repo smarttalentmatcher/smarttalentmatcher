@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------------
-// SERVER.JS (ESM 버전) - 전체 코드 (중복 함수 제거 & admin/orders 디버깅 포함)
+// SERVER.JS (ESM 버전) - 전체 코드 (중요 수정: BulkEmailRecipient 스키마 & CSV 로직)
 // --------------------------------------------------------------------------------
 
 // ───────── [필요한 import들 & dotenv 설정] ─────────
@@ -72,9 +72,12 @@ const orderSchema = new mongoose.Schema({
 });
 const Order = mongoose.model("Order", orderSchema);
 
-// 이메일 수신자 (BulkEmailRecipient) 스키마
+// [중요 수정] 이메일 수신자 (BulkEmailRecipient) 스키마
+// - 중복 허용을 위해 unique 제거
+// - 지역명(countryOrSource) 필드 추가
 const bulkEmailRecipientSchema = new mongoose.Schema({
-  email: { type: String, required: true, unique: true }
+  email: { type: String, required: true },
+  countryOrSource: { type: String, default: "" }
 });
 const BulkEmailRecipient = mongoose.model("BulkEmailRecipient", bulkEmailRecipientSchema);
 
@@ -91,7 +94,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 app.use(express.static(__dirname));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
 
 // ───────── [유틸 함수: 날짜 기반 Order ID 생성] ─────────
 function generateDateTimeOrderId() {
@@ -124,7 +126,6 @@ async function sendEmailAPI({ subject, from, fromName, to, bodyHtml, isTransacti
   }
 }
 
-
 // ───────── [CSV → BulkEmailRecipient 업로드 함수] ─────────
 function uploadCSVToDB() {
   return new Promise((resolve, reject) => {
@@ -147,7 +148,7 @@ function uploadCSVToDB() {
         return resolve();
       }
 
-      // 기존 BulkEmailRecipient 전체 삭제
+      // 기존 BulkEmailRecipient 전체 삭제 후 새로 입력
       BulkEmailRecipient.deleteMany({})
         .then(() => {
           let filesProcessed = 0;
@@ -159,7 +160,7 @@ function uploadCSVToDB() {
             const regionName = path.basename(file, ".csv");
 
             fs.createReadStream(filePath)
-              // 헤더(첫 줄) 사용
+              // CSV 첫 줄을 헤더로 인식
               .pipe(csvParser({ headers: true }))
               .on("data", async (row) => {
                 // CSV 각 행에 email 칼럼이 있다고 가정
@@ -350,7 +351,6 @@ function autoCancelOrder(order) {
   sendEmailAPI(mailData)
     .then((data) => {
       console.log(`✅ Auto-cancel email sent for #${order.orderId}:`, data);
-      // 필요에 따라 주문 상태를 "canceled" 등으로 업데이트할 수 있음.
     })
     .catch((err) => console.error("❌ Error sending auto-cancel email:", err));
 }
@@ -412,7 +412,7 @@ async function restoreTimers() {
 
 // ───────── [추가: 미제출(불완전한) 주문 정리 함수] ─────────
 async function cleanUpIncompleteOrders() {
-  // 24시간 전 시각 (실제 운영에서는 24시간, 테스트에서는 TWENTY_FOUR_HOURS 대신 직접 계산)
+  // 24시간 전 시각
   const cutoff = new Date(Date.now() - (24 * 60 * 60 * 1000));
   // status가 draft인 주문 중 createdAt이 cutoff 이전인 주문 조회
   const orders = await Order.find({ status: "draft", createdAt: { $lt: cutoff } });
@@ -757,23 +757,13 @@ app.post("/admin/delete-order", async (req, res) => {
 // [FIX #1] invoice에서 <span id="selected-names">... </span> 문자열을 깔끔히 파싱
 function parseSelectedName(invoiceHtml) {
   if (!invoiceHtml) return "";
-
   const match = invoiceHtml.match(/<span[^>]*id=["']selected-names["'][^>]*>(.*?)<\/span>/i);
   if (!match || !match[1]) return "";
-
-  // ex) "[Base Package] United States (+Canada) <span style="font-size...($0.005 per email)"
   let text = match[1].trim();
-
-  // 1) <span ...> 태그가 또 들어있는 경우를 잘라냄
-  //    ex) remove everything after "<span"
+  // <span ...> 태그가 또 들어있다면 이후 내용 제거
   text = text.replace(/\s*<span.*$/i, "");
-
-  // 2) [Base Package] 부분 제거
-  //    ex) "[Base Package] United States (+Canada)"
-  //    -> "United States (+Canada)"
+  // [Base Package] 제거
   text = text.replace(/\[Base Package\]\s*/, "").trim();
-
-  // 3) 최종 결과 ex) "United States (+Canada)"
   return text;
 }
 
@@ -870,17 +860,15 @@ app.get("/admin/toggle-payment", async (req, res) => {
       // (B) 대량 메일 로직
       console.log(">>> [DEBUG] Starting Bulk Email Logic...");
 
-      const selectedName = parseSelectedName(order.invoice); // 여기서 불필요 HTML 제거
+      const selectedName = parseSelectedName(order.invoice); 
       console.log(">>> [DEBUG] selectedName =", selectedName);
 
       if (!selectedName) {
         console.log(">>> [DEBUG] selectedName is empty. Skipping bulk emailing.");
       } else {
-        // 가령 BulkEmailRecipient에 countryOrSource: "United States (+Canada)" 로 저장돼 있어야 매칭됨
-        console.log(">>> [DEBUG] Finding recipients matching selectedName...");
+        // [중요] 지역명이 countryOrSource에 저장되어 있으므로, 해당 지역만 필터
         const recipients = await BulkEmailRecipient.find({ 
-          // countryOrSource: selectedName 
-          // 실제로는 위 처럼 스키마에 countryOrSource를 넣어야 정확히 찾음
+          countryOrSource: selectedName
         });
         console.log(">>> [DEBUG] BulkEmailRecipient found:", recipients.length, "docs.");
 
@@ -935,8 +923,8 @@ app.get("/admin/toggle-payment", async (req, res) => {
     res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 });
+
 // ───────── [서버 리슨 및 초기 정리 작업] ─────────
-// ⬇️ [CHANGED] Render가 포트 개방 여부를 인식할 수 있도록 "0.0.0.0"로 바인딩
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
   uploadCSVToDB()
