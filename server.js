@@ -80,8 +80,6 @@ const BulkEmailRecipient = mongoose.model("BulkEmailRecipient", bulkEmailRecipie
 
 // ───────── [Express 앱 설정] ─────────
 const app = express();
-
-// ⬇️ [CHANGED] Render가 할당하는 포트를 사용하고, 0.0.0.0로 바인딩
 const PORT = process.env.PORT || 3000;
 
 app.use((req, res, next) => {
@@ -126,26 +124,42 @@ async function sendEmailAPI({ subject, from, fromName, to, bodyHtml, isTransacti
   }
 }
 
+
 // ───────── [CSV → BulkEmailRecipient 업로드 함수] ─────────
 function uploadCSVToDB() {
   return new Promise((resolve, reject) => {
-    const csvFolderPath = "/Users/kimsungah/Desktop/SmartTalentMatcher/csv";
+    // [FIX] 절대 경로 대신, server.js와 같은 폴더 (혹은 하위)로 가정
+    // 예: server.js와 같은 디렉토리에 csv 폴더 존재
+    const csvFolderPath = path.join(__dirname, "csv");
+
+    // 폴더 존재 여부 체크
+    if (!fs.existsSync(csvFolderPath)) {
+      console.log(`No CSV folder found at: ${csvFolderPath}. Skipping CSV import.`);
+      return resolve();
+    }
+
     fs.readdir(csvFolderPath, (err, files) => {
       if (err) return reject(err);
+
+      // .csv 확장자만 필터링
       const csvFiles = files.filter(file => file.endsWith(".csv"));
       if (csvFiles.length === 0) {
         console.log("No CSV files found in folder:", csvFolderPath);
         return resolve();
       }
+
+      // 기존 BulkEmailRecipient 전체 삭제
       BulkEmailRecipient.deleteMany({})
         .then(() => {
           let filesProcessed = 0;
           csvFiles.forEach(file => {
             const filePath = path.join(csvFolderPath, file);
+
             fs.createReadStream(filePath)
               .pipe(csvParser())
               .on("data", (row) => {
                 if (row.email) {
+                  // email 필드가 있으면 upsert
                   BulkEmailRecipient.updateOne(
                     { email: row.email.trim() },
                     { email: row.email.trim() },
@@ -168,6 +182,10 @@ function uploadCSVToDB() {
   });
 }
 
+// ───────── [테스트 라우트, 필요한 라우트 추가 가능] ─────────
+app.get("/", (req, res) => {
+  res.send("<h1>Hello from server.js - CSV Reload test</h1>");
+});
 // ───────── [타이머 관련 상수 & 변수] ─────────
 // (테스트용으로 1분, 3분, 5분으로 설정 - 실제 운영시 12시간, 24시간, 48시간으로 변경)
 const TWELVE_HOURS = 12 * 60 * 60 * 1000;      
@@ -831,7 +849,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
       const mailDataStart = {
         subject: "[Smart Talent Matcher] Your Service Has Started!",
         from: process.env.ELASTIC_EMAIL_USER,
-        fromName: "",
+        fromName: "Smart Talent Matcher",
         to: order.emailAddress,
         bodyHtml: startedHtml,
         isTransactional: true
