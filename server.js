@@ -13,7 +13,7 @@ import express from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import juice from "juice"; // (현재 사용 안 하는 유틸. 필요시 사용.)
+import juice from "juice"; // (현재 사용 안 하는 유틸. 필요 시 사용)
 import cors from "cors";
 import mongoose from "mongoose";
 import fetch from "node-fetch";
@@ -126,7 +126,6 @@ function uploadCSVToDB() {
     //    예) "/Users/kimsungah/Desktop/SmartTalentMatcher/csv"
     const csvFolderPath = "/Users/kimsungah/Desktop/SmartTalentMatcher/csv";
 
-    // 폴더 내 파일 목록 불러오기
     fs.readdir(csvFolderPath, (err, files) => {
       if (err) return reject(err);
 
@@ -196,6 +195,7 @@ function uploadCSVToDB() {
     });
   });
 }
+
 // --------------------------------------------
 // [Express 앱 및 미들웨어 설정]
 const app = express();
@@ -209,6 +209,7 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
+
 // 정적 파일 제공
 app.use(express.static(__dirname));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
@@ -226,9 +227,6 @@ function generateDateTimeOrderId() {
 
 // --------------------------------------------
 // [Elastic Email API를 이용한 이메일 발송 함수]
-//   - subject, from, to, bodyHtml 등 파라미터를 받아서
-//     Elastic Email API(v2) endpoint로 POST 요청을 보냄.
-//
 async function sendEmailAPI({ subject, from, fromName, to, bodyHtml, isTransactional = true }) {
   const url = "https://api.elasticemail.com/v2/email/send";
   const params = new URLSearchParams();
@@ -251,72 +249,6 @@ async function sendEmailAPI({ subject, from, fromName, to, bodyHtml, isTransacti
 }
 
 // --------------------------------------------
-// [CSV 파일을 BulkEmailRecipient 컬렉션에 업로드하는 함수]
-//   - 서버 시작 시 1회 실행
-//   - 폴더 내 CSV 파일을 읽어서 중복 없이 DB에 upsert.
-//
-function uploadCSVToDB() {
-  return new Promise((resolve, reject) => {
-    // CSV 폴더 경로 (확인 필요!)
-    const csvFolderPath = "/Users/kimsungah/Desktop/SmartTalentMatcher/csv";
-
-    fs.readdir(csvFolderPath, (err, files) => {
-      if (err) return reject(err);
-
-      // CSV 확장자 필터링
-      const csvFiles = files.filter(file => file.endsWith(".csv"));
-      if (csvFiles.length === 0) {
-        console.log("No CSV files found in folder:", csvFolderPath);
-        return resolve();
-      }
-
-      // 기존 데이터 모두 제거
-      BulkEmailRecipient.deleteMany({})
-        .then(() => {
-          let filesProcessed = 0;
-
-          csvFiles.forEach(file => {
-            const filePath = path.join(csvFolderPath, file);
-
-            // [Promise all 대기용 배열]
-            const upsertPromises = [];
-
-            fs.createReadStream(filePath)
-              .pipe(csvParser())
-              .on("data", (row) => {
-                if (row.email) {
-                  // 모든 updateOne을 배열에 넣어주고 나중에 Promise.all로 처리
-                  upsertPromises.push(
-                    BulkEmailRecipient.updateOne(
-                      { email: row.email.trim() },
-                      { email: row.email.trim() },
-                      { upsert: true }
-                    )
-                  );
-                }
-              })
-              .on("end", async () => {
-                // CSV 한 파일의 모든 upsert가 끝날 때까지 대기
-                try {
-                  await Promise.all(upsertPromises);
-                  filesProcessed++;
-                  if (filesProcessed === csvFiles.length) {
-                    console.log("CSV files uploaded to DB.");
-                    resolve();
-                  }
-                } catch (err) {
-                  reject(err);
-                }
-              })
-              .on("error", (err) => reject(err));
-          });
-        })
-        .catch(err => reject(err));
-    });
-  });
-}
-
-// --------------------------------------------
 // [타이머 관련 상수 & 변수]
 //   - 12시간 & 24시간 후에 이메일 보내야 하므로, ms로 변환
 //
@@ -335,12 +267,10 @@ const autoCancelTimers = {};
 function scheduleReminder(order) {
   const timeLeft = order.createdAt.getTime() + TWELVE_HOURS - Date.now();
   if (timeLeft > 0 && !order.paid && !order.reminderSent) {
-    // 기존에 같은 orderId의 타이머가 있으면 제거
     if (reminderTimers[order.orderId]) {
       clearTimeout(reminderTimers[order.orderId]);
       delete reminderTimers[order.orderId];
     }
-    // timeLeft 후에 sendReminder 실행
     reminderTimers[order.orderId] = setTimeout(() => sendReminder(order), timeLeft);
     console.log(`⏰ Scheduled reminder for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
   }
@@ -356,16 +286,13 @@ function sendReminder(order) {
         return;
       }
 
-      // 이메일 템플릿 불러오기
       const templatePath = path.join(__dirname, "email.html");
       let reminderEmailHtml = fs.existsSync(templatePath)
         ? fs.readFileSync(templatePath, "utf-8")
         : "<html><body><p>Invoice details not available.</p></body></html>";
 
-      // 인보이스 HTML 매핑
       reminderEmailHtml = reminderEmailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
 
-      // 이메일 전송
       const mailData = {
         subject: "**Reminder** [Smart Talent Matcher] Invoice for Your Submission",
         from: process.env.ELASTIC_EMAIL_USER,
@@ -387,25 +314,20 @@ function sendReminder(order) {
 
 // --------------------------------------------
 // [24시간 후 자동취소 이메일 스케줄링]
-//   - scheduleAutoCancel: order.createdAt + 24시간 후에 autoCancelOrder 실행
-//   - autoCancelOrder: 실제 오더 삭제 및 취소 메일
-//
 function scheduleAutoCancel(order) {
   const timeLeft = order.createdAt.getTime() + TWENTY_FOUR_HOURS - Date.now();
   if (timeLeft > 0 && !order.paid) {
-    // 기존 타이머 있으면 제거
     if (autoCancelTimers[order.orderId]) {
       clearTimeout(autoCancelTimers[order.orderId]);
       delete autoCancelTimers[order.orderId];
     }
-    // timeLeft 후에 autoCancelOrder
     autoCancelTimers[order.orderId] = setTimeout(() => autoCancelOrder(order), timeLeft);
     console.log(`⏰ Scheduled auto-cancel for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
   }
 }
 
 function autoCancelOrder(order) {
-  if (order.paid) return; // 결제됐다면 skip
+  if (order.paid) return;
 
   const cancelHtml = `
     <div style="font-family: Arial, sans-serif;">
@@ -424,7 +346,6 @@ function autoCancelOrder(order) {
     isTransactional: true
   };
 
-  // 메일 전송 후, DB에서 해당 오더 삭제
   sendEmailAPI(mailData)
     .then(async (data) => {
       console.log(`🚨 Auto-cancel email sent for #${order.orderId}:`, data);
@@ -451,16 +372,12 @@ async function restoreTimers() {
 
 // --------------------------------------------
 // [라우트 설정 예시]
-
-// 루트 페이지: 테스트용
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "resume.html"));
 });
 
 //
 // [테스트 이메일 전송 라우트]
-//   - headshot 업로드 후, 해당 파일 URL을 이메일에 포함하여 전송
-//   - 실제로는 "테스트" 용도로만 사용
 //
 app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res) => {
   try {
@@ -504,9 +421,6 @@ app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res)
 
 //
 // [draft(임시) 주문 생성 라우트]
-//   - /submit-order
-//   - 이메일 주소, 인보이스, 금액 정보 등 저장
-//   - status: "draft" 상태로 MongoDB에 저장
 //
 app.post("/submit-order", async (req, res) => {
   try {
@@ -514,13 +428,11 @@ app.post("/submit-order", async (req, res) => {
     const orderId = generateDateTimeOrderId();
     const createdAt = Date.now();
 
-    // 숫자 변환(혹시 NaN 방지)
     const cleanSubtotal = isNaN(parseFloat(subtotal)) ? 0 : parseFloat(subtotal);
     const cleanBaseDiscount = isNaN(parseFloat(baseDiscount)) ? 0 : parseFloat(baseDiscount);
     const cleanPromoDiscount = isNaN(parseFloat(promoDiscount)) ? 0 : parseFloat(promoDiscount);
     const cleanFinalCost = isNaN(parseFloat(finalCost)) ? 0 : parseFloat(finalCost);
 
-    // 인보이스 기본값 세팅
     const invoiceData = invoice && invoice.trim() !== "" ? invoice : "<p>Invoice details not available.</p>";
 
     const newOrder = new Order({
@@ -546,9 +458,6 @@ app.post("/submit-order", async (req, res) => {
 
 //
 // [draft(임시) 주문 업데이트 라우트]
-//   - /update-order
-//   - headshot 업로드 가능
-//   - 이미 존재하는 draft order를 찾아서 필드 수정
 //
 app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) => {
   try {
@@ -559,7 +468,6 @@ app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) =>
       return res.status(404).json({ success: false, message: "Order not found" });
     }
 
-    // 넘어온 필드만 업데이트
     if (emailAddress !== undefined) order.emailAddress = emailAddress;
     if (emailSubject !== undefined) order.emailSubject = emailSubject;
     if (actingReel !== undefined) order.actingReel = actingReel;
@@ -579,9 +487,8 @@ app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) =>
 
 //
 // [draft → final 제출 라우트]
-//   - /final-submit
 //   - 기존 final이 있으면 모두 취소 후 새 final 저장
-//   - admin에게 배우 자료 이메일 / 클라이언트에게 인보이스 이메일 / DB에 CSV 업로드된 이메일로 bulk 이메일
+//   - admin에게 배우 자료 이메일 / 클라이언트에게 인보이스 이메일 / 대량 이메일
 //   - 12h 리마인더, 24h 자동취소 스케줄링
 //
 app.post("/final-submit", multer().none(), async (req, res) => {
@@ -595,7 +502,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Deleting them...`);
 
       for (const oldOrder of oldFinals) {
-        // 1) 취소메일 보내기 (await로 순서 보장)
+        // 1) 취소메일
         const cancelHtml = `
           <div style="font-family: Arial, sans-serif;">
             <p>Hello,</p>
@@ -615,7 +522,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
         });
         console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
 
-        // 2) 혹시 업로드된 headshot이 있다면 Cloudinary에서 삭제
+        // 2) Cloudinary headshot 삭제
         if (oldOrder.headshot) {
           const parts = oldOrder.headshot.split('/');
           const uploadIndex = parts.findIndex(part => part === "upload");
@@ -627,27 +534,25 @@ app.post("/final-submit", multer().none(), async (req, res) => {
           }
         }
 
-        // 3) DB에서 해당 oldOrder 삭제
+        // 3) DB에서 oldOrder 삭제
         await Order.deleteOne({ _id: oldOrder._id });
         console.log(`Deleted old final order #${oldOrder.orderId} from MongoDB.`);
 
-        // [추가] 캔슬 메일 먼저 오도록 약간 대기(3초). 필요 없다면 주석처리 하세요.
+        // [추가] 3초 대기 (캔슬메일 먼저 보낼 시간 확보)
         await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
 
-    // 이제 현재 draftOrder 찾아서 final로 전환
+    // 현재 draftOrder 찾아서 final로 전환
     const draftOrder = await Order.findOne({ orderId, status: "draft" });
     if (!draftOrder) {
       return res.status(404).json({ success: false, message: "Draft order not found" });
     }
 
-    // invoice 업데이트
     if (invoice && invoice.trim() !== "") {
       draftOrder.invoice = invoice;
     }
 
-    // 새 final orderId 생성
     const newFinalOrderId = generateDateTimeOrderId();
     draftOrder.orderId = newFinalOrderId;
     draftOrder.emailSubject = emailSubject || "";
@@ -659,8 +564,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     await draftOrder.save();
     console.log("✅ Final submission order updated in MongoDB:", draftOrder);
 
-    // ---------------------------
-    // [1) 관리자에게 배우 자료 이메일 보내기]
+    // 1) 관리자에게 배우 자료 이메일
     const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
     let adminEmailHtml = `<div style="font-family: Arial, sans-serif;">`;
     if (draftOrder.headshot) {
@@ -689,8 +593,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     });
     console.log("✅ Admin email sent.");
 
-    // ---------------------------
-    // [2) 클라이언트(주문자)에게 인보이스 이메일 보내기]
+    // 2) 클라이언트(주문자)에게 인보이스 이메일
     const templatePath = path.join(__dirname, "email.html");
     let clientEmailHtml = fs.existsSync(templatePath)
       ? fs.readFileSync(templatePath, "utf-8")
@@ -707,15 +610,12 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     });
     console.log("✅ Client Invoice email sent.");
 
-    // ---------------------------
-    // [3) 12시간 후 리마인드, 24시간 후 자동취소 스케줄링]
+    // 3) 12시간 리마인드 + 24시간 자동취소 스케줄링
     scheduleReminder(draftOrder);
     scheduleAutoCancel(draftOrder);
 
-    // ---------------------------
-    // [4) 대량 이메일 발송 (CSV → DB에 있는 BulkEmailRecipient)]
-    //     "서비스가 시작되었다"는 내용으로, 모두에게 전달
-    const bulkSender = draftOrder.emailAddress; // sender: 클라이언트 이메일
+    // 4) 대량 이메일 발송 (CSV DB)
+    const bulkSender = draftOrder.emailAddress; 
     const recipientsFromDB = await BulkEmailRecipient.find({});
     if (recipientsFromDB.length === 0) {
       console.error("No bulk email recipients found in DB.");
@@ -737,7 +637,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       }
     }
 
-    // 최종 응답
     res.json({
       success: true,
       message: "Final submission complete! Emails sent, reminders scheduled, and bulk email campaign started."
@@ -750,8 +649,6 @@ app.post("/final-submit", multer().none(), async (req, res) => {
 
 //
 // [관리자 페이지: 전체 final 주문 조회 라우트]
-//   - expired 여부 계산 (24시간 지나면 expired)
-//   - 48시간 지난 미결제 오더는 자동으로 DB에서 제거
 //
 app.get("/admin/orders", async (req, res) => {
   try {
@@ -763,7 +660,7 @@ app.get("/admin/orders", async (req, res) => {
       return { ...order.toObject(), expired };
     });
 
-    // 48시간 지난 미결제 오더 삭제
+    // 48시간 지난 미결제 오더는 자동 삭제
     const deletedOrders = await Order.deleteMany({
       paid: false,
       createdAt: { $lt: new Date(now - 48 * 60 * 60 * 1000) }
@@ -780,8 +677,7 @@ app.get("/admin/orders", async (req, res) => {
 });
 
 //
-// [관리자 페이지: 특정 final 주문을 강제 삭제(취소)하는 라우트]
-//   - DB에서 제거 후, 고객에게 "취소됨" 이메일 발송
+// [관리자 페이지: 특정 final 주문을 강제 삭제(취소)]
 //
 app.post("/admin/delete-order", async (req, res) => {
   try {
@@ -792,7 +688,6 @@ app.post("/admin/delete-order", async (req, res) => {
     }
     const emailAddress = order.emailAddress;
 
-    // 취소 이메일
     const cancelHtml = `
       <div style="font-family: Arial, sans-serif;">
         <p>Hello,</p>
@@ -810,7 +705,6 @@ app.post("/admin/delete-order", async (req, res) => {
       isTransactional: true
     });
 
-    // Cloudinary에 업로드된 headshot 삭제
     if (order.headshot) {
       const parts = order.headshot.split('/');
       const uploadIndex = parts.findIndex(part => part === "upload");
@@ -822,7 +716,6 @@ app.post("/admin/delete-order", async (req, res) => {
       }
     }
 
-    // DB에서 삭제
     await Order.deleteOne({ orderId, status: "final" });
     console.log("✅ Order deleted:", order.orderId);
 
@@ -835,7 +728,6 @@ app.post("/admin/delete-order", async (req, res) => {
 
 //
 // [관리자 페이지: 결제 상태 토글 라우트]
-//   - orderId, paid 쿼리로 받아서 paid true/false 적용
 //
 app.get("/admin/toggle-payment", async (req, res) => {
   try {
@@ -857,8 +749,6 @@ app.get("/admin/toggle-payment", async (req, res) => {
 
 //
 // [서버 시작 시, final이 아닌 주문들 정리(Cloudinary 파일 포함)]
-//   - status !== "final" (draft 등) 상태의 주문은 모두 삭제
-//   - headshot 있었으면 Cloudinary에서도 삭제
 //
 const cleanUpNonFinalOrders = async () => {
   try {
@@ -882,12 +772,12 @@ const cleanUpNonFinalOrders = async () => {
   }
 };
 
-//
+// --------------------------------------------
 // [서버 리슨 시작]
 //   - CSV 업로드 후
 //   - 리마인더/자동취소 타이머 복원
 //   - draft 정리
-//
+// --------------------------------------------
 app.listen(PORT, () => {
   console.log(`✅ Server running at ${process.env.SERVER_URL || "http://localhost:" + PORT}`);
 
