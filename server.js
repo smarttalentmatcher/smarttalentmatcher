@@ -480,20 +480,34 @@ app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) =>
 });
 
 //
-// [draft → final 제출 라우트] (대량 이메일 발송 제거 버전)
+// [draft → final 제출 라우트] (대량 이메일 발송 제거 버전, 디버깅 로그 추가)
 //
 app.post("/final-submit", multer().none(), async (req, res) => {
   try {
-    const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice, venmoId } = req.body;
-    console.log("Final submit received:", req.body);
+    console.log(">>> [final-submit] Step 0: Endpoint called");
+
+    const {
+      orderId,
+      emailAddress,
+      emailSubject,
+      actingReel,
+      resumeLink,
+      introduction,
+      invoice,
+      venmoId,
+    } = req.body;
+    console.log(">>> [final-submit] Step 1: Request body received:", req.body);
 
     // 이미 "final" 상태의 (paid되지 않은) 중복 주문 찾아서 모두 취소
+    console.log(">>> [final-submit] Step 2: Checking for old final (unpaid) orders with same emailAddress");
     const oldFinals = await Order.find({ emailAddress, status: "final", paid: false });
     if (oldFinals.length > 0) {
       console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Deleting them...`);
 
       for (const oldOrder of oldFinals) {
-        // 1) 이전 final에 “취소메일” 전송
+        console.log(`>>> Canceling old final order #${oldOrder.orderId}`);
+
+        // 1) 취소메일 전송
         const cancelHtml = `
           <div style="font-family: Arial, sans-serif;">
             <p>Hello,</p>
@@ -503,22 +517,23 @@ app.post("/final-submit", multer().none(), async (req, res) => {
             <p>Regards,<br>Smart Talent Matcher</p>
           </div>
         `;
+        console.log(">>> Sending cancellation email for old order:", oldOrder.orderId);
         await sendEmailAPI({
           subject: "[Smart Talent Matcher] Previous Invoice Canceled",
           from: process.env.ELASTIC_EMAIL_USER,
           fromName: "Smart Talent Matcher",
           to: emailAddress,
           bodyHtml: cancelHtml,
-          isTransactional: true
+          isTransactional: true,
         });
         console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
 
-        // 2) 클라우드 업로드된 headshot이 있다면 삭제
+        // 2) Cloudinary에 headshot이 있으면 삭제
         if (oldOrder.headshot) {
-          const parts = oldOrder.headshot.split('/');
-          const uploadIndex = parts.findIndex(part => part === "upload");
+          const parts = oldOrder.headshot.split("/");
+          const uploadIndex = parts.findIndex((part) => part === "upload");
           if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
-            const fileNameWithExtension = parts.slice(uploadIndex + 2).join('/');
+            const fileNameWithExtension = parts.slice(uploadIndex + 2).join("/");
             const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, "");
             console.log("Deleting Cloudinary resource with public_id:", publicId);
             await cloudinary.uploader.destroy(publicId);
@@ -526,17 +541,21 @@ app.post("/final-submit", multer().none(), async (req, res) => {
         }
 
         // 3) DB에서 해당 oldOrder 삭제
+        console.log(">>> Deleting old final order from DB:", oldOrder.orderId);
         await Order.deleteOne({ _id: oldOrder._id });
         console.log(`Deleted old final order #${oldOrder.orderId} from MongoDB.`);
 
-        // [선택] 3초 대기 (캔슬메일이 먼저 도착하도록)
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // 3초 대기(캔슬메일 먼저 도착하도록)
+        console.log(">>> Waiting 3 seconds before next old order...");
+        await new Promise((resolve) => setTimeout(resolve, 3000));
       }
     }
 
-    // 현재 draftOrder 찾아서 final로 전환
+    // draftOrder 찾아서 final로 전환
+    console.log(">>> [final-submit] Step 3: Finding draftOrder by orderId:", orderId);
     const draftOrder = await Order.findOne({ orderId, status: "draft" });
     if (!draftOrder) {
+      console.error("Draft order not found for orderId:", orderId);
       return res.status(404).json({ success: false, message: "Draft order not found" });
     }
 
@@ -551,10 +570,13 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     draftOrder.introduction = introduction || "";
     draftOrder.venmoId = venmoId || "";
     draftOrder.status = "final";
+
+    console.log(">>> [final-submit] Step 4: Saving new final order (now final) to DB");
     await draftOrder.save();
     console.log("✅ Final submission order updated in MongoDB:", draftOrder);
 
     // (1) 관리자에게 배우 자료 이메일 전송
+    console.log(">>> [final-submit] Step 5: Sending admin email with actor info");
     const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
     let adminEmailHtml = `<div style="font-family: Arial, sans-serif;">`;
     if (draftOrder.headshot) {
@@ -579,15 +601,22 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       fromName: "Smart Talent Matcher",
       to: process.env.ELASTIC_EMAIL_USER, // 관리자(운영자) 이메일
       bodyHtml: adminEmailHtml,
-      isTransactional: true
+      isTransactional: true,
     });
     console.log("✅ Admin email sent.");
 
     // (2) 클라이언트(주문자)에게 인보이스 이메일
+    console.log(">>> [final-submit] Step 6: Sending client invoice email");
     const templatePath = path.join(__dirname, "email.html");
-    let clientEmailHtml = fs.existsSync(templatePath)
-      ? fs.readFileSync(templatePath, "utf-8")
-      : "<html><body><p>Invoice details not available.</p></body></html>";
+    let clientEmailHtml;
+    if (fs.existsSync(templatePath)) {
+      console.log(">>> email.html found:", templatePath);
+      clientEmailHtml = fs.readFileSync(templatePath, "utf-8");
+    } else {
+      console.error(">>> email.html NOT found at:", templatePath);
+      clientEmailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
+    }
+
     clientEmailHtml = clientEmailHtml.replace(/{{\s*invoice\s*}}/g, draftOrder.invoice);
 
     await sendEmailAPI({
@@ -596,20 +625,21 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       fromName: "Smart Talent Matcher",
       to: draftOrder.emailAddress,
       bodyHtml: clientEmailHtml,
-      isTransactional: true
+      isTransactional: true,
     });
     console.log("✅ Client Invoice email sent.");
 
     // (3) 12시간 리마인드 / 24시간 자동취소 스케줄링
+    console.log(">>> [final-submit] Step 7: Scheduling reminder & auto-cancel timers");
     scheduleReminder(draftOrder);
     scheduleAutoCancel(draftOrder);
 
     // (4) 최종 응답
+    console.log(">>> [final-submit] Step 8: Returning success response");
     return res.json({
       success: true,
       message: "Final submission complete! Admin/client emails sent, reminders scheduled."
     });
-
   } catch (error) {
     console.error("❌ Error in final submission:", error);
     return res.status(500).json({ success: false, error: "Failed to process final submission." });
