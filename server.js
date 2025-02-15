@@ -21,7 +21,6 @@ import FormData from "form-data";
 import https from "https";
 import { fileURLToPath } from "url";
 
-// [필요한 경로 처리]
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -74,7 +73,7 @@ const orderSchema = new mongoose.Schema({
 });
 const Order = mongoose.model("Order", orderSchema);
 
-// [중요] 이메일 수신자 (BulkEmailRecipient) 스키마
+// [중요 수정] 이메일 수신자 (BulkEmailRecipient) 스키마
 // - 중복 허용을 위해 unique 제거
 // - 지역명(countryOrSource) 필드 추가
 const bulkEmailRecipientSchema = new mongoose.Schema({
@@ -85,7 +84,6 @@ const BulkEmailRecipient = mongoose.model("BulkEmailRecipient", bulkEmailRecipie
 
 // ───────── [Express 앱 설정] ─────────
 const app = express();
-// Render 등에서 자동 할당된 포트를 쓰도록
 const PORT = process.env.PORT || 3000;
 
 app.use((req, res, next) => {
@@ -116,7 +114,7 @@ async function sendEmailAPI({
   to,
   bodyHtml,
   isTransactional = true,
-  replyTo,     // Reply-To 추가
+  replyTo,
   replyToName
 }) {
   const url = "https://api.elasticemail.com/v2/email/send";
@@ -129,7 +127,6 @@ async function sendEmailAPI({
   params.append("bodyHtml", bodyHtml);
   params.append("isTransactional", isTransactional ? "true" : "false");
 
-  // Reply-To
   if (replyTo) {
     params.append("replyTo", replyTo);
   }
@@ -161,7 +158,6 @@ function uploadCSVToDB() {
     fs.readdir(csvFolderPath, (err, files) => {
       if (err) return reject(err);
 
-      // .csv 확장자만 필터링
       const csvFiles = files.filter(file => file.toLowerCase().endsWith(".csv"));
       if (csvFiles.length === 0) {
         console.log("No CSV files found in folder:", csvFolderPath);
@@ -170,14 +166,12 @@ function uploadCSVToDB() {
 
       console.log(`[CSV Import] Found ${csvFiles.length} CSV file(s):`, csvFiles);
 
-      // 기존 BulkEmailRecipient 전체 삭제 후 새로 입력
       BulkEmailRecipient.deleteMany({})
         .then(() => {
           let filesProcessed = 0;
 
           csvFiles.forEach(file => {
             const filePath = path.join(csvFolderPath, file);
-            // 파일명에서 ".csv" 제거 → 지역명 추출
             const regionName = path.basename(file, ".csv");
 
             let insertedCountThisFile = 0;
@@ -185,11 +179,8 @@ function uploadCSVToDB() {
             fs.createReadStream(filePath)
               .pipe(
                 csvParser({
-                  // 첫 번째 열을 "email"로 매핑
                   headers: ["email"],
-                  // CSV의 첫 줄(헤더: "email")을 건너뛰기
                   skipLines: 1,
-                  // 한글/특수문자 BOM 처리
                   bom: true
                 })
               )
@@ -408,7 +399,6 @@ function scheduleAutoDelete(order) {
 async function autoDeleteOrder(order) {
   if (order.paid) return;
   console.log(`>>> autoDeleteOrder called for order #${order.orderId}`);
-  // Cloudinary 업로드(헤드샷) 삭제
   if (order.headshot) {
     const parts = order.headshot.split("/");
     const uploadIndex = parts.findIndex(part => part === "upload");
@@ -423,7 +413,6 @@ async function autoDeleteOrder(order) {
       }
     }
   }
-  // 주문을 DB에서 삭제
   try {
     await Order.deleteOne({ orderId: order.orderId });
     console.log(`✅ Order #${order.orderId} auto-deleted from DB after 48 hours.`);
@@ -504,38 +493,25 @@ async function syncCloudinaryWithDB() {
   }
 }
 
-// 필요 시 추가로 정리할 함수
 const cleanUpNonFinalOrders = async () => {
-  // ...
+  // 필요 시 추가 구현
 };
 
 // ───────── [parseSelectedNames 함수: 다중 국가 파싱] ─────────
+// 수정: 모든 HTML 태그 제거 후 줄바꿈 기준으로 분리
 function parseSelectedNames(invoiceHtml) {
   if (!invoiceHtml) return [];
-
-  // <span id="selected-names"> ... </span> 구간만 추출
   const match = invoiceHtml.match(/<span[^>]*id=["']selected-names["'][^>]*>([\s\S]*?)<\/span>/i);
   if (!match) return [];
-
-  let text = match[1].trim();
-
-  // <br> 기준으로 여러 줄 분리
-  const lines = text.split(/<br\s*\/?>/i);
-
-  return lines
-    .map(line => {
-      // [Base Package], [For English Speakers] 등 대괄호 안 제거
-      line = line.replace(/\[.*?\]/g, "");
-
-      // <span> ... </span> 전부 제거
-      line = line.replace(/<span[^>]*>[\s\S]*?<\/span>/g, "");
-
-      // (필요시) 괄호 안 ( ... ) 제거 → "(+Canada)"도 제거된다면 주석처리하세요
-      // line = line.replace(/\(.*?\)/g, "");
-
-      return line.trim();
-    })
-    .filter(x => x);
+  let text = match[1];
+  // <br> 태그를 줄바꿈으로 치환
+  text = text.replace(/<br\s*\/?>/gi, "\n");
+  // 모든 HTML 태그 제거
+  text = text.replace(/<[^>]+>/g, "");
+  // 대괄호 안 내용 제거
+  text = text.replace(/\[.*?\]/g, "");
+  const lines = text.split("\n").map(line => line.trim()).filter(line => line);
+  return lines;
 }
 
 // ───────── [대량 메일 전송(Chunk+Delay)] ─────────
@@ -593,11 +569,9 @@ app.get("/admin/toggle-payment", async (req, res) => {
     await order.save();
     console.log(`>>> [DEBUG] Toggled paid from ${oldPaid} to ${order.paid}`);
 
-    // 결제가 false->true 로 바뀌었을 때
     if (!oldPaid && order.paid) {
       console.log(">>> [DEBUG] Payment changed from false -> true. Will send 'service started' email AND do bulk emailing.");
 
-      // (A) "서비스 시작" 안내 메일
       const startedHtml = `
       <html>
       <body style="font-family: Arial, sans-serif; line-height:1.6;">
@@ -633,10 +607,8 @@ app.get("/admin/toggle-payment", async (req, res) => {
       await sendEmailAPI(mailDataStart);
       console.log("✅ [DEBUG] Service start email sent.");
 
-      // (B) 대량 메일 로직
       console.log(">>> [DEBUG] Starting Bulk Email Logic...");
 
-      // 다중 국가 추출
       const selectedCountries = parseSelectedNames(order.invoice);
       console.log(">>> [DEBUG] selectedCountries =", selectedCountries);
 
@@ -644,23 +616,18 @@ app.get("/admin/toggle-payment", async (req, res) => {
         console.log(">>> [DEBUG] No selected countries. Skipping bulk emailing.");
       } else {
         let allEmails = [];
-        // 각 국가별로 DB에서 조회 -> allEmails에 모으기
         for (const country of selectedCountries) {
           const recipients = await BulkEmailRecipient.find({ countryOrSource: country });
           console.log(`>>> [DEBUG] found ${recipients.length} for countryOrSource="${country}"`);
-
           recipients.forEach(r => {
             if (r.email) {
               allEmails.push(r.email.trim().toLowerCase());
             }
           });
         }
-
-        // 중복 제거
         const uniqueEmails = [...new Set(allEmails)];
         console.log(">>> [DEBUG] uniqueEmails after dedup =", uniqueEmails.length);
 
-        // 템플릿 준비
         const formattedIntro = order.introduction
           ? order.introduction.replace(/\r?\n/g, "<br>")
           : "";
@@ -688,8 +655,6 @@ app.get("/admin/toggle-payment", async (req, res) => {
           fromName: "",
           bodyHtml: emailHtml,
           isTransactional: false,
-
-          // Reply-To를 주문자 이메일로
           replyTo: order.emailAddress,
           replyToName: order.emailAddress
         };
