@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------------
-// SERVER.JS (ESM 버전) - 전체 코드 (BulkEmailRecipient 스키마 & CSV 로직 - BOM 처리 포함)
+// SERVER.JS (ESM 버전) - 전체 코드 (BulkEmailRecipient 스키마 & CSV 로직 - BOM 처리 + 절대경로)
 // --------------------------------------------------------------------------------
 
 // ───────── [필요한 import들 & dotenv 설정] ─────────
@@ -85,6 +85,7 @@ const BulkEmailRecipient = mongoose.model("BulkEmailRecipient", bulkEmailRecipie
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// 요청 로깅 (선택)
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
   next();
@@ -126,13 +127,17 @@ async function sendEmailAPI({ subject, from, fromName, to, bodyHtml, isTransacti
   }
 }
 
-// ───────── [CSV → BulkEmailRecipient 업로드 함수 (BOM처리, 로그 추가)] ─────────
+// ───────── [CSV → BulkEmailRecipient 업로드 함수] ─────────
+
+// [**중요**] 여기서 바탕화면 경로(또는 절대경로)를 지정해 주세요.
+const CSV_FOLDER_ABSOLUTE_PATH = "/Users/kimsungah/Desktop/SmartTalentMatcher/csv";
+
 function uploadCSVToDB() {
   return new Promise((resolve, reject) => {
-    // server.js와 같은 디렉토리에 "csv" 폴더가 있다고 가정
-    const csvFolderPath = path.join(__dirname, "csv");
+    // 1) 지정한 절대경로로 설정
+    const csvFolderPath = CSV_FOLDER_ABSOLUTE_PATH;
+    console.log(">>> [CSV Import] Target folder =", csvFolderPath);
 
-    // 폴더 존재 여부 체크
     if (!fs.existsSync(csvFolderPath)) {
       console.log(`No CSV folder found at: ${csvFolderPath}. Skipping CSV import.`);
       return resolve();
@@ -142,18 +147,19 @@ function uploadCSVToDB() {
       if (err) return reject(err);
 
       // .csv 확장자만 필터링
-      const csvFiles = files.filter(file => file.endsWith(".csv"));
+      const csvFiles = files.filter(file => file.toLowerCase().endsWith(".csv"));
       if (csvFiles.length === 0) {
         console.log("No CSV files found in folder:", csvFolderPath);
         return resolve();
       }
+
+      console.log(`[CSV Import] Found ${csvFiles.length} CSV file(s):`, csvFiles);
 
       // 기존 BulkEmailRecipient 전체 삭제 후 새로 입력
       BulkEmailRecipient.deleteMany({})
         .then(() => {
           let filesProcessed = 0;
 
-          // 모든 CSV 파일 순회
           csvFiles.forEach(file => {
             const filePath = path.join(csvFolderPath, file);
             // 파일명에서 ".csv" 제거 → 지역명 추출
@@ -166,7 +172,7 @@ function uploadCSVToDB() {
               .pipe(csvParser({ headers: true, bom: true }))
               .on("data", async (row) => {
                 // 디버그: 실제 파싱된 row 내용 확인
-                console.log("[CSV DEBUG] raw row:", row);
+                console.log("[CSV DEBUG] raw row from", file, ":", row);
 
                 let emailVal = row.email;
 
@@ -182,7 +188,6 @@ function uploadCSVToDB() {
 
                 if (emailVal && emailVal.trim() !== "") {
                   try {
-                    // 중복 허용: 동일 이메일이 여러 지역에 있으면 각각 삽입
                     await BulkEmailRecipient.create({
                       email: emailVal.trim(),
                       countryOrSource: regionName,
@@ -205,7 +210,7 @@ function uploadCSVToDB() {
                 }
               })
               .on("error", (err) => {
-                console.error("Error reading CSV file:", err);
+                console.error("Error reading CSV file:", file, err);
                 reject(err);
               });
           });
@@ -803,7 +808,7 @@ async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, 
     const chunk = emails.slice(i, i + chunkSize);
     console.log(`>>> [DEBUG] Sending chunk from index ${i} to ${i + chunkSize - 1} (chunk size = ${chunk.length})`);
 
-    const promises = chunk.map((recipientEmail, idx) => {
+    const promises = chunk.map((recipientEmail) => {
       const mailData = { ...mailDataTemplate, to: recipientEmail };
       return sendEmailAPI(mailData)
         .then(() => {
@@ -890,9 +895,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
         console.log(">>> [DEBUG] selectedName is empty. Skipping bulk emailing.");
       } else {
         // [중요] 지역명이 countryOrSource에 저장되어 있으므로, 해당 지역만 필터
-        const recipients = await BulkEmailRecipient.find({ 
-          countryOrSource: selectedName
-        });
+        const recipients = await BulkEmailRecipient.find({ countryOrSource: selectedName });
         console.log(">>> [DEBUG] BulkEmailRecipient found:", recipients.length, "docs.");
 
         if (recipients.length === 0) {
