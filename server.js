@@ -498,23 +498,15 @@ const cleanUpNonFinalOrders = async () => {
 // ───────── [parseSelectedNames 함수: 다중 국가 파싱] ─────────
 function parseSelectedNames(invoiceHtml) {
   if (!invoiceHtml) return [];
-  // <span id="selected-names">의 내용을 추출합니다.
-  const spanMatch = invoiceHtml.match(/<span[^>]*id=["']selected-names["'][^>]*>([\s\S]*?)<\/span>/i);
-  if (!spanMatch) return [];
-  const content = spanMatch[1];
-  // <br> 태그 기준으로 각 줄로 분리
-  const lines = content.split(/<br\s*\/?>/i);
-  const countries = lines.map(line => {
-    // 마지막 ']'의 인덱스를 찾고, 그 이후의 텍스트를 가져옵니다.
-    const idx = line.lastIndexOf("]");
-    let result = (idx !== -1) ? line.substring(idx + 1) : line;
-    // '('가 나오면 그 앞까지만 남깁니다. (가격 정보 제거)
-    const parenIdx = result.indexOf("(");
-    if (parenIdx !== -1) {
-      result = result.substring(0, parenIdx);
-    }
-    return result.trim();
-  }).filter(x => x.length > 0);
+  // 정규표현식 설명:
+  // "]" 뒤에 오는 공백을 건너뛰고, "("나 "]"가 나오기 전까지의 텍스트를 캡처합니다.
+  const regex = /]\s*([^(\]]+)\s*\(\$\d+(\.\d+)? per email\)/gi;
+  const countries = [];
+  let match;
+  while ((match = regex.exec(invoiceHtml)) !== null) {
+    let country = match[1].trim();
+    if (country) countries.push(country);
+  }
   return countries;
 }
 
