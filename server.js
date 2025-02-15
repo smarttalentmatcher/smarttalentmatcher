@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------------
-// SERVER.JS (ESM 버전) - 전체 코드 (BulkEmailRecipient 스키마 & CSV 로직 - BOM 처리 + 절대경로)
+// SERVER.JS (ESM 버전) - 전체 코드 (Reply-To, parseSelectedNames for multiple countries)
 // --------------------------------------------------------------------------------
 
 // ───────── [필요한 import들 & dotenv 설정] ─────────
@@ -20,6 +20,7 @@ import { CloudinaryStorage } from "multer-storage-cloudinary";
 import FormData from "form-data";
 import https from "https";
 import { fileURLToPath } from "url";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -85,7 +86,6 @@ const BulkEmailRecipient = mongoose.model("BulkEmailRecipient", bulkEmailRecipie
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 요청 로깅 (선택)
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
   next();
@@ -106,14 +106,16 @@ function generateDateTimeOrderId() {
   return mm + dd + hh + min;
 }
 
-// ───────── [Elastic Email 이용 메일발송 함수] ─────────
-// 예시) sendEmailAPI.js (또는 server.js 내부)
+// ───────── [Elastic Email 이용 메일발송 함수 - Reply-To 지원] ─────────
 async function sendEmailAPI({
-  subject, from, fromName, to,
+  subject,
+  from,
+  fromName,
+  to,
   bodyHtml,
   isTransactional = true,
-  replyTo,          // <--- 추가
-  replyToName       // <--- 추가
+  replyTo,        // Reply-To 추가
+  replyToName
 }) {
   const url = "https://api.elasticemail.com/v2/email/send";
   const params = new URLSearchParams();
@@ -125,7 +127,7 @@ async function sendEmailAPI({
   params.append("bodyHtml", bodyHtml);
   params.append("isTransactional", isTransactional ? "true" : "false");
 
-  // [새로 추가된 부분] replyTo가 있으면 헤더에 붙이기
+  // Reply-To
   if (replyTo) {
     params.append("replyTo", replyTo);
   }
@@ -144,7 +146,6 @@ async function sendEmailAPI({
 }
 
 // ───────── [CSV → BulkEmailRecipient 업로드 함수] ─────────
-
 function uploadCSVToDB() {
   return new Promise((resolve, reject) => {
     const csvFolderPath = path.join(__dirname, "csv");
@@ -180,14 +181,13 @@ function uploadCSVToDB() {
             let insertedCountThisFile = 0;
 
             fs.createReadStream(filePath)
-            .pipe(csvParser({
-              headers: ["email"], // 첫 번째 컬럼을 email
-              skipLines: 1,       // CSV의 첫 번째 줄을 건너뛰기
-              bom: true
-            }))
+              .pipe(csvParser({
+                headers: ["email"], // 첫 번째 컬럼을 email
+                skipLines: 1,       // CSV의 첫 번째 줄(헤더)을 건너뛰기
+                bom: true
+              }))
               .on("data", async (row) => {
                 console.log(`[CSV DEBUG] raw row from ${file}:`, row);
-
                 const emailVal = row.email;
                 if (emailVal && emailVal.trim() !== "") {
                   try {
@@ -221,15 +221,16 @@ function uploadCSVToDB() {
     });
   });
 }
+
 // ───────── [테스트 라우트] ─────────
 app.get("/", (req, res) => {
   res.send("<h1>Hello from server.js - CSV Reload test</h1>");
 });
 
 // ───────── [타이머 관련 상수 & 변수] ─────────
-const TWELVE_HOURS = 12 * 60 * 60 * 1000;      
-const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000; 
-const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000; 
+const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
 
 const reminderTimers = {};
 const autoCancelTimers = {};
@@ -402,7 +403,7 @@ async function autoDeleteOrder(order) {
   // Cloudinary 업로드(헤드샷) 삭제
   if (order.headshot) {
     const parts = order.headshot.split("/");
-    const uploadIndex = parts.findIndex((part) => part === "upload");
+    const uploadIndex = parts.findIndex(part => part === "upload");
     if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
       const fileNameWithExtension = parts.slice(uploadIndex + 2).join("/");
       const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, "");
@@ -441,9 +442,7 @@ async function restoreTimers() {
 
 // ───────── [추가: 미제출(불완전한) 주문 정리 함수] ─────────
 async function cleanUpIncompleteOrders() {
-  // 24시간 전 시각
   const cutoff = new Date(Date.now() - (24 * 60 * 60 * 1000));
-  // status가 draft인 주문 중 createdAt이 cutoff 이전인 주문 조회
   const orders = await Order.find({ status: "draft", createdAt: { $lt: cutoff } });
   for (const order of orders) {
     if (order.headshot) {
@@ -468,7 +467,6 @@ async function cleanUpIncompleteOrders() {
 // ───────── [추가: DB와 Cloudinary 동기화 함수] ─────────
 async function syncCloudinaryWithDB() {
   try {
-    // DB에서 headshot URL이 있는 모든 주문 조회
     const orders = await Order.find({ headshot: { $ne: "" } });
     const dbHeadshots = orders
       .map(order => {
@@ -481,7 +479,7 @@ async function syncCloudinaryWithDB() {
         return null;
       })
       .filter(id => id);
-    // Cloudinary API로 해당 폴더 내 최대 500개 리소스 조회
+
     const result = await cloudinary.api.resources({
       type: "upload",
       prefix: "SmartTalentMatcher/headshots",
@@ -489,7 +487,6 @@ async function syncCloudinaryWithDB() {
     });
     for (const resource of result.resources) {
       if (!dbHeadshots.includes(resource.public_id)) {
-        // DB에 없는 이미지이면 삭제
         await cloudinary.uploader.destroy(resource.public_id);
         console.log("Deleted orphan Cloudinary image:", resource.public_id);
       }
@@ -499,302 +496,35 @@ async function syncCloudinaryWithDB() {
   }
 }
 
-// ───────── [cleanUpNonFinalOrders (필요시 추가 정리 작업)] ─────────
 const cleanUpNonFinalOrders = async () => {
-  // 필요한 경우 추가 정리 작업 구현
+  // 필요시 구현
 };
 
-// ───────── [라우트 설정] ─────────
+// ───────── [parseSelectedNames 함수: 다중 국가 파싱] ─────────
+function parseSelectedNames(invoiceHtml) {
+  if (!invoiceHtml) return [];
 
-// (기본 페이지)
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "resume.html"));
-});
+  // 1) <span id="selected-names">…</span> 추출
+  const match = invoiceHtml.match(/<span[^>]*id=["']selected-names["'][^>]*>([\s\S]*?)<\/span>/i);
+  if (!match || !match[1]) return [];
 
-// (테스트 이메일 전송 라우트)
-app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res) => {
-  try {
-    const { emailAddress, emailSubject, actingReel, resumeLink, introduction } = req.body;
-    const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
-    let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
-    if (req.file) {
-      emailHtml += `
-        <div>
-          <img src="${req.file.path}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
-        </div>
-        <br>
-      `;
-    }
-    emailHtml += `
-      <p><strong>Acting Reel:</strong> <a href="${actingReel}" target="_blank">${actingReel}</a></p>
-      <p><strong>Resume:</strong> <a href="${resumeLink}" target="_blank">${resumeLink}</a></p>
-      <br>
-      <p>${formattedIntro}</p>
-    `;
-    emailHtml += `</div>`;
-    const mailData = {
-      subject: emailSubject,
-      from: process.env.ELASTIC_EMAIL_USER,
-      fromName: "Smart Talent Matcher",
-      to: emailAddress,
-      bodyHtml: emailHtml,
-      isTransactional: true
-    };
-    const result = await sendEmailAPI(mailData);
-    console.log("Test Email sent:", result);
-    res.json({ success: true, message: "Test email sent successfully!" });
-  } catch (error) {
-    console.error("Error sending test email:", error);
-    res.status(500).json({ error: "Failed to send test email" });
-  }
-});
-
-// ───────── [주문 생성 라우트 (Draft Order 생성)] ─────────
-app.post("/submit-order", async (req, res) => {
-  try {
-    const { emailAddress, invoice, subtotal, baseDiscount, promoDiscount, finalCost } = req.body;
-    const orderId = generateDateTimeOrderId();
-    const createdAt = Date.now();
-    const cleanSubtotal = isNaN(parseFloat(subtotal)) ? 0 : parseFloat(subtotal);
-    const cleanBaseDiscount = isNaN(parseFloat(baseDiscount)) ? 0 : parseFloat(baseDiscount);
-    const cleanPromoDiscount = isNaN(parseFloat(promoDiscount)) ? 0 : parseFloat(promoDiscount);
-    const cleanFinalCost = isNaN(parseFloat(finalCost)) ? 0 : parseFloat(finalCost);
-    const invoiceData = invoice && invoice.trim() !== "" ? invoice : "<p>Invoice details not available.</p>";
-
-    const newOrder = new Order({
-      orderId,
-      emailAddress: emailAddress || "",
-      invoice: invoiceData,
-      subtotal: cleanSubtotal,
-      baseDiscount: cleanBaseDiscount,
-      promoDiscount: cleanPromoDiscount,
-      finalCost: cleanFinalCost,
-      createdAt,
-      status: "draft"
-    });
-    await newOrder.save();
-    console.log("✅ Draft order saved to MongoDB:", newOrder);
-    res.json({ success: true, message: "Draft order saved to MongoDB", orderId: newOrder.orderId });
-  } catch (err) {
-    console.error("Error in /submit-order:", err);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
-  }
-});
-
-// ───────── [주문 수정 라우트 (Draft Order 업데이트)] ─────────
-app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) => {
-  try {
-    const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice } = req.body;
-    const order = await Order.findOne({ orderId, status: "draft" });
-    if (!order) {
-      console.error("Draft order not found for orderId:", orderId);
-      return res.status(404).json({ success: false, message: "Order not found" });
-    }
-    if (emailAddress !== undefined) order.emailAddress = emailAddress;
-    if (emailSubject !== undefined) order.emailSubject = emailSubject;
-    if (actingReel !== undefined) order.actingReel = actingReel;
-    if (resumeLink !== undefined) order.resumeLink = resumeLink;
-    if (introduction !== undefined) order.introduction = introduction;
-    if (invoice && invoice.trim() !== "") order.invoice = invoice;
-    if (req.file) order.headshot = req.file.path;
-    await order.save();
-    console.log("✅ Draft order updated in MongoDB:", order);
-    res.json({ success: true, message: "Draft order updated", updatedOrder: order });
-  } catch (err) {
-    console.error("Error in /update-order:", err);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
-  }
-});
-
-// ───────── [최종 제출 라우트 (Draft → Final 주문 전환)] ─────────
-app.post("/final-submit", multer().none(), async (req, res) => {
-  try {
-    console.log(">>> [final-submit] Step 0: Endpoint called");
-    const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice, venmoId } = req.body;
-    console.log(">>> [final-submit] Step 1: Request body received:", req.body);
-    console.log(">>> [final-submit] Step 2: Checking for old final (unpaid) orders with same emailAddress");
-    
-    const oldFinals = await Order.find({ emailAddress, status: "final", paid: false });
-    if (oldFinals.length > 0) {
-      console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Deleting them...`);
-      for (const oldOrder of oldFinals) {
-        console.log(`>>> Canceling old final order #${oldOrder.orderId}`);
-        const cancelHtml = `
-          <div style="font-family: Arial, sans-serif;">
-            <p>Hello,</p>
-            <p>Your previous invoice (Order #${oldOrder.orderId}) has been <strong>canceled</strong> because a new order was submitted.</p>
-            <p>Only the new invoice will remain valid. If you have any questions, please contact us.</p>
-            <br>
-            <p>Regards,<br>Smart Talent Matcher</p>
-          </div>
-        `;
-        console.log(">>> Sending cancellation email for old order:", oldOrder.orderId);
-        await sendEmailAPI({
-          subject: "[Smart Talent Matcher] Previous Invoice Canceled",
-          from: process.env.ELASTIC_EMAIL_USER,
-          fromName: "Smart Talent Matcher",
-          to: emailAddress,
-          bodyHtml: cancelHtml,
-          isTransactional: true
-        });
-        console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
-
-        if (oldOrder.headshot) {
-          const parts = oldOrder.headshot.split("/");
-          const uploadIndex = parts.findIndex((part) => part === "upload");
-          if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
-            const fileNameWithExtension = parts.slice(uploadIndex + 2).join("/");
-            const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, "");
-            console.log("Deleting Cloudinary resource with public_id:", publicId);
-            await cloudinary.uploader.destroy(publicId);
-          }
-        }
-        console.log(">>> Deleting old final order from DB:", oldOrder.orderId);
-        await Order.deleteOne({ _id: oldOrder._id });
-        console.log(`Deleted old final order #${oldOrder.orderId} from MongoDB.`);
-        console.log(">>> Waiting 3 seconds before next old order...");
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-      }
-    }
-
-    console.log(">>> [final-submit] Step 3: Finding draftOrder by orderId:", orderId);
-    const draftOrder = await Order.findOne({ orderId, status: "draft" });
-    if (!draftOrder) {
-      console.error("Draft order not found for orderId:", orderId);
-      return res.status(404).json({ success: false, message: "Draft order not found" });
-    }
-    if (invoice && invoice.trim() !== "") {
-      draftOrder.invoice = invoice;
-    }
-    draftOrder.emailSubject = emailSubject || "";
-    draftOrder.actingReel = actingReel || "";
-    draftOrder.resumeLink = resumeLink || "";
-    draftOrder.introduction = introduction || "";
-    draftOrder.venmoId = venmoId || "";
-    draftOrder.status = "final";
-    console.log(">>> [final-submit] Step 4: Saving order with status=final to DB");
-    await draftOrder.save();
-    console.log("✅ Final submission order updated in MongoDB (status=final):", draftOrder);
-
-    // (1) 관리자에게 배우 자료 이메일 전송
-    console.log(">>> [final-submit] Step 5: Sending admin email with actor info");
-    const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
-    let adminEmailHtml = `<div style="font-family: Arial, sans-serif;">`;
-    if (draftOrder.headshot) {
-      adminEmailHtml += `
-        <div>
-          <img src="${draftOrder.headshot}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
-        </div>
-        <br>
-      `;
-    }
-    adminEmailHtml += `
-      <p><strong>Acting Reel:</strong> <a href="${actingReel}" target="_blank">${actingReel}</a></p>
-      <p><strong>Resume:</strong> <a href="${resumeLink}" target="_blank">${resumeLink}</a></p>
-      <br>
-      <p>${formattedIntro}</p>
-    `;
-    adminEmailHtml += `</div>`;
-    await sendEmailAPI({
-      subject: emailSubject || "[No Subject Provided]",
-      from: process.env.ELASTIC_EMAIL_USER,
-      fromName: "Smart Talent Matcher",
-      to: process.env.ELASTIC_EMAIL_USER, // 관리자 이메일
-      bodyHtml: adminEmailHtml,
-      isTransactional: true
-    });
-    console.log("✅ Admin email sent.");
-
-    // (2) 클라이언트(주문자)에게 인보이스 이메일 전송
-    console.log(">>> [final-submit] Step 6: Sending client invoice email");
-    const templatePath = path.join(__dirname, "email.html");
-    let clientEmailHtml;
-    if (fs.existsSync(templatePath)) {
-      console.log(">>> email.html found:", templatePath);
-      clientEmailHtml = fs.readFileSync(templatePath, "utf-8");
-    } else {
-      console.error(">>> email.html NOT found at:", templatePath);
-      clientEmailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
-    }
-    clientEmailHtml = clientEmailHtml.replace(/{{\s*invoice\s*}}/g, draftOrder.invoice);
-    await sendEmailAPI({
-      subject: "[Smart Talent Matcher] Invoice for Your Submission",
-      from: process.env.ELASTIC_EMAIL_USER,
-      fromName: "Smart Talent Matcher",
-      to: draftOrder.emailAddress,
-      bodyHtml: clientEmailHtml,
-      isTransactional: true
-    });
-    console.log("✅ Client Invoice email sent.");
-
-    // (3) 12시간 리마인드, 24시간 자동 취소, 48시간 자동 삭제 스케줄링
-    console.log(">>> [final-submit] Step 7: Scheduling timers for reminder, auto-cancel, and auto-delete");
-    scheduleReminder(draftOrder);
-    scheduleAutoCancel(draftOrder);
-    scheduleAutoDelete(draftOrder);
-
-    // (4) 최종 응답
-    console.log(">>> [final-submit] Step 8: Returning success response");
-    return res.json({
-      success: true,
-      message: "Final submission complete! Admin/client emails sent, timers scheduled."
-    });
-  } catch (error) {
-    console.error("❌ Error in final submission:", error);
-    return res.status(500).json({ success: false, error: "Failed to process final submission." });
-  }
-});
-
-// ───────── [admin/orders 라우트 - 관리자 조회] ─────────
-app.get("/admin/orders", async (req, res) => {
-  try {
-    console.log(">>> [DEBUG] /admin/orders called.");
-    const orders = await Order.find({});
-    console.log(">>> [DEBUG] /admin/orders - orders found:", orders);
-    return res.json({ success: true, orders });
-  } catch (error) {
-    console.error("Error in /admin/orders:", error);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
-  }
-});
-
-// ───────── [admin/delete-order 라우트 - 관리자 주문 삭제] ─────────
-app.post("/admin/delete-order", async (req, res) => {
-  try {
-    const { orderId } = req.body;
-    const order = await Order.findOne({ orderId });
-    if (!order) {
-      return res.status(404).json({ success: false, message: "Order not found" });
-    }
-    if (order.headshot) {
-      const parts = order.headshot.split("/");
-      const uploadIndex = parts.findIndex((part) => part === "upload");
-      if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
-        const fileNameWithExtension = parts.slice(uploadIndex + 2).join("/");
-        const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, "");
-        await cloudinary.uploader.destroy(publicId);
-      }
-    }
-    await Order.deleteOne({ orderId });
-    res.json({ success: true, message: `Order #${orderId} deleted.` });
-  } catch (err) {
-    console.error("Error in /admin/delete-order:", err);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
-  }
-});
-
-// [FIX #1] invoice에서 <span id="selected-names">... </span> 문자열을 깔끔히 파싱
-function parseSelectedName(invoiceHtml) {
-  if (!invoiceHtml) return "";
-  const match = invoiceHtml.match(/<span[^>]*id=["']selected-names["'][^>]*>(.*?)<\/span>/i);
-  if (!match || !match[1]) return "";
   let text = match[1].trim();
-  text = text.replace(/\s*<span.*$/i, "");         // <span ...> 태그 이후 제거
-  text = text.replace(/\[Base Package\]\s*/, "");  // [Base Package] 제거
-  return text.trim();
+
+  // 2) <br> 기준으로 분리
+  const lines = text.split(/<br\s*\/?>/i);
+
+  // 3) 각 줄에서 [Base Package], <span>…</span> 등 불필요한 것 제거
+  const results = lines.map(line => {
+    line = line.replace(/\[.*?\]/g, "").trim();
+    line = line.replace(/<span[^>]*>.*?<\/span>/g, "").trim();
+    return line;
+  });
+
+  // 4) 공백 제거 후 남은 값만
+  return results.filter(x => x);
 }
 
-// (대량 메일 전송: Chunk+Delay)
+// ───────── [대량 메일 전송(Chunk+Delay)] ─────────
 async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, delayMs = 1000) {
   console.log(">>> [DEBUG] sendBulkEmailsInChunks() called");
   console.log(">>> [DEBUG] total emails to send:", emails.length);
@@ -803,12 +533,12 @@ async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, 
     return;
   }
   let sentCount = 0;
+
   for (let i = 0; i < emails.length; i += chunkSize) {
     const chunk = emails.slice(i, i + chunkSize);
     console.log(`>>> [DEBUG] Sending chunk from index ${i} to ${i + chunkSize - 1} (chunk size = ${chunk.length})`);
 
-    const promises = chunk.map((recipientEmail) => {
-      // mailDataTemplate + to: recipientEmail
+    const promises = chunk.map(recipientEmail => {
       const mailData = { ...mailDataTemplate, to: recipientEmail };
       return sendEmailAPI(mailData)
         .then(() => {
@@ -827,10 +557,11 @@ async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, 
       await new Promise(resolve => setTimeout(resolve, delayMs));
     }
   }
+
   console.log("✅ [DEBUG] All bulk emails sent with chunk approach!");
 }
 
-// (디버깅) /admin/toggle-payment
+// ───────── [/admin/toggle-payment] ─────────
 app.get("/admin/toggle-payment", async (req, res) => {
   try {
     const { orderId } = req.query;
@@ -848,7 +579,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
     await order.save();
     console.log(`>>> [DEBUG] Toggled paid from ${oldPaid} to ${order.paid}`);
 
-    // only if payment changed false->true
+    // 결제가 false->true 로 바뀌었을 때
     if (!oldPaid && order.paid) {
       console.log(">>> [DEBUG] Payment changed from false -> true. Will send 'service started' email AND do bulk emailing.");
 
@@ -878,12 +609,12 @@ app.get("/admin/toggle-payment", async (req, res) => {
       const mailDataStart = {
         subject: "[Smart Talent Matcher] Your Service Has Started!",
         from: process.env.ELASTIC_EMAIL_USER,
-        fromName: "",            // 빈 문자열 => 'Smart Talent Matcher' 제거
+        fromName: "Smart Talent Matcher",    // 바꿀 경우 ""로
         to: order.emailAddress,
         bodyHtml: startedHtml,
         isTransactional: true,
 
-        // [중요] Reply-To 필드 설정
+        // 회신은 클라이언트 주소로
         replyTo: order.emailAddress,
         replyToName: order.emailAddress
       };
@@ -895,64 +626,66 @@ app.get("/admin/toggle-payment", async (req, res) => {
       // (B) 대량 메일 로직
       console.log(">>> [DEBUG] Starting Bulk Email Logic...");
 
-      const selectedName = parseSelectedName(order.invoice);
-      console.log(">>> [DEBUG] selectedName =", selectedName);
+      // 다중 국가 추출
+      const selectedCountries = parseSelectedNames(order.invoice);
+      console.log(">>> [DEBUG] selectedCountries =", selectedCountries);
 
-      if (!selectedName) {
-        console.log(">>> [DEBUG] selectedName is empty. Skipping bulk emailing.");
+      if (selectedCountries.length === 0) {
+        console.log(">>> [DEBUG] No selected countries. Skipping bulk emailing.");
       } else {
-        // find recipients by regionName
-        const recipients = await BulkEmailRecipient.find({ countryOrSource: selectedName });
-        console.log(">>> [DEBUG] BulkEmailRecipient found:", recipients.length, "docs.");
+        let allEmails = [];
+        // 각 국가별로 DB에서 조회 -> allEmails에 모으기
+        for (const country of selectedCountries) {
+          const recipients = await BulkEmailRecipient.find({ countryOrSource: country });
+          console.log(`>>> [DEBUG] found ${recipients.length} for countryOrSource="${country}"`);
 
-        if (recipients.length === 0) {
-          console.log(">>> [DEBUG] No recipients matched. Bulk emailing aborted.");
-        } else {
-          // remove duplicates
-          const emails = [
-            ...new Set(recipients.map(r => (r.email || "").trim().toLowerCase()))
-          ].filter(e => e);
-
-          console.log(">>> [DEBUG] uniqueEmails after dedup =", emails.length);
-
-          const formattedIntro = order.introduction
-            ? order.introduction.replace(/\r?\n/g, "<br>")
-            : "";
-
-          let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
-          if (order.headshot) {
-            emailHtml += `
-              <div>
-                <img src="${order.headshot}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
-              </div>
-              <br>
-            `;
-          }
-          emailHtml += `
-            <p><strong>Acting Reel:</strong> <a href="${order.actingReel}" target="_blank">${order.actingReel}</a></p>
-            <p><strong>Resume:</strong> <a href="${order.resumeLink}" target="_blank">${order.resumeLink}</a></p>
-            <br>
-            <p>${formattedIntro}</p>
-          `;
-          emailHtml += `</div>`;
-
-          // bulkMailDataTemplate
-          const bulkMailDataTemplate = {
-            subject: order.emailSubject || "[No Subject Provided]",
-            from: process.env.ELASTIC_EMAIL_USER,
-            fromName: "",
-            bodyHtml: emailHtml,
-            isTransactional: false,
-
-            // [중요] Reply-To 필드 설정
-            replyTo: order.emailAddress,
-            replyToName: order.emailAddress
-          };
-
-          console.log(">>> [DEBUG] Starting to send Bulk Emails in Chunks...");
-          await sendBulkEmailsInChunks(emails, bulkMailDataTemplate, 20, 1000);
-          console.log("✅ [DEBUG] Bulk emailing completed!");
+          recipients.forEach(r => {
+            if (r.email) {
+              allEmails.push(r.email.trim().toLowerCase());
+            }
+          });
         }
+
+        // 중복 제거
+        const uniqueEmails = [...new Set(allEmails)];
+        console.log(">>> [DEBUG] uniqueEmails after dedup =", uniqueEmails.length);
+
+        // 템플릿 준비
+        const formattedIntro = order.introduction
+          ? order.introduction.replace(/\r?\n/g, "<br>")
+          : "";
+
+        let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
+        if (order.headshot) {
+          emailHtml += `
+            <div>
+              <img src="${order.headshot}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
+            </div>
+            <br>
+          `;
+        }
+        emailHtml += `
+          <p><strong>Acting Reel:</strong> <a href="${order.actingReel}" target="_blank">${order.actingReel}</a></p>
+          <p><strong>Resume:</strong> <a href="${order.resumeLink}" target="_blank">${order.resumeLink}</a></p>
+          <br>
+          <p>${formattedIntro}</p>
+        `;
+        emailHtml += `</div>`;
+
+        const bulkMailDataTemplate = {
+          subject: order.emailSubject || "[No Subject Provided]",
+          from: process.env.ELASTIC_EMAIL_USER,
+          fromName: "",   // 보낸 사람 이름
+          bodyHtml: emailHtml,
+          isTransactional: false,
+
+          replyTo: order.emailAddress,
+          replyToName: order.emailAddress
+        };
+
+        console.log(">>> [DEBUG] Starting to send Bulk Emails in Chunks...");
+        await sendBulkEmailsInChunks(uniqueEmails, bulkMailDataTemplate, 20, 1000);
+        console.log("✅ [DEBUG] Bulk emailing completed!");
       }
     } else {
       console.log(">>> [DEBUG] Payment either remains false or toggled true->false. No mailing logic triggered.");
