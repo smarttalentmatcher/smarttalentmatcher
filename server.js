@@ -491,9 +491,289 @@ async function syncCloudinaryWithDB() {
   }
 }
 
+// ───────── [cleanUpNonFinalOrders (필요시 추가 정리 작업)] ─────────
 const cleanUpNonFinalOrders = async () => {
-  // 필요 시 추가 구현
+  // 필요한 경우 추가 정리 작업 구현
 };
+
+// ───────── [라우트 설정] ─────────
+
+// (기본 페이지)
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "resume.html"));
+});
+
+// (테스트 이메일 전송 라우트)
+app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res) => {
+  try {
+    const { emailAddress, emailSubject, actingReel, resumeLink, introduction } = req.body;
+    const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
+    let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
+    if (req.file) {
+      emailHtml += `
+        <div>
+          <img src="${req.file.path}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
+        </div>
+        <br>
+      `;
+    }
+    emailHtml += `
+      <p><strong>Acting Reel:</strong> <a href="${actingReel}" target="_blank">${actingReel}</a></p>
+      <p><strong>Resume:</strong> <a href="${resumeLink}" target="_blank">${resumeLink}</a></p>
+      <br>
+      <p>${formattedIntro}</p>
+    `;
+    emailHtml += `</div>`;
+    const mailData = {
+      subject: emailSubject,
+      from: process.env.ELASTIC_EMAIL_USER,
+      fromName: "Smart Talent Matcher",
+      to: emailAddress,
+      bodyHtml: emailHtml,
+      isTransactional: true
+    };
+    const result = await sendEmailAPI(mailData);
+    console.log("Test Email sent:", result);
+    res.json({ success: true, message: "Test email sent successfully!" });
+  } catch (error) {
+    console.error("Error sending test email:", error);
+    res.status(500).json({ error: "Failed to send test email" });
+  }
+});
+
+// ───────── [주문 생성 라우트 (Draft Order 생성)] ─────────
+app.post("/submit-order", async (req, res) => {
+  try {
+    const { emailAddress, invoice, subtotal, baseDiscount, promoDiscount, finalCost } = req.body;
+    const orderId = generateDateTimeOrderId();
+    const createdAt = Date.now();
+    const cleanSubtotal = isNaN(parseFloat(subtotal)) ? 0 : parseFloat(subtotal);
+    const cleanBaseDiscount = isNaN(parseFloat(baseDiscount)) ? 0 : parseFloat(baseDiscount);
+    const cleanPromoDiscount = isNaN(parseFloat(promoDiscount)) ? 0 : parseFloat(promoDiscount);
+    const cleanFinalCost = isNaN(parseFloat(finalCost)) ? 0 : parseFloat(finalCost);
+    const invoiceData = invoice && invoice.trim() !== "" ? invoice : "<p>Invoice details not available.</p>";
+
+    const newOrder = new Order({
+      orderId,
+      emailAddress: emailAddress || "",
+      invoice: invoiceData,
+      subtotal: cleanSubtotal,
+      baseDiscount: cleanBaseDiscount,
+      promoDiscount: cleanPromoDiscount,
+      finalCost: cleanFinalCost,
+      createdAt,
+      status: "draft"
+    });
+    await newOrder.save();
+    console.log("✅ Draft order saved to MongoDB:", newOrder);
+    res.json({ success: true, message: "Draft order saved to MongoDB", orderId: newOrder.orderId });
+  } catch (err) {
+    console.error("Error in /submit-order:", err);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// ───────── [주문 수정 라우트 (Draft Order 업데이트)] ─────────
+app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) => {
+  try {
+    const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice } = req.body;
+    const order = await Order.findOne({ orderId, status: "draft" });
+    if (!order) {
+      console.error("Draft order not found for orderId:", orderId);
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    if (emailAddress !== undefined) order.emailAddress = emailAddress;
+    if (emailSubject !== undefined) order.emailSubject = emailSubject;
+    if (actingReel !== undefined) order.actingReel = actingReel;
+    if (resumeLink !== undefined) order.resumeLink = resumeLink;
+    if (introduction !== undefined) order.introduction = introduction;
+    if (invoice && invoice.trim() !== "") order.invoice = invoice;
+    if (req.file) order.headshot = req.file.path;
+    await order.save();
+    console.log("✅ Draft order updated in MongoDB:", order);
+    res.json({ success: true, message: "Draft order updated", updatedOrder: order });
+  } catch (err) {
+    console.error("Error in /update-order:", err);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// ───────── [최종 제출 라우트 (Draft → Final 주문 전환)] ─────────
+app.post("/final-submit", multer().none(), async (req, res) => {
+  try {
+    console.log(">>> [final-submit] Step 0: Endpoint called");
+    const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice, venmoId } = req.body;
+    console.log(">>> [final-submit] Step 1: Request body received:", req.body);
+    console.log(">>> [final-submit] Step 2: Checking for old final (unpaid) orders with same emailAddress");
+    
+    const oldFinals = await Order.find({ emailAddress, status: "final", paid: false });
+    if (oldFinals.length > 0) {
+      console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Deleting them...`);
+      for (const oldOrder of oldFinals) {
+        console.log(`>>> Canceling old final order #${oldOrder.orderId}`);
+        const cancelHtml = `
+          <div style="font-family: Arial, sans-serif;">
+            <p>Hello,</p>
+            <p>Your previous invoice (Order #${oldOrder.orderId}) has been <strong>canceled</strong> because a new order was submitted.</p>
+            <p>Only the new invoice will remain valid. If you have any questions, please contact us.</p>
+            <br>
+            <p>Regards,<br>Smart Talent Matcher</p>
+          </div>
+        `;
+        console.log(">>> Sending cancellation email for old order:", oldOrder.orderId);
+        await sendEmailAPI({
+          subject: "[Smart Talent Matcher] Previous Invoice Canceled",
+          from: process.env.ELASTIC_EMAIL_USER,
+          fromName: "Smart Talent Matcher",
+          to: emailAddress,
+          bodyHtml: cancelHtml,
+          isTransactional: true
+        });
+        console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
+
+        if (oldOrder.headshot) {
+          const parts = oldOrder.headshot.split("/");
+          const uploadIndex = parts.findIndex((part) => part === "upload");
+          if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
+            const fileNameWithExtension = parts.slice(uploadIndex + 2).join("/");
+            const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, "");
+            console.log("Deleting Cloudinary resource with public_id:", publicId);
+            await cloudinary.uploader.destroy(publicId);
+          }
+        }
+        console.log(">>> Deleting old final order from DB:", oldOrder.orderId);
+        await Order.deleteOne({ _id: oldOrder._id });
+        console.log(`Deleted old final order #${oldOrder.orderId} from MongoDB.`);
+        console.log(">>> Waiting 3 seconds before next old order...");
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
+    }
+
+    console.log(">>> [final-submit] Step 3: Finding draftOrder by orderId:", orderId);
+    const draftOrder = await Order.findOne({ orderId, status: "draft" });
+    if (!draftOrder) {
+      console.error("Draft order not found for orderId:", orderId);
+      return res.status(404).json({ success: false, message: "Draft order not found" });
+    }
+    if (invoice && invoice.trim() !== "") {
+      draftOrder.invoice = invoice;
+    }
+    draftOrder.emailSubject = emailSubject || "";
+    draftOrder.actingReel = actingReel || "";
+    draftOrder.resumeLink = resumeLink || "";
+    draftOrder.introduction = introduction || "";
+    draftOrder.venmoId = venmoId || "";
+    draftOrder.status = "final";
+    console.log(">>> [final-submit] Step 4: Saving order with status=final to DB");
+    await draftOrder.save();
+    console.log("✅ Final submission order updated in MongoDB (status=final):", draftOrder);
+
+    // (1) 관리자에게 배우 자료 이메일 전송
+    console.log(">>> [final-submit] Step 5: Sending admin email with actor info");
+    const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
+    let adminEmailHtml = `<div style="font-family: Arial, sans-serif;">`;
+    if (draftOrder.headshot) {
+      adminEmailHtml += `
+        <div>
+          <img src="${draftOrder.headshot}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
+        </div>
+        <br>
+      `;
+    }
+    adminEmailHtml += `
+      <p><strong>Acting Reel:</strong> <a href="${actingReel}" target="_blank">${actingReel}</a></p>
+      <p><strong>Resume:</strong> <a href="${resumeLink}" target="_blank">${resumeLink}</a></p>
+      <br>
+      <p>${formattedIntro}</p>
+    `;
+    adminEmailHtml += `</div>`;
+    await sendEmailAPI({
+      subject: emailSubject || "[No Subject Provided]",
+      from: process.env.ELASTIC_EMAIL_USER,
+      fromName: "Smart Talent Matcher",
+      to: process.env.ELASTIC_EMAIL_USER, // 관리자 이메일
+      bodyHtml: adminEmailHtml,
+      isTransactional: true
+    });
+    console.log("✅ Admin email sent.");
+
+    // (2) 클라이언트(주문자)에게 인보이스 이메일 전송
+    console.log(">>> [final-submit] Step 6: Sending client invoice email");
+    const templatePath = path.join(__dirname, "email.html");
+    let clientEmailHtml;
+    if (fs.existsSync(templatePath)) {
+      console.log(">>> email.html found:", templatePath);
+      clientEmailHtml = fs.readFileSync(templatePath, "utf-8");
+    } else {
+      console.error(">>> email.html NOT found at:", templatePath);
+      clientEmailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
+    }
+    clientEmailHtml = clientEmailHtml.replace(/{{\s*invoice\s*}}/g, draftOrder.invoice);
+    await sendEmailAPI({
+      subject: "[Smart Talent Matcher] Invoice for Your Submission",
+      from: process.env.ELASTIC_EMAIL_USER,
+      fromName: "Smart Talent Matcher",
+      to: draftOrder.emailAddress,
+      bodyHtml: clientEmailHtml,
+      isTransactional: true
+    });
+    console.log("✅ Client Invoice email sent.");
+
+    // (3) 12시간 리마인드, 24시간 자동 취소, 48시간 자동 삭제 스케줄링
+    console.log(">>> [final-submit] Step 7: Scheduling timers for reminder, auto-cancel, and auto-delete");
+    scheduleReminder(draftOrder);
+    scheduleAutoCancel(draftOrder);
+    scheduleAutoDelete(draftOrder);
+
+    // (4) 최종 응답
+    console.log(">>> [final-submit] Step 8: Returning success response");
+    return res.json({
+      success: true,
+      message: "Final submission complete! Admin/client emails sent, timers scheduled."
+    });
+  } catch (error) {
+    console.error("❌ Error in final submission:", error);
+    return res.status(500).json({ success: false, error: "Failed to process final submission." });
+  }
+});
+
+// ───────── [admin/orders 라우트 - 관리자 조회] ─────────
+app.get("/admin/orders", async (req, res) => {
+  try {
+    console.log(">>> [DEBUG] /admin/orders called.");
+    const orders = await Order.find({});
+    console.log(">>> [DEBUG] /admin/orders - orders found:", orders);
+    return res.json({ success: true, orders });
+  } catch (error) {
+    console.error("Error in /admin/orders:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// ───────── [admin/delete-order 라우트 - 관리자 주문 삭제] ─────────
+app.post("/admin/delete-order", async (req, res) => {
+  try {
+    const { orderId } = req.body;
+    const order = await Order.findOne({ orderId });
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    if (order.headshot) {
+      const parts = order.headshot.split("/");
+      const uploadIndex = parts.findIndex((part) => part === "upload");
+      if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
+        const fileNameWithExtension = parts.slice(uploadIndex + 2).join("/");
+        const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, "");
+        await cloudinary.uploader.destroy(publicId);
+      }
+    }
+    await Order.deleteOne({ orderId });
+    res.json({ success: true, message: `Order #${orderId} deleted.` });
+  } catch (err) {
+    console.error("Error in /admin/delete-order:", err);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
 
 // ───────── [parseSelectedNames 함수: 미리 정해진 6개 이름 중 매칭] ─────────
 function parseSelectedNames(invoiceHtml) {
