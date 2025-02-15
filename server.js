@@ -508,7 +508,8 @@ function parseSelectedNames(invoiceHtml) {
   text = text.replace(/<br\s*\/?>/gi, "\n");
   text = text.replace(/<[^>]+>/g, "");
   text = text.replace(/\(\$\d+(\.\d+)? per email\)/gi, "");
-  text = text.replace(/\[.*?\]/g, "");
+  // 변경된 부분: 대괄호 안 텍스트를 제거 (각각 제거)
+  text = text.replace(/\[[^\]]*\]/g, "");
   const lines = text.split("\n").map(line => line.trim()).filter(line => line);
   return lines;
 }
