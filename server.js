@@ -500,17 +500,17 @@ const cleanUpNonFinalOrders = async () => {
 // 각 파트를 정리(HTML 태그, 가격정보, 대괄호 라벨 제거)하여 국가명 배열을 반환합니다.
 function parseSelectedNames(invoiceHtml) {
   if (!invoiceHtml) return [];
-  const match = invoiceHtml.match(/<\s*span[^>]*id=["']selected-names["'][^>]*>([\s\S]*?)<\/\s*span>/i);
-  if (!match) return [];
-  let text = match[1];
-  // 분리: <br> 태그 기준
-  let parts = text.split(/<br\s*\/?>/gi);
-  let countries = parts.map(part => {
-    let clean = part.replace(/<[^>]+>/g, ""); // HTML 태그 제거
-    clean = clean.replace(/\(\$\d+(\.\d+)? per email\)/gi, ""); // 가격정보 제거
-    clean = clean.replace(/\[[^\]]*\]\s*/g, ""); // 대괄호 라벨 제거
-    return clean.trim();
-  }).filter(line => line.length > 0);
+  // 정규표현식 설명:
+  // (?:\[[^\]]*\]\s*)?  => 대괄호 라벨 (예: [Base Package])가 선택적으로 있을 수 있음.
+  // ([^<]+?)           => 태그가 나오기 전까지의 텍스트(즉, 국가명)를 non-greedy로 캡처.
+  // \s*\(\$\d+(\.\d+)? per email\)  => 가격정보 (예: ($0.005 per email))를 매칭.
+  const regex = /(?:\[[^\]]*\]\s*)?([^<]+?)\s*\(\$\d+(\.\d+)? per email\)/gi;
+  const countries = [];
+  let match;
+  while ((match = regex.exec(invoiceHtml)) !== null) {
+    const country = match[1].trim();
+    if (country) countries.push(country);
+  }
   return countries;
 }
 
