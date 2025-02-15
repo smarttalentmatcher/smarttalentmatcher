@@ -504,24 +504,31 @@ const cleanUpNonFinalOrders = async () => {
 function parseSelectedNames(invoiceHtml) {
   if (!invoiceHtml) return [];
 
-  // 1) <span id="selected-names">…</span> 추출
+  // 1) <span id="selected-names"> ... </span> 전역 매치
   const match = invoiceHtml.match(/<span[^>]*id=["']selected-names["'][^>]*>([\s\S]*?)<\/span>/i);
-  if (!match || !match[1]) return [];
+  if (!match) return [];
 
   let text = match[1].trim();
 
-  // 2) <br> 기준으로 분리
+  // 2) <br> 기준으로 분할
   const lines = text.split(/<br\s*\/?>/i);
 
-  // 3) 각 줄에서 [Base Package], <span>…</span> 등 불필요한 것 제거
-  const results = lines.map(line => {
-    line = line.replace(/\[.*?\]/g, "").trim();
-    line = line.replace(/<span[^>]*>.*?<\/span>/g, "").trim();
-    return line;
-  });
+  // 3) 각 줄마다 불필요한 문구 제거
+  return lines
+    .map(line => {
+      // (A) [Base Package], [For English Speakers], 등 대괄호 제거
+      line = line.replace(/\[.*?\]/g, "");
 
-  // 4) 공백 제거 후 남은 값만
-  return results.filter(x => x);
+      // (B) <span>... </span> 전부 제거 (멀티라인 포함)
+      line = line.replace(/<span[^>]*>[\s\S]*?<\/span>/g, "");
+
+      // (C) 괄호 안 ( ... ) 전부 제거 → 만약 "(+Canada)"는 남기고 싶다면 이건 주석 처리
+      // line = line.replace(/\(.*?\)/g, "");
+
+      // 마지막 트리밍
+      return line.trim();
+    })
+    .filter(x => x);  // 빈 문자열은 제외
 }
 
 // ───────── [대량 메일 전송(Chunk+Delay)] ─────────
