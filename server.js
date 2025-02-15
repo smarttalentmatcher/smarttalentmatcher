@@ -919,8 +919,8 @@ app.get("/admin/toggle-payment", async (req, res) => {
           // [수정됨] fromName: "" + replyTo 설정
           const bulkMailDataTemplate = {
             subject: order.emailSubject || "[No Subject Provided]",
-            from: process.env.ELASTIC_EMAIL_USER,
-            fromName: "",            // <-- 기존 "" 유지
+            from: order.emailAddress,
+            fromName: order.emailAddress,            // <-- 기존 "" 유지
             bodyHtml: emailHtml,
             isTransactional: false,
             replyTo: order.emailAddress,     // <-- replyTo 클라이언트
