@@ -495,21 +495,33 @@ const cleanUpNonFinalOrders = async () => {
   // 필요 시 추가 구현
 };
 
-// ───────── [parseSelectedNames 함수: 다중 국가 파싱] ─────────
+// ───────── [parseSelectedNames 함수: 미리 정해진 6개 이름 중 매칭] ─────────
 function parseSelectedNames(invoiceHtml) {
   if (!invoiceHtml) return [];
-  // 정규표현식 설명:
-  // "]" 뒤에 오는 공백을 건너뛰고, "("나 "]"가 나오기 전까지의 텍스트를 캡처합니다.
-  const regex = /]\s*([^(\]]+)\s*\(\$\d+(\.\d+)? per email\)/gi;
-  const countries = [];
-  let match;
-  while ((match = regex.exec(invoiceHtml)) !== null) {
-    let country = match[1].trim();
-    if (country) countries.push(country);
-  }
-  return countries;
-}
 
+  // 1) 미리 정해진 6개 국가(지역) 이름
+  const countryList = [
+    "Africa",
+    "Asia",
+    "Australia",
+    "South America",
+    "United Kingdom (+EU)",
+    "United States (+Canada)",
+  ];
+
+  // 2) 대소문자 구분 없이 검사하기 위해 invoiceHtml을 소문자로
+  const lowerHtml = invoiceHtml.toLowerCase();
+
+  // 3) countryList 각 항목이 invoiceHtml에 들어있는지 검사
+  const selected = [];
+  for (const country of countryList) {
+    if (lowerHtml.includes(country.toLowerCase())) {
+      selected.push(country);
+    }
+  }
+
+  return selected;
+}
 // ───────── [대량 메일 전송(Chunk+Delay)] ─────────
 async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, delayMs = 1000) {
   console.log(">>> [DEBUG] sendBulkEmailsInChunks() called");
