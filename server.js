@@ -107,16 +107,32 @@ function generateDateTimeOrderId() {
 }
 
 // ───────── [Elastic Email 이용 메일발송 함수] ─────────
-async function sendEmailAPI({ subject, from, fromName, to, bodyHtml, isTransactional = true }) {
+// 예시) sendEmailAPI.js (또는 server.js 내부)
+async function sendEmailAPI({
+  subject, from, fromName, to,
+  bodyHtml,
+  isTransactional = true,
+  replyTo,          // <--- 추가
+  replyToName       // <--- 추가
+}) {
   const url = "https://api.elasticemail.com/v2/email/send";
   const params = new URLSearchParams();
   params.append("apikey", process.env.ELASTIC_EMAIL_API_KEY);
   params.append("subject", subject);
   params.append("from", from || process.env.ELASTIC_EMAIL_USER);
-  params.append("fromName", fromName || "Smart Talent Matcher");
+  params.append("fromName", fromName || "");
   params.append("to", to);
   params.append("bodyHtml", bodyHtml);
   params.append("isTransactional", isTransactional ? "true" : "false");
+
+  // [새로 추가된 부분] replyTo가 있으면 헤더에 붙이기
+  if (replyTo) {
+    params.append("replyTo", replyTo);
+  }
+  if (replyToName) {
+    params.append("replyToName", replyToName);
+  }
+
   try {
     const response = await fetch(url, { method: "POST", body: params });
     const data = await response.json();
@@ -773,11 +789,9 @@ function parseSelectedName(invoiceHtml) {
   const match = invoiceHtml.match(/<span[^>]*id=["']selected-names["'][^>]*>(.*?)<\/span>/i);
   if (!match || !match[1]) return "";
   let text = match[1].trim();
-  // <span ...> 태그가 또 들어있다면 이후 내용 제거
-  text = text.replace(/\s*<span.*$/i, "");
-  // [Base Package] 제거
-  text = text.replace(/\[Base Package\]\s*/, "").trim();
-  return text;
+  text = text.replace(/\s*<span.*$/i, "");         // <span ...> 태그 이후 제거
+  text = text.replace(/\[Base Package\]\s*/, "");  // [Base Package] 제거
+  return text.trim();
 }
 
 // (대량 메일 전송: Chunk+Delay)
@@ -794,6 +808,7 @@ async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, 
     console.log(`>>> [DEBUG] Sending chunk from index ${i} to ${i + chunkSize - 1} (chunk size = ${chunk.length})`);
 
     const promises = chunk.map((recipientEmail) => {
+      // mailDataTemplate + to: recipientEmail
       const mailData = { ...mailDataTemplate, to: recipientEmail };
       return sendEmailAPI(mailData)
         .then(() => {
@@ -833,6 +848,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
     await order.save();
     console.log(`>>> [DEBUG] Toggled paid from ${oldPaid} to ${order.paid}`);
 
+    // only if payment changed false->true
     if (!oldPaid && order.paid) {
       console.log(">>> [DEBUG] Payment changed from false -> true. Will send 'service started' email AND do bulk emailing.");
 
@@ -859,16 +875,17 @@ app.get("/admin/toggle-payment", async (req, res) => {
       </html>
       `;
 
-      // [수정됨] fromName: "" 로 바꾸고, replyTo 설정
       const mailDataStart = {
         subject: "[Smart Talent Matcher] Your Service Has Started!",
         from: process.env.ELASTIC_EMAIL_USER,
-        fromName: "",              // <-- 기존 "Smart Talent Matcher" 대신 빈 문자열
+        fromName: "",            // 빈 문자열 => 'Smart Talent Matcher' 제거
         to: order.emailAddress,
         bodyHtml: startedHtml,
         isTransactional: true,
-        replyTo: order.emailAddress,      // <-- replyTo를 클라이언트 주소로
-        replyToName: order.emailAddress   // <-- 이름도 같은 값 (원하면 ""로 해도 됨)
+
+        // [중요] Reply-To 필드 설정
+        replyTo: order.emailAddress,
+        replyToName: order.emailAddress
       };
 
       console.log(">>> [DEBUG] Sending service-start email to:", order.emailAddress);
@@ -878,27 +895,30 @@ app.get("/admin/toggle-payment", async (req, res) => {
       // (B) 대량 메일 로직
       console.log(">>> [DEBUG] Starting Bulk Email Logic...");
 
-      const selectedName = parseSelectedName(order.invoice); 
+      const selectedName = parseSelectedName(order.invoice);
       console.log(">>> [DEBUG] selectedName =", selectedName);
 
       if (!selectedName) {
         console.log(">>> [DEBUG] selectedName is empty. Skipping bulk emailing.");
       } else {
-        // [중요] 지역명이 countryOrSource에 저장되어 있으므로, 해당 지역만 필터
+        // find recipients by regionName
         const recipients = await BulkEmailRecipient.find({ countryOrSource: selectedName });
         console.log(">>> [DEBUG] BulkEmailRecipient found:", recipients.length, "docs.");
 
         if (recipients.length === 0) {
           console.log(">>> [DEBUG] No recipients matched. Bulk emailing aborted.");
         } else {
+          // remove duplicates
           const emails = [
             ...new Set(recipients.map(r => (r.email || "").trim().toLowerCase()))
           ].filter(e => e);
+
           console.log(">>> [DEBUG] uniqueEmails after dedup =", emails.length);
 
           const formattedIntro = order.introduction
             ? order.introduction.replace(/\r?\n/g, "<br>")
             : "";
+
           let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
           if (order.headshot) {
             emailHtml += `
@@ -916,15 +936,17 @@ app.get("/admin/toggle-payment", async (req, res) => {
           `;
           emailHtml += `</div>`;
 
-          // [수정됨] fromName: "" + replyTo 설정
+          // bulkMailDataTemplate
           const bulkMailDataTemplate = {
             subject: order.emailSubject || "[No Subject Provided]",
-            from: order.emailAddress,
-            fromName: order.emailAddress,            // <-- 기존 "" 유지
+            from: process.env.ELASTIC_EMAIL_USER,
+            fromName: "",
             bodyHtml: emailHtml,
             isTransactional: false,
-            replyTo: order.emailAddress,     // <-- replyTo 클라이언트
-            replyToName: order.emailAddress  // <-- replyToName
+
+            // [중요] Reply-To 필드 설정
+            replyTo: order.emailAddress,
+            replyToName: order.emailAddress
           };
 
           console.log(">>> [DEBUG] Starting to send Bulk Emails in Chunks...");
