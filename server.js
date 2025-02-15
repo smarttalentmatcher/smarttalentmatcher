@@ -498,19 +498,26 @@ const cleanUpNonFinalOrders = async () => {
 // ───────── [parseSelectedNames 함수: 다중 국가 파싱] ─────────
 // invoice HTML 내 <span id="selected-names">...</span> 영역에서 <br> 태그를 기준으로 먼저 분리한 후,
 // 각 파트를 정리(HTML 태그, 가격정보, 대괄호 라벨 제거)하여 국가명 배열을 반환합니다.
+// ───────── [parseSelectedNames 함수: 다중 국가 파싱 - 정규표현식 버전] ─────────
+// invoice HTML 내 <span id="selected-names">...</span> 영역에서 국가명(대괄호 라벨 무시)을 추출합니다.
 function parseSelectedNames(invoiceHtml) {
   if (!invoiceHtml) return [];
   const match = invoiceHtml.match(/<span\s+id=["']selected-names["'][^>]*>([\s\S]*?)<\/span>/i);
   if (!match) return [];
-  let text = match[1];
-  // 먼저 <br> 태그를 기준으로 분리
-  let parts = text.split(/<br\s*\/?>/gi);
-  let countries = parts.map(part => {
-    let clean = part.replace(/<[^>]+>/g, ""); // HTML 태그 제거
-    clean = clean.replace(/\(\$\d+(\.\d+)? per email\)/gi, ""); // 가격정보 제거
-    clean = clean.replace(/\[[^\]]*\]/g, ""); // 대괄호 라벨 제거 (예: [Base Package])
-    return clean.trim();
-  }).filter(line => line.length > 0);
+  const text = match[1];
+  // 정규표현식을 사용하여 국가명을 추출합니다.
+  // 패턴 설명:
+  //   - (?:\[[^\]]*\]\s*)? : 선택적으로 대괄호 라벨이 있을 수 있음 (예: "[Base Package] ")
+  //   - ([A-Za-z0-9,\.\s\(\)\+\-]+?) : 국가명(숫자나 기호 포함)을 non-greedy로 캡처
+  //   - \s*\(\$\d+(\.\d+)? per email\) : 뒤따르는 가격 정보 패턴
+  const regex = /(?:\[[^\]]*\]\s*)?([A-Za-z0-9,\.\s\(\)\+\-]+?)\s*\(\$\d+(\.\d+)? per email\)/gi;
+  const countries = [];
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    // m[1]에는 캡처된 국가명이 들어있습니다.
+    const country = m[1].trim();
+    if (country) countries.push(country);
+  }
   return countries;
 }
 
