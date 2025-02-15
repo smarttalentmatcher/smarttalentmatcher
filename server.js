@@ -131,7 +131,6 @@ async function sendEmailAPI({ subject, from, fromName, to, bodyHtml, isTransacti
 
 function uploadCSVToDB() {
   return new Promise((resolve, reject) => {
-    // 프로젝트 내의 csv 폴더 경로
     const csvFolderPath = path.join(__dirname, "csv");
     console.log(">>> [CSV Import] Target folder =", csvFolderPath);
 
@@ -165,24 +164,15 @@ function uploadCSVToDB() {
             let insertedCountThisFile = 0;
 
             fs.createReadStream(filePath)
-              // BOM 제거를 위해 bom: true 추가
-              .pipe(csvParser({ headers: true, bom: true }))
+            .pipe(csvParser({
+              headers: ["email"], // 첫 번째 컬럼을 email
+              skipLines: 1,       // CSV의 첫 번째 줄을 건너뛰기
+              bom: true
+            }))
               .on("data", async (row) => {
-                // 디버그: 실제 파싱된 row 내용 확인
-                console.log("[CSV DEBUG] raw row from", file, ":", row);
+                console.log(`[CSV DEBUG] raw row from ${file}:`, row);
 
-                let emailVal = row.email;
-
-                // 혹시 한 개 키만 있고 그 키가 BOM이 섞여서 "﻿email" 식일 수 있으므로 보정
-                if (!emailVal && Object.keys(row).length === 1) {
-                  const weirdKey = Object.keys(row)[0];
-                  if (weirdKey && weirdKey.includes("email")) {
-                    const newKey = weirdKey.replace(/\ufeff/g, "").trim();
-                    emailVal = row[weirdKey];
-                    console.log(">>> Found weird BOM key:", weirdKey, "=> using as", newKey, "=", emailVal);
-                  }
-                }
-
+                const emailVal = row.email;
                 if (emailVal && emailVal.trim() !== "") {
                   try {
                     await BulkEmailRecipient.create({
@@ -199,7 +189,6 @@ function uploadCSVToDB() {
                 filesProcessed++;
                 console.log(`[CSV DEBUG] File '${file}' => insertedCountThisFile = ${insertedCountThisFile}`);
 
-                // 모든 CSV 파일 처리 끝나면 resolve
                 if (filesProcessed === csvFiles.length) {
                   const totalDocs = await BulkEmailRecipient.countDocuments();
                   console.log(`CSV files uploaded to DB. Total BulkEmailRecipient docs = ${totalDocs}`);
