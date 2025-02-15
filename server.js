@@ -73,8 +73,8 @@ const orderSchema = new mongoose.Schema({
 });
 const Order = mongoose.model("Order", orderSchema);
 
-// [중요 수정] 이메일 수신자 (BulkEmailRecipient) 스키마
-// - 중복 허용을 위해 unique 제거
+// [중요 수정] BulkEmailRecipient 스키마  
+// - 중복 허용을 위해 unique 제거  
 // - 지역명(countryOrSource) 필드 추가
 const bulkEmailRecipientSchema = new mongoose.Schema({
   email: { type: String, required: true },
@@ -106,7 +106,7 @@ function generateDateTimeOrderId() {
   return mm + dd + hh + min;
 }
 
-// ───────── [Elastic Email 이용 메일발송 함수 - Reply-To 지원] ─────────
+// ───────── [Elastic Email 메일발송 함수 - Reply-To 지원] ─────────
 async function sendEmailAPI({
   subject,
   from,
@@ -498,17 +498,20 @@ const cleanUpNonFinalOrders = async () => {
 };
 
 // ───────── [parseSelectedNames 함수: 다중 국가 파싱] ─────────
-// 수정: 모든 HTML 태그 제거 후 줄바꿈 기준으로 분리
+// 이 함수는 inner span (가격 정보 등)을 제거한 후, 
+// <br> 태그를 줄바꿈으로 치환하고, 가격 정보("($... per email)") 및 대괄호 라벨을 삭제합니다.
 function parseSelectedNames(invoiceHtml) {
   if (!invoiceHtml) return [];
-  const match = invoiceHtml.match(/<span[^>]*id=["']selected-names["'][^>]*>([\s\S]*?)<\/span>/i);
+  // 먼저, 내부의 span 태그 중 id가 "selected-names"가 아닌 것들은 제거
+  let cleaned = invoiceHtml.replace(/<(?!\/?span\b[^>]*id=["']selected-names["'])\/?span[^>]*>/gi, "");
+  const match = cleaned.match(/<span[^>]*id=["']selected-names["'][^>]*>([\s\S]*?)<\/span>/i);
   if (!match) return [];
   let text = match[1];
-  // <br> 태그를 줄바꿈으로 치환
   text = text.replace(/<br\s*\/?>/gi, "\n");
-  // 모든 HTML 태그 제거
   text = text.replace(/<[^>]+>/g, "");
-  // 대괄호 안 내용 제거
+  // 가격 정보 패턴 "($0.005 per email)" 제거
+  text = text.replace(/\(\$\d+(\.\d+)? per email\)/gi, "");
+  // 대괄호로 된 라벨 제거
   text = text.replace(/\[.*?\]/g, "");
   const lines = text.split("\n").map(line => line.trim()).filter(line => line);
   return lines;
@@ -551,7 +554,7 @@ async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, 
   console.log("✅ [DEBUG] All bulk emails sent with chunk approach!");
 }
 
-// ───────── [/admin/toggle-payment] ─────────
+// ───────── [/admin/toggle-payment 라우트] ─────────
 app.get("/admin/toggle-payment", async (req, res) => {
   try {
     const { orderId } = req.query;
