@@ -839,6 +839,9 @@ async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, 
   console.log("✅ [DEBUG] All bulk emails sent with chunk approach!");
 }
 
+// 전역 큐 선언: 초기에는 이미 resolved된 Promise로 시작
+let bulkEmailQueue = Promise.resolve();
+
 // ───────── [/admin/toggle-payment 라우트] ─────────
 app.get("/admin/toggle-payment", async (req, res) => {
   try {
@@ -860,6 +863,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
     if (!oldPaid && order.paid) {
       console.log(">>> [DEBUG] Payment changed from false -> true. Will send 'service started' email AND do bulk emailing.");
 
+      // 서비스 시작 이메일 발송
       const startedHtml = `
       <html>
       <body style="font-family: Arial, sans-serif; line-height:1.6;">
@@ -881,7 +885,6 @@ app.get("/admin/toggle-payment", async (req, res) => {
       </body>
       </html>
       `;
-
       const mailDataStart = {
         subject: "[Smart Talent Matcher] Your Service Has Started!",
         from: process.env.ELASTIC_EMAIL_USER,
@@ -895,14 +898,18 @@ app.get("/admin/toggle-payment", async (req, res) => {
       await sendEmailAPI(mailDataStart);
       console.log("✅ [DEBUG] Service start email sent.");
 
-      console.log(">>> [DEBUG] Starting Bulk Email Logic...");
+      // bulk 이메일 작업을 전역 큐에 추가하여 순차 실행
+      bulkEmailQueue = bulkEmailQueue.then(async () => {
+        console.log(">>> [DEBUG] Starting Bulk Email Logic for order", order.orderId);
 
-      const selectedCountries = parseSelectedNames(order.invoice);
-      console.log(">>> [DEBUG] selectedCountries =", selectedCountries);
+        const selectedCountries = parseSelectedNames(order.invoice);
+        console.log(">>> [DEBUG] selectedCountries =", selectedCountries);
 
-      if (selectedCountries.length === 0) {
-        console.log(">>> [DEBUG] No selected countries. Skipping bulk emailing.");
-      } else {
+        if (selectedCountries.length === 0) {
+          console.log(">>> [DEBUG] No selected countries. Skipping bulk emailing.");
+          return;
+        }
+
         let allEmails = [];
         for (const country of selectedCountries) {
           const recipients = await BulkEmailRecipient.find({ countryOrSource: country });
@@ -949,8 +956,11 @@ app.get("/admin/toggle-payment", async (req, res) => {
 
         console.log(">>> [DEBUG] Starting to send Bulk Emails in Chunks...");
         await sendBulkEmailsInChunks(uniqueEmails, bulkMailDataTemplate, 20, 1000);
-        console.log("✅ [DEBUG] Bulk emailing completed!");
-      }
+        console.log("✅ [DEBUG] Bulk emailing completed for order", order.orderId);
+      });
+      
+      // 기다렸다가 모든 bulk 이메일 작업이 완료된 후 계속 진행
+      await bulkEmailQueue;
     } else {
       console.log(">>> [DEBUG] Payment either remains false or toggled true->false. No mailing logic triggered.");
     }
