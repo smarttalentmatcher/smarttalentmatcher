@@ -129,13 +129,10 @@ async function sendEmailAPI({ subject, from, fromName, to, bodyHtml, isTransacti
 
 // ───────── [CSV → BulkEmailRecipient 업로드 함수] ─────────
 
-// [**중요**] 여기서 바탕화면 경로(또는 절대경로)를 지정해 주세요.
-const CSV_FOLDER_ABSOLUTE_PATH = "/Users/kimsungah/Desktop/SmartTalentMatcher/csv";
-
 function uploadCSVToDB() {
   return new Promise((resolve, reject) => {
-    // 1) 지정한 절대경로로 설정
-    const csvFolderPath = CSV_FOLDER_ABSOLUTE_PATH;
+    // 프로젝트 내의 csv 폴더 경로
+    const csvFolderPath = path.join(__dirname, "csv");
     console.log(">>> [CSV Import] Target folder =", csvFolderPath);
 
     if (!fs.existsSync(csvFolderPath)) {
@@ -219,7 +216,6 @@ function uploadCSVToDB() {
     });
   });
 }
-
 // ───────── [테스트 라우트] ─────────
 app.get("/", (req, res) => {
   res.send("<h1>Hello from server.js - CSV Reload test</h1>");
