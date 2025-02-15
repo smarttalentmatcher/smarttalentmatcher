@@ -74,8 +74,6 @@ const orderSchema = new mongoose.Schema({
 const Order = mongoose.model("Order", orderSchema);
 
 // [중요 수정] 이메일 수신자 (BulkEmailRecipient) 스키마
-// - 중복 허용을 위해 unique 제거
-// - 지역명(countryOrSource) 필드 추가
 const bulkEmailRecipientSchema = new mongoose.Schema({
   email: { type: String, required: true },
   countryOrSource: { type: String, default: "" }
@@ -498,23 +496,22 @@ const cleanUpNonFinalOrders = async () => {
 };
 
 // ───────── [parseSelectedNames 함수: 다중 국가 파싱] ─────────
-// invoice HTML 내 <span id="selected-names">...</span> 영역에서 <br> 태그를 줄바꿈으로 치환,
-// 모든 HTML 태그, "($... per email)"와 대괄호로 된 라벨을 제거한 후 국가명 배열 반환
+// invoice HTML 내 <span id="selected-names">...</span> 영역에서 <br> 태그를 기준으로 먼저 분리한 후,
+// 각 파트를 정리(HTML 태그, 가격정보, 대괄호 라벨 제거)하여 국가명 배열을 반환합니다.
 function parseSelectedNames(invoiceHtml) {
   if (!invoiceHtml) return [];
   const match = invoiceHtml.match(/<span\s+id=["']selected-names["'][^>]*>([\s\S]*?)<\/span>/i);
   if (!match) return [];
   let text = match[1];
-  // 치환: <br> → newline
-  text = text.replace(/<br\s*\/?>/gi, "\n");
-  // 모든 HTML 태그 제거
-  text = text.replace(/<[^>]+>/g, "");
-  // 가격 정보 제거, 예: ($0.005 per email)
-  text = text.replace(/\(\$\d+(\.\d+)? per email\)/gi, "");
-  // 대괄호 라벨 제거 (각각)
-  text = text.replace(/\[[^\]]*\]/g, "");
-  const lines = text.split(/\n+/).map(line => line.trim()).filter(line => line);
-  return lines;
+  // 먼저 <br> 태그를 기준으로 분리
+  let parts = text.split(/<br\s*\/?>/gi);
+  let countries = parts.map(part => {
+    let clean = part.replace(/<[^>]+>/g, ""); // HTML 태그 제거
+    clean = clean.replace(/\(\$\d+(\.\d+)? per email\)/gi, ""); // 가격정보 제거
+    clean = clean.replace(/\[[^\]]*\]/g, ""); // 대괄호 라벨 제거 (예: [Base Package])
+    return clean.trim();
+  }).filter(line => line.length > 0);
+  return countries;
 }
 
 // ───────── [대량 메일 전송(Chunk+Delay)] ─────────
