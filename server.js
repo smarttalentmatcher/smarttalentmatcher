@@ -858,14 +858,19 @@ app.get("/admin/toggle-payment", async (req, res) => {
       </body>
       </html>
       `;
+
+      // [수정됨] fromName: "" 로 바꾸고, replyTo 설정
       const mailDataStart = {
         subject: "[Smart Talent Matcher] Your Service Has Started!",
         from: process.env.ELASTIC_EMAIL_USER,
-        fromName: "Smart Talent Matcher",
+        fromName: "",              // <-- 기존 "Smart Talent Matcher" 대신 빈 문자열
         to: order.emailAddress,
         bodyHtml: startedHtml,
-        isTransactional: true
+        isTransactional: true,
+        replyTo: order.emailAddress,      // <-- replyTo를 클라이언트 주소로
+        replyToName: order.emailAddress   // <-- 이름도 같은 값 (원하면 ""로 해도 됨)
       };
+
       console.log(">>> [DEBUG] Sending service-start email to:", order.emailAddress);
       await sendEmailAPI(mailDataStart);
       console.log("✅ [DEBUG] Service start email sent.");
@@ -911,12 +916,15 @@ app.get("/admin/toggle-payment", async (req, res) => {
           `;
           emailHtml += `</div>`;
 
+          // [수정됨] fromName: "" + replyTo 설정
           const bulkMailDataTemplate = {
             subject: order.emailSubject || "[No Subject Provided]",
             from: process.env.ELASTIC_EMAIL_USER,
-            fromName: "",
+            fromName: "",            // <-- 기존 "" 유지
             bodyHtml: emailHtml,
-            isTransactional: false
+            isTransactional: false,
+            replyTo: order.emailAddress,     // <-- replyTo 클라이언트
+            replyToName: order.emailAddress  // <-- replyToName
           };
 
           console.log(">>> [DEBUG] Starting to send Bulk Emails in Chunks...");
