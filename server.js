@@ -614,9 +614,6 @@ app.get("/admin/toggle-payment", async (req, res) => {
         bodyHtml: startedHtml,
         isTransactional: true,
 
-        // 회신은 클라이언트 주소로
-        replyTo: order.emailAddress,
-        replyToName: order.emailAddress
       };
 
       console.log(">>> [DEBUG] Sending service-start email to:", order.emailAddress);
