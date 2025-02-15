@@ -21,6 +21,7 @@ import FormData from "form-data";
 import https from "https";
 import { fileURLToPath } from "url";
 
+// [필요한 경로 처리]
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -73,7 +74,7 @@ const orderSchema = new mongoose.Schema({
 });
 const Order = mongoose.model("Order", orderSchema);
 
-// [중요 수정] 이메일 수신자 (BulkEmailRecipient) 스키마
+// [중요] 이메일 수신자 (BulkEmailRecipient) 스키마
 // - 중복 허용을 위해 unique 제거
 // - 지역명(countryOrSource) 필드 추가
 const bulkEmailRecipientSchema = new mongoose.Schema({
@@ -84,6 +85,7 @@ const BulkEmailRecipient = mongoose.model("BulkEmailRecipient", bulkEmailRecipie
 
 // ───────── [Express 앱 설정] ─────────
 const app = express();
+// Render 등에서 자동 할당된 포트를 쓰도록
 const PORT = process.env.PORT || 3000;
 
 app.use((req, res, next) => {
@@ -114,7 +116,7 @@ async function sendEmailAPI({
   to,
   bodyHtml,
   isTransactional = true,
-  replyTo,        // Reply-To 추가
+  replyTo,     // Reply-To 추가
   replyToName
 }) {
   const url = "https://api.elasticemail.com/v2/email/send";
@@ -181,11 +183,16 @@ function uploadCSVToDB() {
             let insertedCountThisFile = 0;
 
             fs.createReadStream(filePath)
-              .pipe(csvParser({
-                headers: ["email"], // 첫 번째 컬럼을 email
-                skipLines: 1,       // CSV의 첫 번째 줄(헤더)을 건너뛰기
-                bom: true
-              }))
+              .pipe(
+                csvParser({
+                  // 첫 번째 열을 "email"로 매핑
+                  headers: ["email"],
+                  // CSV의 첫 줄(헤더: "email")을 건너뛰기
+                  skipLines: 1,
+                  // 한글/특수문자 BOM 처리
+                  bom: true
+                })
+              )
               .on("data", async (row) => {
                 console.log(`[CSV DEBUG] raw row from ${file}:`, row);
                 const emailVal = row.email;
@@ -261,6 +268,7 @@ function sendReminder(order) {
         ? fs.readFileSync(templatePath, "utf-8")
         : "<html><body><p>Invoice details not available.</p></body></html>";
       reminderEmailHtml = reminderEmailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
+
       const mailData = {
         subject: "**Reminder** [Smart Talent Matcher] Invoice for Your Submission",
         from: process.env.ELASTIC_EMAIL_USER,
@@ -440,7 +448,7 @@ async function restoreTimers() {
   }
 }
 
-// ───────── [추가: 미제출(불완전한) 주문 정리 함수] ─────────
+// ───────── [미제출(불완전한) 주문 정리 함수] ─────────
 async function cleanUpIncompleteOrders() {
   const cutoff = new Date(Date.now() - (24 * 60 * 60 * 1000));
   const orders = await Order.find({ status: "draft", createdAt: { $lt: cutoff } });
@@ -464,7 +472,7 @@ async function cleanUpIncompleteOrders() {
   }
 }
 
-// ───────── [추가: DB와 Cloudinary 동기화 함수] ─────────
+// ───────── [DB와 Cloudinary 동기화 함수] ─────────
 async function syncCloudinaryWithDB() {
   try {
     const orders = await Order.find({ headshot: { $ne: "" } });
@@ -496,39 +504,38 @@ async function syncCloudinaryWithDB() {
   }
 }
 
+// 필요 시 추가로 정리할 함수
 const cleanUpNonFinalOrders = async () => {
-  // 필요시 구현
+  // ...
 };
 
 // ───────── [parseSelectedNames 함수: 다중 국가 파싱] ─────────
 function parseSelectedNames(invoiceHtml) {
   if (!invoiceHtml) return [];
 
-  // 1) <span id="selected-names"> ... </span> 전역 매치
+  // <span id="selected-names"> ... </span> 구간만 추출
   const match = invoiceHtml.match(/<span[^>]*id=["']selected-names["'][^>]*>([\s\S]*?)<\/span>/i);
   if (!match) return [];
 
   let text = match[1].trim();
 
-  // 2) <br> 기준으로 분할
+  // <br> 기준으로 여러 줄 분리
   const lines = text.split(/<br\s*\/?>/i);
 
-  // 3) 각 줄마다 불필요한 문구 제거
   return lines
     .map(line => {
-      // (A) [Base Package], [For English Speakers], 등 대괄호 제거
+      // [Base Package], [For English Speakers] 등 대괄호 안 제거
       line = line.replace(/\[.*?\]/g, "");
 
-      // (B) <span>... </span> 전부 제거 (멀티라인 포함)
+      // <span> ... </span> 전부 제거
       line = line.replace(/<span[^>]*>[\s\S]*?<\/span>/g, "");
 
-      // (C) 괄호 안 ( ... ) 전부 제거 → 만약 "(+Canada)"는 남기고 싶다면 이건 주석 처리
+      // (필요시) 괄호 안 ( ... ) 제거 → "(+Canada)"도 제거된다면 주석처리하세요
       // line = line.replace(/\(.*?\)/g, "");
 
-      // 마지막 트리밍
       return line.trim();
     })
-    .filter(x => x);  // 빈 문자열은 제외
+    .filter(x => x);
 }
 
 // ───────── [대량 메일 전송(Chunk+Delay)] ─────────
@@ -590,7 +597,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
     if (!oldPaid && order.paid) {
       console.log(">>> [DEBUG] Payment changed from false -> true. Will send 'service started' email AND do bulk emailing.");
 
-      // (A) "서비스 시작" 메일
+      // (A) "서비스 시작" 안내 메일
       const startedHtml = `
       <html>
       <body style="font-family: Arial, sans-serif; line-height:1.6;">
@@ -616,11 +623,10 @@ app.get("/admin/toggle-payment", async (req, res) => {
       const mailDataStart = {
         subject: "[Smart Talent Matcher] Your Service Has Started!",
         from: process.env.ELASTIC_EMAIL_USER,
-        fromName: "Smart Talent Matcher",    // 바꿀 경우 ""로
+        fromName: "Smart Talent Matcher",
         to: order.emailAddress,
         bodyHtml: startedHtml,
         isTransactional: true,
-
       };
 
       console.log(">>> [DEBUG] Sending service-start email to:", order.emailAddress);
@@ -679,10 +685,11 @@ app.get("/admin/toggle-payment", async (req, res) => {
         const bulkMailDataTemplate = {
           subject: order.emailSubject || "[No Subject Provided]",
           from: process.env.ELASTIC_EMAIL_USER,
-          fromName: "",   // 보낸 사람 이름
+          fromName: "",
           bodyHtml: emailHtml,
           isTransactional: false,
 
+          // Reply-To를 주문자 이메일로
           replyTo: order.emailAddress,
           replyToName: order.emailAddress
         };
