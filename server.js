@@ -498,19 +498,22 @@ const cleanUpNonFinalOrders = async () => {
 };
 
 // ───────── [parseSelectedNames 함수: 다중 국가 파싱] ─────────
-// invoice HTML 내 <span id="selected-names">...</span> 영역에서 줄바꿈 및 HTML 태그를 제거하고,
-// "($... per email)"와 대괄호 라벨을 삭제한 후, 국가명 배열을 반환합니다.
+// invoice HTML 내 <span id="selected-names">...</span> 영역에서 <br> 태그를 줄바꿈으로 치환,
+// 모든 HTML 태그, "($... per email)"와 대괄호로 된 라벨을 제거한 후 국가명 배열 반환
 function parseSelectedNames(invoiceHtml) {
   if (!invoiceHtml) return [];
   const match = invoiceHtml.match(/<span\s+id=["']selected-names["'][^>]*>([\s\S]*?)<\/span>/i);
   if (!match) return [];
   let text = match[1];
+  // 치환: <br> → newline
   text = text.replace(/<br\s*\/?>/gi, "\n");
+  // 모든 HTML 태그 제거
   text = text.replace(/<[^>]+>/g, "");
+  // 가격 정보 제거, 예: ($0.005 per email)
   text = text.replace(/\(\$\d+(\.\d+)? per email\)/gi, "");
-  // 변경된 부분: 대괄호 안 텍스트를 제거 (각각 제거)
+  // 대괄호 라벨 제거 (각각)
   text = text.replace(/\[[^\]]*\]/g, "");
-  const lines = text.split("\n").map(line => line.trim()).filter(line => line);
+  const lines = text.split(/\n+/).map(line => line.trim()).filter(line => line);
   return lines;
 }
 
