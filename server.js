@@ -73,8 +73,8 @@ const orderSchema = new mongoose.Schema({
 });
 const Order = mongoose.model("Order", orderSchema);
 
-// [중요 수정] BulkEmailRecipient 스키마  
-// - 중복 허용을 위해 unique 제거  
+// [중요 수정] 이메일 수신자 (BulkEmailRecipient) 스키마
+// - 중복 허용을 위해 unique 제거
 // - 지역명(countryOrSource) 필드 추가
 const bulkEmailRecipientSchema = new mongoose.Schema({
   email: { type: String, required: true },
@@ -106,7 +106,7 @@ function generateDateTimeOrderId() {
   return mm + dd + hh + min;
 }
 
-// ───────── [Elastic Email 메일발송 함수 - Reply-To 지원] ─────────
+// ───────── [Elastic Email 이용 메일발송 함수 - Reply-To 지원] ─────────
 async function sendEmailAPI({
   subject,
   from,
@@ -498,20 +498,16 @@ const cleanUpNonFinalOrders = async () => {
 };
 
 // ───────── [parseSelectedNames 함수: 다중 국가 파싱] ─────────
-// 이 함수는 inner span (가격 정보 등)을 제거한 후, 
-// <br> 태그를 줄바꿈으로 치환하고, 가격 정보("($... per email)") 및 대괄호 라벨을 삭제합니다.
+// invoice HTML 내 <span id="selected-names">...</span> 영역에서 줄바꿈 및 HTML 태그를 제거하고,
+// "($... per email)"와 대괄호 라벨을 삭제한 후, 국가명 배열을 반환합니다.
 function parseSelectedNames(invoiceHtml) {
   if (!invoiceHtml) return [];
-  // 먼저, 내부의 span 태그 중 id가 "selected-names"가 아닌 것들은 제거
-  let cleaned = invoiceHtml.replace(/<(?!\/?span\b[^>]*id=["']selected-names["'])\/?span[^>]*>/gi, "");
-  const match = cleaned.match(/<span[^>]*id=["']selected-names["'][^>]*>([\s\S]*?)<\/span>/i);
+  const match = invoiceHtml.match(/<span\s+id=["']selected-names["'][^>]*>([\s\S]*?)<\/span>/i);
   if (!match) return [];
   let text = match[1];
   text = text.replace(/<br\s*\/?>/gi, "\n");
   text = text.replace(/<[^>]+>/g, "");
-  // 가격 정보 패턴 "($0.005 per email)" 제거
   text = text.replace(/\(\$\d+(\.\d+)? per email\)/gi, "");
-  // 대괄호로 된 라벨 제거
   text = text.replace(/\[.*?\]/g, "");
   const lines = text.split("\n").map(line => line.trim()).filter(line => line);
   return lines;
