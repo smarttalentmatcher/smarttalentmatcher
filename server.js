@@ -496,21 +496,32 @@ const cleanUpNonFinalOrders = async () => {
 };
 
 // ───────── [parseSelectedNames 함수: 다중 국가 파싱] ─────────
-// invoice HTML 내 <span id="selected-names">...</span> 영역에서 <br> 태그를 기준으로 먼저 분리한 후,
-// 각 파트를 정리(HTML 태그, 가격정보, 대괄호 라벨 제거)하여 국가명 배열을 반환합니다.
 function parseSelectedNames(invoiceHtml) {
   if (!invoiceHtml) return [];
-  // 정규표현식 설명:
-  // (?:\[[^\]]*\]\s*)?  => 대괄호 라벨 (예: [Base Package])가 선택적으로 있을 수 있음.
-  // ([^<]+?)           => 태그가 나오기 전까지의 텍스트(즉, 국가명)를 non-greedy로 캡처.
-  // \s*\(\$\d+(\.\d+)? per email\)  => 가격정보 (예: ($0.005 per email))를 매칭.
-  const regex = /(?:\[[^\]]*\]\s*)?([^<]+?)\s*\(\$\d+(\.\d+)? per email\)/gi;
-  const countries = [];
-  let match;
-  while ((match = regex.exec(invoiceHtml)) !== null) {
-    const country = match[1].trim();
-    if (country) countries.push(country);
-  }
+  // 먼저, <span id="selected-names">의 내용을 추출
+  const match = invoiceHtml.match(/<span\s+id=["']selected-names["'][^>]*>([\s\S]*?)<\/span>/i);
+  if (!match) return [];
+  let text = match[1];
+  // <br> 태그를 newline으로 치환
+  text = text.replace(/<br\s*\/?>/gi, "\n");
+  // 남은 HTML 태그 제거
+  text = text.replace(/<[^>]+>/g, "");
+  // 결과 예시: 
+  // "[Base Package] United States (+Canada) ($0.005 per email)
+  //  [For English Speakers] United Kingdom (+EU) ($0.005 per email)"
+  
+  // newline 기준으로 분리
+  let lines = text.split(/\n+/).map(line => line.trim()).filter(line => line.length > 0);
+  
+  // 각 줄에서 가격 정보와 대괄호 라벨 제거
+  let countries = lines.map(line => {
+    // 가격 정보 제거: "($0.005 per email)" 패턴
+    line = line.replace(/\(\$\S+ per email\)/gi, "").trim();
+    // 대괄호 라벨 제거: 예) "[Base Package]" 또는 "[For English Speakers]"
+    line = line.replace(/\[[^\]]+\]/g, "").trim();
+    return line;
+  }).filter(line => line.length > 0);
+  
   return countries;
 }
 
