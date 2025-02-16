@@ -239,10 +239,10 @@ app.get("/", (req, res) => {
 
 // ───────── [타이머 관련 상수 & 변수] ─────────
 const TWELVE_HOURS = 1 * 60 * 1000; // 12 * 60 * 60 * 1000
-const TWENTY_FOUR_HOURS = 2 * 1000; //24 * 60 * 60 * 1000
+const TWENTY_FOUR_HOURS = 2 * 60 * 1000; //24 * 60 * 60 * 1000
 const FORTY_EIGHT_HOURS = 3 * 60 * 1000; //48 * 60 * 60 * 1000
-const ONE_WEEK = 1 * 60 * 60 * 1000;  // 1주 7 * 24 * 60 * 60 * 1000
-const TWO_WEEKS = 2 * 60 * 60 * 1000; // 2주 14 * 24 * 60 * 60 * 1000
+const ONE_WEEK = 1 * 60 * 1000;  // 1주 7 * 24 * 60 * 60 * 1000
+const TWO_WEEKS = 2 * 60 * 1000; // 2주 14 * 24 * 60 * 60 * 1000
 
 // 타이머 기록용 객체
 const reminderTimers = {};
