@@ -1303,6 +1303,24 @@ app.get("/api/webhook-events", async (req, res) => {
     res.status(500).json({ success: false, message: "Error fetching webhook events" });
   }
 });
+// ───────── [웹훅 이벤트 삭제 API (여러개 동시 삭제도 지원)] ─────────
+app.post("/api/webhook-events/delete", async (req, res) => {
+  try {
+    // 프론트엔드에서 { ids: ["63f935...", "63f936...", ...] } 형태로 전달
+    const { ids } = req.body; 
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: "No IDs provided." });
+    }
+
+    // _id가 해당 배열에 포함된 문서들 모두 삭제
+    await EmailEvent.deleteMany({ _id: { $in: ids } });
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("Error deleting events:", err);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
 
 // ───────── [서버 리슨 및 초기 정리 작업] ─────────
 app.listen(PORT, "0.0.0.0", () => {

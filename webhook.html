@@ -8,6 +8,27 @@
     .filter-container { margin-bottom: 10px; }
     .filter-container label { margin-right: 10px; }
     .filter-container select { margin-right: 20px; }
+    .back-button {
+      margin-bottom: 20px;
+      padding: 10px 20px;
+      font-size: 1rem;
+      background-color: #00BCD4;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .delete-selected-button {
+      margin-left: 20px;
+      padding: 8px 16px;
+      font-size: 0.9rem;
+      background-color: #e74c3c;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
     table { 
       width: 100%; 
       border-collapse: collapse; 
@@ -22,15 +43,16 @@
       word-wrap: break-word;
     }
     th { background: #f0f0f0; }
-    .back-button {
-      margin-bottom: 20px;
-      padding: 10px 20px;
-      font-size: 1rem;
-      background-color: #00BCD4;
+    .delete-button {
+      background-color: #ff5252;
       color: #fff;
       border: none;
       border-radius: 4px;
+      padding: 6px 10px;
       cursor: pointer;
+    }
+    .delete-button:hover {
+      background-color: #ff2e2e;
     }
   </style>
 </head>
@@ -51,24 +73,33 @@
     <select id="orderIdFilter">
       <option value="all">All</option>
     </select>
+
+    <!-- 선택된 이벤트 일괄삭제 버튼 -->
+    <button class="delete-selected-button" id="deleteSelectedBtn">Delete Selected</button>
   </div>
 
   <table id="eventsTable">
     <colgroup>
-      <col style="width: 9.09%;">
-      <col style="width: 9.09%;">
-      <col style="width: 9.09%;">
-      <col style="width: 9.09%;">
-      <col style="width: 9.09%;">
-      <col style="width: 9.09%;">
-      <col style="width: 9.09%;">
-      <col style="width: 9.09%;">
-      <col style="width: 9.09%;">
-      <col style="width: 9.09%;">
-      <col style="width: 9.09%;">
+      <!-- 체크박스 -->
+      <col style="width: 4%;">
+      <col style="width: 9%;">
+      <col style="width: 9%;">
+      <col style="width: 9%;">
+      <col style="width: 9%;">
+      <col style="width: 9%;">
+      <col style="width: 9%;">
+      <col style="width: 9%;">
+      <col style="width: 9%;">
+      <col style="width: 9%;">
+      <col style="width: 9%;">
+      <col style="width: 9%;">
     </colgroup>
     <thead>
       <tr>
+        <th>
+          <!-- 전체선택 체크박스 -->
+          <input type="checkbox" id="selectAllCheckbox" />
+        </th>
         <th>Received At</th>
         <th>Extra Tag</th>
         <th>Email</th>
@@ -80,12 +111,15 @@
         <th>Bounce/Error</th>
         <th>Other Info</th>
         <th>ID</th>
+        <th>Delete</th>
       </tr>
     </thead>
     <tbody></tbody>
   </table>
 
   <script>
+    let allEvents = [];
+
     async function fetchEvents() {
       try {
         const response = await fetch('/api/webhook-events');
@@ -97,134 +131,253 @@
         }
 
         // 모든 이벤트
-        const allEvents = result.events;
+        allEvents = result.events;
 
-        // 두 드롭다운에 채울 집합 생성
-        const nonOrderTagSet = new Set();
-        const orderIdSet = new Set();
+        // 필터 옵션 업데이트
+        updateFilterOptions(allEvents);
 
-        allEvents.forEach(event => {
-          const tag = event.data?.extratag || "N/A";
-          // 주문번호는 generateDateTimeOrderId()로 만들어진 8자리 숫자로 가정
-          if (/^\d{8}$/.test(tag)) {
-            orderIdSet.add(tag);
-          } else {
-            nonOrderTagSet.add(tag);
-          }
-        });
-
-        // 첫 번째 드롭다운 (일반 extraTag)
-        const nonOrderFilter = document.getElementById('nonOrderExtraTagFilter');
-        nonOrderTagSet.forEach(tag => {
-          const option = document.createElement('option');
-          option.value = tag;
-          option.textContent = tag;
-          nonOrderFilter.appendChild(option);
-        });
-
-        // 두 번째 드롭다운 (Order ID)
-        const orderIdFilter = document.getElementById('orderIdFilter');
-        orderIdSet.forEach(tag => {
-          const option = document.createElement('option');
-          option.value = tag;
-          option.textContent = tag;
-          orderIdFilter.appendChild(option);
-        });
-
-        // 렌더링 함수: 두 드롭다운의 선택값에 해당하는 이벤트를 union(OR) 방식으로 필터링
-        function renderEvents() {
-          const nonOrderSelected = nonOrderFilter.value;
-          const orderSelected = orderIdFilter.value;
-
-          const filtered = allEvents.filter(event => {
-            const tag = event.data?.extratag || "N/A";
-            // 두 드롭다운 모두 "all"이면 전체 이벤트 표시
-            if (nonOrderSelected === "all" && orderSelected === "all") return true;
-            // union: tag가 nonOrderSelected OR orderSelected와 일치하면 포함
-            if (nonOrderSelected !== "all" && tag === nonOrderSelected) return true;
-            if (orderSelected !== "all" && tag === orderSelected) return true;
-            return false;
-          });
-
-          const tbody = document.querySelector('#eventsTable tbody');
-          tbody.innerHTML = '';
-
-          filtered.forEach(event => {
-            const row = document.createElement('tr');
-
-            // 구조분해: email, messageId, extratag, 나머지 데이터
-            const { email, messageId, extratag, ...rest } = event.data || {};
-            const eventType = (event.eventType || "").toLowerCase();
-
-            // 1) Received At
-            const receivedCell = document.createElement('td');
-            receivedCell.textContent = new Date(event.receivedAt).toLocaleString();
-            row.appendChild(receivedCell);
-
-            // 2) Extra Tag
-            const tagCell = document.createElement('td');
-            tagCell.textContent = extratag || "N/A";
-            row.appendChild(tagCell);
-
-            // 3) Email
-            const emailCell = document.createElement('td');
-            emailCell.textContent = email || "N/A";
-            row.appendChild(emailCell);
-
-            // 4) Sent
-            const sentCell = document.createElement('td');
-            sentCell.textContent = (eventType === "sent") ? "✓" : "";
-            row.appendChild(sentCell);
-
-            // 5) Opened
-            const openedCell = document.createElement('td');
-            openedCell.textContent = (eventType === "opened") ? "✓" : "";
-            row.appendChild(openedCell);
-
-            // 6) Clicked
-            const clickedCell = document.createElement('td');
-            clickedCell.textContent = (eventType === "clicked") ? "✓" : "";
-            row.appendChild(clickedCell);
-
-            // 7) Unsubscribed
-            const unsubCell = document.createElement('td');
-            unsubCell.textContent = (eventType === "unsubscribed") ? "✓" : "";
-            row.appendChild(unsubCell);
-
-            // 8) Complaints
-            const complaintCell = document.createElement('td');
-            complaintCell.textContent = (eventType === "complaint" || eventType === "spamreport") ? "✓" : "";
-            row.appendChild(complaintCell);
-
-            // 9) Bounce/Error
-            const bounceCell = document.createElement('td');
-            bounceCell.textContent = (["bounce", "error", "failed"].includes(eventType)) ? "✓" : "";
-            row.appendChild(bounceCell);
-
-            // 10) Other Info
-            const otherInfoCell = document.createElement('td');
-            otherInfoCell.textContent = JSON.stringify(rest);
-            row.appendChild(otherInfoCell);
-
-            // 11) ID (messageId)
-            const idCell = document.createElement('td');
-            idCell.textContent = messageId || "N/A";
-            row.appendChild(idCell);
-
-            tbody.appendChild(row);
-          });
-        }
-
-        // 초기 렌더링
+        // 테이블 최초 렌더링
         renderEvents();
-
-        // 드롭다운 변경 시 다시 렌더링
-        nonOrderFilter.addEventListener('change', renderEvents);
-        orderIdFilter.addEventListener('change', renderEvents);
       } catch (err) {
         console.error('Error fetching events:', err);
       }
     }
+
+    function updateFilterOptions(events) {
+      const nonOrderTagSet = new Set();
+      const orderIdSet = new Set();
+
+      events.forEach(event => {
+        // Elastic Email에서 넘어온 extraTag는 보통 "merge_extratag" 키에 저장됨
+        // 하지만 백엔드에서 event.data.extratag 으로 저장했을 수도 있으니 확인
+        const data = event.data || {};
+        const tag = data.merge_extratag || data.extratag || 'N/A';
+
+        // 주문번호는 generateDateTimeOrderId()로 만든 8자리 숫자라고 가정
+        if (/^\d{8}$/.test(tag)) {
+          orderIdSet.add(tag);
+        } else {
+          nonOrderTagSet.add(tag);
+        }
+      });
+
+      // 두 드롭다운에 값을 채움
+      const nonOrderFilter = document.getElementById('nonOrderExtraTagFilter');
+      const orderIdFilter = document.getElementById('orderIdFilter');
+
+      // 기존 옵션 제거 (All 제외)
+      while (nonOrderFilter.options.length > 1) {
+        nonOrderFilter.remove(1);
+      }
+      while (orderIdFilter.options.length > 1) {
+        orderIdFilter.remove(1);
+      }
+
+      nonOrderTagSet.forEach(tag => {
+        const option = document.createElement('option');
+        option.value = tag;
+        option.textContent = tag;
+        nonOrderFilter.appendChild(option);
+      });
+
+      orderIdSet.forEach(tag => {
+        const option = document.createElement('option');
+        option.value = tag;
+        option.textContent = tag;
+        orderIdFilter.appendChild(option);
+      });
+    }
+
+    function renderEvents() {
+      const nonOrderFilter = document.getElementById('nonOrderExtraTagFilter');
+      const orderIdFilter = document.getElementById('orderIdFilter');
+
+      const nonOrderSelected = nonOrderFilter.value;
+      const orderSelected = orderIdFilter.value;
+
+      // union(OR) 방식 필터링
+      const filtered = allEvents.filter(event => {
+        const data = event.data || {};
+        const tag = data.merge_extratag || data.extratag || 'N/A';
+
+        if (nonOrderSelected === 'all' && orderSelected === 'all') return true;
+        if (nonOrderSelected !== 'all' && tag === nonOrderSelected) return true;
+        if (orderSelected !== 'all' && tag === orderSelected) return true;
+        return false;
+      });
+
+      const tbody = document.querySelector('#eventsTable tbody');
+      tbody.innerHTML = '';
+
+      filtered.forEach(event => {
+        // DB에 저장된 _id
+        const eventId = event._id;
+        const data = event.data || {};
+
+        // 구조분해
+        const {
+          to,
+          from,
+          status,
+          messageid,
+          merge_extratag,
+          extratag,
+          ...rest
+        } = data;
+
+        // eventType (Opened, Sent 등)
+        const eventType = (event.eventType || '').toLowerCase();
+
+        // 최종 ExtraTag
+        const finalExtraTag = merge_extratag || extratag || 'N/A';
+
+        const row = document.createElement('tr');
+
+        // (1) 체크박스 셀
+        const checkboxCell = document.createElement('td');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'row-checkbox';
+        checkbox.value = eventId;
+        checkboxCell.appendChild(checkbox);
+        row.appendChild(checkboxCell);
+
+        // (2) Received At
+        const receivedCell = document.createElement('td');
+        receivedCell.textContent = new Date(event.receivedAt).toLocaleString();
+        row.appendChild(receivedCell);
+
+        // (3) Extra Tag
+        const tagCell = document.createElement('td');
+        tagCell.textContent = finalExtraTag;
+        row.appendChild(tagCell);
+
+        // (4) Email (== "to")
+        const emailCell = document.createElement('td');
+        emailCell.textContent = to || 'N/A';
+        row.appendChild(emailCell);
+
+        // (5) Sent
+        const sentCell = document.createElement('td');
+        sentCell.textContent = (eventType === 'sent' || status === 'Sent') ? '✓' : '';
+        row.appendChild(sentCell);
+
+        // (6) Opened
+        const openedCell = document.createElement('td');
+        openedCell.textContent = (eventType === 'opened' || status === 'Opened') ? '✓' : '';
+        row.appendChild(openedCell);
+
+        // (7) Clicked
+        const clickedCell = document.createElement('td');
+        clickedCell.textContent = (eventType === 'clicked') ? '✓' : '';
+        row.appendChild(clickedCell);
+
+        // (8) Unsubscribed
+        const unsubCell = document.createElement('td');
+        unsubCell.textContent = (eventType === 'unsubscribed') ? '✓' : '';
+        row.appendChild(unsubCell);
+
+        // (9) Complaints (complaint, spamreport)
+        const complaintCell = document.createElement('td');
+        complaintCell.textContent = (eventType === 'complaint' || eventType === 'spamreport') ? '✓' : '';
+        row.appendChild(complaintCell);
+
+        // (10) Bounce/Error
+        const bounceCell = document.createElement('td');
+        bounceCell.textContent = ['bounce', 'error', 'failed'].includes(eventType) ? '✓' : '';
+        row.appendChild(bounceCell);
+
+        // (11) Other Info
+        const otherInfoCell = document.createElement('td');
+        otherInfoCell.textContent = JSON.stringify(rest);
+        row.appendChild(otherInfoCell);
+
+        // (12) ID (messageid)
+        const idCell = document.createElement('td');
+        idCell.textContent = messageid || 'N/A';
+        row.appendChild(idCell);
+
+        // (13) Delete 버튼
+        const deleteCell = document.createElement('td');
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.className = 'delete-button';
+        deleteBtn.onclick = () => deleteSingleEvent(eventId);
+        deleteCell.appendChild(deleteBtn);
+        row.appendChild(deleteCell);
+
+        tbody.appendChild(row);
+      });
+    }
+
+    // 단일 이벤트 삭제
+    async function deleteSingleEvent(eventId) {
+      if (!confirm('Delete this event?')) return;
+      try {
+        const resp = await fetch('/api/webhook-events/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: [eventId] })
+        });
+        const result = await resp.json();
+        if (result.success) {
+          alert('Deleted successfully!');
+          // 삭제 후 다시 조회
+          fetchEvents();
+        } else {
+          alert('Failed to delete: ' + (result.message || 'Unknown error'));
+        }
+      } catch (err) {
+        console.error('Error deleting event:', err);
+      }
+    }
+
+    // 여러 이벤트 삭제
+    async function deleteSelectedEvents() {
+      const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+      if (!checkboxes.length) {
+        alert('No events selected for deletion.');
+        return;
+      }
+      if (!confirm(`Delete ${checkboxes.length} selected event(s)?`)) return;
+
+      // 선택된 체크박스의 value == _id 배열
+      const idsToDelete = Array.from(checkboxes).map(cb => cb.value);
+
+      try {
+        const resp = await fetch('/api/webhook-events/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: idsToDelete })
+        });
+        const result = await resp.json();
+        if (result.success) {
+          alert('Deleted successfully!');
+          fetchEvents();
+        } else {
+          alert('Failed to delete: ' + (result.message || 'Unknown error'));
+        }
+      } catch (err) {
+        console.error('Error deleting selected events:', err);
+      }
+    }
+
+    // "Select All" 체크박스 핸들러
+    function toggleSelectAll() {
+      const selectAll = document.getElementById('selectAllCheckbox').checked;
+      const checkboxes = document.querySelectorAll('.row-checkbox');
+      checkboxes.forEach(cb => {
+        cb.checked = selectAll;
+      });
+    }
+
+    // 초기 바인딩
+    document.getElementById('selectAllCheckbox').addEventListener('change', toggleSelectAll);
+    document.getElementById('deleteSelectedBtn').addEventListener('click', deleteSelectedEvents);
+
+    // 드롭다운 변경 시 다시 렌더링
+    document.getElementById('nonOrderExtraTagFilter').addEventListener('change', renderEvents);
+    document.getElementById('orderIdFilter').addEventListener('change', renderEvents);
 
     // 페이지 로드 시 이벤트 데이터 조회
     fetchEvents();
