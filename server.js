@@ -1,8 +1,9 @@
 // --------------------------------------------------------------------------------
-// SERVER.JS (ESM 버전) - 전체 코드 (FINAL)
+// SERVER.JS (ESM 버전) - 전체 코드 (MODIFIED FINAL)
 //  + 2주(TWO_WEEKS) 팔로업 메일 + 타이머 복원
 //  + Review (CRUD) 기능 추가
 //  + Paid 상태 재확인 (12h/24h 메일 발송 전) 수정 완료
+//  + [FIX] 결제 이전에는 대량 메일·2주 팔로업이 발송되지 않도록 수정
 // --------------------------------------------------------------------------------
 
 // ───────── [필요한 import들 & dotenv 설정] ─────────
@@ -250,7 +251,8 @@ app.get("/", (req, res) => {
   res.send("<h1>Hello from server.js - CSV Reload test</h1>");
 });
 
-// ───────── [타이머 관련 상수 & 변수 (원래 시간)] ─────────
+// ───────── [타이머 관련 상수 (테스트 간격 1/2/3분, 실제는 12/24/48h)] ─────────
+// 여기서는 1분 = 12시간, 2분 = 24시간, 3분 = 48시간, 1분 = 2주 로 단축
 const TWELVE_HOURS = 1 * 60 * 1000;
 const TWENTY_FOUR_HOURS = 2 * 60 * 1000;
 const FORTY_EIGHT_HOURS = 3 * 60 * 1000;
@@ -826,14 +828,15 @@ app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) =>
   }
 });
 
-// (최종 제출: Draft -> Final)
+// (최종 제출: Draft -> Final) => 인보이스만 발송 + 12/24/48h 타이머. (대량 메일은 결제 후)
 app.post("/final-submit", multer().none(), async (req, res) => {
   try {
     console.log(">>> [final-submit] Step 0: Endpoint called");
     const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice, venmoId } = req.body;
     console.log(">>> [final-submit] Step 1: Request body received:", req.body);
+
+    // 1) 동일 이메일(미결제) final 주문 모두 삭제
     console.log(">>> [final-submit] Step 2: Checking for old final (unpaid) orders with same emailAddress");
-    
     const oldFinals = await Order.find({ emailAddress, status: "final", paid: false });
     if (oldFinals.length > 0) {
       console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Deleting them...`);
@@ -861,6 +864,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
         });
         console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
 
+        // Cloudinary 업로드된 headshot 있으면 삭제
         if (oldOrder.headshot) {
           const parts = oldOrder.headshot.split("/");
           const uploadIndex = parts.findIndex((part) => part === "upload");
@@ -879,6 +883,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       }
     }
 
+    // 2) Draft Order 가져와서 status=final
     console.log(">>> [final-submit] Step 3: Finding draftOrder by orderId:", orderId);
     const draftOrder = await Order.findOne({ orderId, status: "draft" });
     if (!draftOrder) {
@@ -898,7 +903,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     await draftOrder.save();
     console.log("✅ Final submission order updated in MongoDB (status=final):", draftOrder);
 
-    // (1) 관리자에게 배우 자료 이메일 전송 (단일 이메일: extraTag "AdminActorInfo")
+    // 3) 관리자에게 배우 자료 이메일
     console.log(">>> [final-submit] Step 5: Sending admin email with actor info");
     const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
     let adminEmailHtml = `<div style="font-family: Arial, sans-serif;">`;
@@ -924,12 +929,11 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       to: process.env.ELASTIC_EMAIL_USER,
       bodyHtml: adminEmailHtml,
       isTransactional: true,
-      // 관리자 이메일: extraTag "AdminActorInfo"
-      extraTag: "AdminActorInfo"
+      extraTag: "AdminActorInfo" // 관리자 이메일
     });
     console.log("✅ Admin email sent.");
 
-    // (2) 클라이언트(주문자)에게 인보이스 이메일 전송 (단일 이메일: extraTag "ClientInvoice")
+    // 4) 클라이언트(주문자)에게 인보이스 이메일
     console.log(">>> [final-submit] Step 6: Sending client invoice email");
     const templatePath = path.join(__dirname, "email.html");
     let clientEmailHtml;
@@ -948,150 +952,23 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       to: draftOrder.emailAddress,
       bodyHtml: clientEmailHtml,
       isTransactional: true,
-      // 클라이언트 인보이스 이메일: extraTag "ClientInvoice"
       extraTag: "ClientInvoice"
     });
     console.log("✅ Client Invoice email sent.");
 
-    // (3) 12시간 리마인드, 24시간 자동 취소, 48시간 자동 삭제 스케줄링
+    // 5) 12h/24h/48h 타이머 스케줄
     console.log(">>> [final-submit] Step 7: Scheduling timers for reminder, auto-cancel, and auto-delete");
     scheduleReminder(draftOrder);
     scheduleAutoCancel(draftOrder);
     scheduleAutoDelete(draftOrder);
 
-    // (4) 2주 후 팔로업 메일 스케줄링 (단일 이메일: extraTag "2weeksFollowUp")
-    scheduleTwoWeekFollowUpEmail(draftOrder);
-
-    // (5) Bulk 이메일 발송 로직 (Bulk 이메일: extraTag = order.orderId)
-    console.log(">>> [final-submit] Step 9: Adding bulk email task to global queue");
-    bulkEmailQueue = bulkEmailQueue.then(async () => {
-      console.log(">>> [DEBUG] Starting Bulk Email Logic for order", draftOrder.orderId);
-
-      const selectedCountries = parseSelectedNames(draftOrder.invoice);
-      console.log(">>> [DEBUG] selectedCountries =", selectedCountries);
-
-      if (selectedCountries.length === 0) {
-        console.log(">>> [DEBUG] No selected countries. Skipping bulk emailing.");
-        return;
-      }
-
-      let allEmails = [];
-      for (const country of selectedCountries) {
-        const recipients = await BulkEmailRecipient.find({ countryOrSource: country });
-        console.log(`>>> [DEBUG] found ${recipients.length} for countryOrSource="${country}"`);
-        recipients.forEach(r => {
-          if (r.email) {
-            allEmails.push(r.email.trim().toLowerCase());
-          }
-        });
-      }
-      const uniqueEmails = [...new Set(allEmails)];
-      console.log(">>> [DEBUG] uniqueEmails after dedup =", uniqueEmails.length);
-
-      const formattedIntroBulk = draftOrder.introduction
-        ? draftOrder.introduction.replace(/\r?\n/g, "<br>")
-        : "";
-      let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
-      if (draftOrder.headshot) {
-        emailHtml += `
-          <div>
-            <img src="${draftOrder.headshot}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
-          </div>
-          <br>
-        `;
-      }
-      emailHtml += `
-        <p><strong>Acting Reel:</strong> <a href="${draftOrder.actingReel}" target="_blank">${draftOrder.actingReel}</a></p>
-        <p><strong>Resume:</strong> <a href="${draftOrder.resumeLink}" target="_blank">${draftOrder.resumeLink}</a></p>
-        <br>
-        <p>${formattedIntroBulk}</p>
-      `;
-      emailHtml += `</div>`;
-
-      // Bulk 이메일: extraTag는 주문번호(order.orderId)
-      const bulkMailDataTemplate = {
-        subject: draftOrder.emailSubject || "[No Subject Provided]",
-        from: process.env.ELASTIC_EMAIL_USER,
-        fromName: "",
-        bodyHtml: emailHtml,
-        isTransactional: false,
-        replyTo: draftOrder.emailAddress,
-        replyToName: draftOrder.emailAddress,
-        extraTag: draftOrder.orderId
-      };
-
-      console.log(">>> [DEBUG] Starting to send Bulk Emails in Chunks...");
-      await sendBulkEmailsInChunks(uniqueEmails, bulkMailDataTemplate, 20, 1000);
-      console.log("✅ [DEBUG] Bulk emailing completed for order", draftOrder.orderId);
-
-      draftOrder.bulkEmailsCompletedAt = new Date();
-      await draftOrder.save();
-
-      const completedHtml = `
-<html>
-  <body style="font-family: Arial, sans-serif; line-height:1.6;">
-    <h2 style="margin-bottom: 0;">🚀 All Emails Have Been Sent! 🚀</h2><br><br>
-    <p>Dear Customer,</p><br><br>
-    <p>
-      We are thrilled to inform you that all bulk emails for your selected region(s)
-      <br><strong>${selectedCountries.join(", ")}</strong> have been successfully delivered!
-    </p><br>
-    <p>
-      Thank you for trusting our service. We are committed to helping you find the right people.
-    </p><br>
-    <p>
-      ✅ Now that your introduction has reached Talent Agents, Casting Directors, and Managers in
-      <strong>${selectedCountries.join(", ")}</strong>.
-    </p>
-    <p>
-      ✅ Replies will be sent directly to the email you provided.
-    </p>
-    <p>
-      ✅ Some may respond with rejections (e.g., roster is full, only working with locals, etc.). This is completely normal, so please don't be discouraged.
-    </p>
-    <p>
-      ✅ A 10% discount for the long-targeting emails adjustment is already reflected in your invoice.
-    </p>
-    <p>
-      ✅ Please note that our responsibility at Smart Talent Matcher ends here.
-    </p>
-    <p>
-      ✅ You may be invited to phone calls or Zoom meetings. Present yourself professionally to leave a great impression and seize the opportunity!
-    </p>
-    <p>
-      ✅ You'll receive a 2-week follow-up email in two weeks! Stay tuned!
-    </p><br><br>
-    <p>
-      Best Regards,<br>
-      Smart Talent Matcher Team
-    </p>
-  </body>
-</html>
-`;
-      const mailDataCompleted = {
-        subject: `[Smart Talent Matcher] #${draftOrder.orderId} All Emails Sent!`,
-        from: process.env.ELASTIC_EMAIL_USER,
-        fromName: "Smart Talent Matcher",
-        to: `${draftOrder.emailAddress}, info@smarttalentmatcher.com`,
-        bodyHtml: completedHtml,
-        isTransactional: true,
-        // 최종 확인 이메일: extraTag "FinalConfirmation"
-        extraTag: "BulkAllSent"
-      };
-      console.log(">>> [DEBUG] Sending final 'all sent' email to:", draftOrder.emailAddress);
-      await sendEmailAPI(mailDataCompleted);
-      console.log("✅ [DEBUG] Final confirmation email sent.");
-
-      // (H) 2주 후 팔로업 메일 스케줄링 already done above
-      scheduleTwoWeekFollowUpEmail(draftOrder);
-    });
-
-    await bulkEmailQueue;
+    // !!! [주의] 아직 미결제이므로 대량 메일/2주팔로업은 여기서 안 함 !!!
+    // => 결제(true)로 바뀔 때(admin/toggle-payment) bulkEmail 전송 & 2주 팔로업 스케줄 진행
 
     console.log(">>> [final-submit] Step 8: Returning success response");
     return res.json({
       success: true,
-      message: "Final submission complete! Admin/client emails sent, timers scheduled.",
+      message: "Final submission complete! Admin/client emails sent, timers scheduled (no bulk mail yet).",
       order: draftOrder
     });
   } catch (error) {
@@ -1138,7 +1015,7 @@ app.post("/admin/delete-order", async (req, res) => {
   }
 });
 
-// ───────── [parseSelectedNames 함수: 미리 정해진 6개 이름 중 매칭] ─────────
+// ───────── [parseSelectedNames 함수: invoiceHtml 내 선택된 국가 식별] ─────────
 function parseSelectedNames(invoiceHtml) {
   if (!invoiceHtml) return [];
   const countryList = [
@@ -1199,7 +1076,7 @@ async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, 
 // 전역 큐 선언: 초기에는 이미 resolved된 Promise로 시작
 let bulkEmailQueue = Promise.resolve();
 
-// ───────── [admin/toggle-payment 라우트] ─────────
+// ───────── [admin/toggle-payment 라우트 - 결제상태 토글] ─────────
 app.get("/admin/toggle-payment", async (req, res) => {
   try {
     const { orderId } = req.query;
@@ -1217,11 +1094,11 @@ app.get("/admin/toggle-payment", async (req, res) => {
     await order.save();
     console.log(`>>> [DEBUG] Toggled paid from ${oldPaid} to ${order.paid}`);
 
-    // bulk 이메일 로직은 paid가 true일 때만 실행됨
+    // paid가 false→true가 된 시점에 대량 메일 + 2주 팔로업 스케줄
     if (!oldPaid && order.paid) {
       console.log(">>> [DEBUG] Payment changed from false -> true. Will send 'service started' email AND then trigger bulk emailing.");
 
-      // (A) 서비스 시작 이메일 발송 (단일 이메일: extraTag "ServiceStarted")
+      // (A) "서비스 시작" 이메일
       const startedHtml = `
       <html>
       <body style="font-family: Arial, sans-serif; line-height:1.6;">
@@ -1255,71 +1132,78 @@ app.get("/admin/toggle-payment", async (req, res) => {
       const serviceStartResult = await sendEmailAPI(mailDataStart);
       if (serviceStartResult && serviceStartResult.success) {
         console.log("✅ [DEBUG] Service start email sent.");
+      }
 
-        // (B) 이제 bulk 이메일 로직 실행 (Bulk 이메일: extraTag = order.orderId)
-        bulkEmailQueue = bulkEmailQueue.then(async () => {
-          console.log(">>> [DEBUG] Starting Bulk Email Logic for order", order.orderId);
+      // (B) 결제 직후 Bulk 이메일 로직
+      bulkEmailQueue = bulkEmailQueue.then(async () => {
+        console.log(">>> [DEBUG] Starting Bulk Email Logic for order", order.orderId);
 
-          const selectedCountries = parseSelectedNames(order.invoice);
-          console.log(">>> [DEBUG] selectedCountries =", selectedCountries);
+        const selectedCountries = parseSelectedNames(order.invoice);
+        console.log(">>> [DEBUG] selectedCountries =", selectedCountries);
 
-          if (selectedCountries.length === 0) {
-            console.log(">>> [DEBUG] No selected countries. Skipping bulk emailing.");
-            return;
-          }
+        // 인보이스에서 영역을 못찾았다면 스킵
+        if (selectedCountries.length === 0) {
+          console.log(">>> [DEBUG] No selected countries. Skipping bulk emailing.");
+          return;
+        }
 
-          let allEmails = [];
-          for (const country of selectedCountries) {
-            const recipients = await BulkEmailRecipient.find({ countryOrSource: country });
-            console.log(`>>> [DEBUG] found ${recipients.length} for countryOrSource="${country}"`);
-            recipients.forEach(r => {
-              if (r.email) {
-                allEmails.push(r.email.trim().toLowerCase());
-              }
-            });
-          }
-          const uniqueEmails = [...new Set(allEmails)];
-          console.log(">>> [DEBUG] uniqueEmails after dedup =", uniqueEmails.length);
+        // 대상 이메일 목록 (중복 제거)
+        let allEmails = [];
+        for (const country of selectedCountries) {
+          const recipients = await BulkEmailRecipient.find({ countryOrSource: country });
+          console.log(`>>> [DEBUG] found ${recipients.length} for countryOrSource="${country}"`);
+          recipients.forEach(r => {
+            if (r.email) {
+              allEmails.push(r.email.trim().toLowerCase());
+            }
+          });
+        }
+        const uniqueEmails = [...new Set(allEmails)];
+        console.log(">>> [DEBUG] uniqueEmails after dedup =", uniqueEmails.length);
 
-          const formattedIntro = order.introduction
-            ? order.introduction.replace(/\r?\n/g, "<br>")
-            : "";
-          let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
-          if (order.headshot) {
-            emailHtml += `
-              <div>
-                <img src="${order.headshot}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
-              </div>
-              <br>
-            `;
-          }
+        // 메일 템플릿
+        const formattedIntro = order.introduction
+          ? order.introduction.replace(/\r?\n/g, "<br>")
+          : "";
+        let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
+        if (order.headshot) {
           emailHtml += `
-            <p><strong>Acting Reel:</strong> <a href="${order.actingReel}" target="_blank">${order.actingReel}</a></p>
-            <p><strong>Resume:</strong> <a href="${order.resumeLink}" target="_blank">${order.resumeLink}</a></p>
+            <div>
+              <img src="${order.headshot}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
+            </div>
             <br>
-            <p>${formattedIntro}</p>
           `;
-          emailHtml += `</div>`;
+        }
+        emailHtml += `
+          <p><strong>Acting Reel:</strong> <a href="${order.actingReel}" target="_blank">${order.actingReel}</a></p>
+          <p><strong>Resume:</strong> <a href="${order.resumeLink}" target="_blank">${order.resumeLink}</a></p>
+          <br>
+          <p>${formattedIntro}</p>
+        `;
+        emailHtml += `</div>`;
 
-          const bulkMailDataTemplate = {
-            subject: order.emailSubject || "[No Subject Provided]",
-            from: process.env.ELASTIC_EMAIL_USER,
-            fromName: "",
-            bodyHtml: emailHtml,
-            isTransactional: false,
-            replyTo: order.emailAddress,
-            replyToName: order.emailAddress,
-            extraTag: order.orderId
-          };
+        const bulkMailDataTemplate = {
+          subject: order.emailSubject || "[No Subject Provided]",
+          from: process.env.ELASTIC_EMAIL_USER,
+          fromName: "",
+          bodyHtml: emailHtml,
+          isTransactional: false,
+          replyTo: order.emailAddress,
+          replyToName: order.emailAddress,
+          extraTag: order.orderId // Bulk 이메일: order.orderId
+        };
 
-          console.log(">>> [DEBUG] Starting to send Bulk Emails in Chunks...");
-          await sendBulkEmailsInChunks(uniqueEmails, bulkMailDataTemplate, 20, 1000);
-          console.log("✅ [DEBUG] Bulk emailing completed for order", order.orderId);
+        // 대량 메일 발송 (chunk)
+        console.log(">>> [DEBUG] Starting to send Bulk Emails in Chunks...");
+        await sendBulkEmailsInChunks(uniqueEmails, bulkMailDataTemplate, 20, 1000);
+        console.log("✅ [DEBUG] Bulk emailing completed for order", order.orderId);
 
-          order.bulkEmailsCompletedAt = new Date();
-          await order.save();
+        // DB에 bulkEmailsCompletedAt 기록
+        order.bulkEmailsCompletedAt = new Date();
+        await order.save();
 
-          const completedHtml = `
+        // (C) 대량 메일 발송 완료 후 최종 안내 이메일
+        const completedHtml = `
 <html>
   <body style="font-family: Arial, sans-serif; line-height:1.6;">
     <h2 style="margin-bottom: 0;">🚀 All Emails Have Been Sent! 🚀</h2><br><br>
@@ -1360,27 +1244,24 @@ app.get("/admin/toggle-payment", async (req, res) => {
   </body>
 </html>
 `;
-          const mailDataCompleted = {
-            subject: `[Smart Talent Matcher] #${order.orderId} All Emails Sent!`,
-            from: process.env.ELASTIC_EMAIL_USER,
-            fromName: "Smart Talent Matcher",
-            to: `${order.emailAddress}, info@smarttalentmatcher.com`,
-            bodyHtml: completedHtml,
-            isTransactional: true,
-            extraTag: "BulkAllSent"
-          };
-          console.log(">>> [DEBUG] Sending final 'all sent' email to:", order.emailAddress);
-          await sendEmailAPI(mailDataCompleted);
-          console.log("✅ [DEBUG] Final confirmation email sent.");
+        const mailDataCompleted = {
+          subject: `[Smart Talent Matcher] #${order.orderId} All Emails Sent!`,
+          from: process.env.ELASTIC_EMAIL_USER,
+          fromName: "Smart Talent Matcher",
+          to: `${order.emailAddress}, info@smarttalentmatcher.com`,
+          bodyHtml: completedHtml,
+          isTransactional: true,
+          extraTag: "BulkAllSent"
+        };
+        console.log(">>> [DEBUG] Sending final 'all sent' email to:", order.emailAddress);
+        await sendEmailAPI(mailDataCompleted);
+        console.log("✅ [DEBUG] Final confirmation email sent.");
 
-          // (H) 2주 후 팔로업 메일 스케줄링
-          scheduleTwoWeekFollowUpEmail(order);
-        });
+        // (D) 2주 후 팔로업 메일 스케줄
+        scheduleTwoWeekFollowUpEmail(order);
+      });
 
-        await bulkEmailQueue;
-      } else {
-        console.log(">>> [DEBUG] Payment either remains false or toggled true->false. No mailing logic triggered.");
-      }
+      await bulkEmailQueue; // 모두 완료 시점
     }
 
     res.json({ success: true, order });
@@ -1427,6 +1308,7 @@ app.get("/api/webhook-events", async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
 
+  // 서버 시작 시점: CSV 읽어 BulkEmailRecipient 초기화 + 타이머 복원 + 기타 정리
   uploadCSVToDB()
     .then(() => {
       console.log("Bulk email recipients updated from CSV (Full Refresh).");
