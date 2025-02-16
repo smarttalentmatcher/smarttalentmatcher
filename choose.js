@@ -44,7 +44,7 @@ function applyPromo() {
     promoMessage.textContent = "WELCOME10 applied: +10% discount!";
   } else if (code === "RETURN10") {
     promoRate = 0.1;
-    promoMessage.textContent = "RETURN10 applied: +15% discount!";
+    promoMessage.textContent = "RETURN10 applied: +10% discount!";
   } else if (code !== "") {
     promoMessage.textContent = "Invalid promo code.";
   }
