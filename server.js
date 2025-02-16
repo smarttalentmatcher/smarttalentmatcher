@@ -238,18 +238,18 @@ app.get("/", (req, res) => {
 });
 
 // ───────── [타이머 관련 상수 & 변수] ─────────
-const TWELVE_HOURS = 1 * 60 * 1000; // 12 * 60 * 60 * 1000
-const TWENTY_FOUR_HOURS = 2 * 60 * 1000; //24 * 60 * 60 * 1000
-const FORTY_EIGHT_HOURS = 3 * 60 * 1000; //48 * 60 * 60 * 1000
-const ONE_WEEK = 1 * 60 * 1000;  // 1주 7 * 24 * 60 * 60 * 1000
-const TWO_WEEKS = 2 * 60 * 1000; // 2주 14 * 24 * 60 * 60 * 1000
+const TWELVE_HOURS = 1 * 60 * 1000; // 12분 (테스트용)
+const TWENTY_FOUR_HOURS = 2 * 60 * 1000; // 24분 (테스트용)
+const FORTY_EIGHT_HOURS = 3 * 60 * 1000; // 48분 (테스트용)
+const ONE_WEEK = 1 * 60 * 1000;  // 1주 (테스트용)
+const TWO_WEEKS = 2 * 60 * 1000; // 2주 (테스트용)
 
 // 타이머 기록용 객체
 const reminderTimers = {};
 const autoCancelTimers = {};
 const autoDeleteTimers = {};
 const oneWeekTimers = {};  
-const twoWeekTimers = {}; 
+const twoWeekTimers = {};
 
 // ───────── [12시간 후 리마인더 이메일 & 전송 함수] ─────────
 function scheduleReminder(order) {
@@ -354,7 +354,7 @@ function autoCancelOrder(order) {
             </p>
             <br><br>
             <a 
-              href="smarttalentmatcher.com" 
+              href="https://smarttalentmatcher.com" 
               target="_blank" 
               style="
                 display: inline-block;
@@ -493,7 +493,7 @@ function scheduleTwoWeekFollowUpEmail(order) {
 
 async function sendOneWeekEmail(order) {
   const followUpHtml = `
-    <!-- 테이블 100% 폭, 가운데 정렬 -->
+<!-- 테이블 100% 폭, 가운데 정렬 -->
 <table width="100%" border="0" cellspacing="0" cellpadding="0" 
        style="font-family: Arial, sans-serif; background-color:#f9f9f9; color:#333; line-height:1.6;">
   <tr>
@@ -572,13 +572,14 @@ async function sendOneWeekEmail(order) {
 }
 
 async function sendTwoWeekEmail(order) {
-  // 2주차 메일 템플릿
   const twoWeekHtml = `
 <!-- 테이블 100% 폭, 가운데 정렬 -->
-<table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: Arial, sans-serif; background-color:#f9f9f9; color: #333; line-height:1.6;">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" 
+       style="font-family: Arial, sans-serif; background-color:#f9f9f9; color:#333; line-height:1.6;">
   <tr>
     <td align="center" style="padding: 30px;">
-      <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color:#ffffff; border-radius:8px; padding:20px;">
+      <table width="600" border="0" cellspacing="0" cellpadding="0" 
+             style="background-color:#ffffff; border-radius:8px; padding:20px;">
         <tr>
           <td align="center" style="padding: 20px;">
             <h2 style="color:#d9534f; margin-top:0;">
@@ -590,7 +591,7 @@ async function sendTwoWeekEmail(order) {
             </p>
             <br>
             <p style="margin:0 0 15px 0;">
-              We hope you've found <strong>the Right Person</strong>,<br><br>
+              We hope you've found <strong>the Right Person</strong>.<br><br>
               However, if not, don’t be discouraged!<br> 
               You can always <strong>update your materials and try again.</strong>
               (I personally tried <strong>2 times</strong> before success!)
@@ -611,9 +612,10 @@ async function sendTwoWeekEmail(order) {
             ">
               RETURN10
             </div>
-            <br><br><p style="margin:15px 0 20px 0;">
+            <br><br>
+            <p style="margin:15px 0 20px 0;">
               We’d also love to hear your feedback! Whether you succeeded or faced challenges, 
-                  your thoughts help us improve.
+              your thoughts help us improve.
             </p>
             <br><br>
             <a 
@@ -649,7 +651,6 @@ async function sendTwoWeekEmail(order) {
   </tr>
 </table>
   `;
-
   const mailDataFollowUp = {
     subject: "[Smart Talent Matcher] Two-Week Follow-Up",
     from: process.env.ELASTIC_EMAIL_USER,
@@ -662,7 +663,7 @@ async function sendTwoWeekEmail(order) {
     console.log(">>> [DEBUG] Sending 2-week follow-up email to:", order.emailAddress);
     await sendEmailAPI(mailDataFollowUp);
 
-    // 보냈다면 DB 업데이트
+    // DB 업데이트
     order.twoWeekFollowUpSent = true;
     await order.save();
 
@@ -1079,7 +1080,8 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     console.log(">>> [final-submit] Step 8: Returning success response");
     return res.json({
       success: true,
-      message: "Final submission complete! Admin/client emails sent, timers scheduled."
+      message: "Final submission complete! Admin/client emails sent, timers scheduled.",
+      order: draftOrder
     });
   } catch (error) {
     console.error("❌ Error in final submission:", error);
@@ -1228,11 +1230,9 @@ app.get("/admin/toggle-payment", async (req, res) => {
           Thank you for trusting our service. We are committed to helping you find the right people.
         </p><br>
         <p>
-          ✅Once all emails corresponding to your selected region have been sent,
+          Once all emails corresponding to your selected region have been sent,
           you will receive a confirmation email.
         </p><br><br>
-       
-        
         <p>Best Regards,<br>Smart Talent Matcher Team</p>
       </body>
       </html>
@@ -1318,53 +1318,42 @@ app.get("/admin/toggle-payment", async (req, res) => {
         await order.save();
 
         // (G) All Emails Sent 안내메일
-const completedHtml = `
+        const completedHtml = `
 <html>
   <body style="font-family: Arial, sans-serif; line-height:1.6;">
-    <h2 style="margin-bottom: 0;">🚀 All Emails Have Been Sent! 🚀</h2>
-
+    <h2 style="margin-bottom: 0;">🚀 All Emails Have Been Sent! 🚀</h2><br><br>
     <p>Dear Customer,</p><br><br>
     <p>
       We are thrilled to inform you that all bulk emails for your selected region(s)
-      <br><strong>${selectedCountries.join(", ")}</strong><br>
-      have been successfully delivered!
-    </p>
-
+      <br><strong>${selectedCountries.join(", ")}</strong> have been successfully delivered!
+    </p><br>
     <p>
       Thank you for trusting our service. We are committed to helping you find the right people.
     </p><br>
-
     <p>
       ✅ Now that your introduction has reached Talent Agents, Casting Directors, and Managers in
       <strong>${selectedCountries.join(", ")}</strong>, we hope you see positive results soon.
     </p>
-
     <p>
       ✅ Replies will be sent directly to the email you provided.
     </p>
-
     <p>
       ✅ Some may respond with rejections (e.g., roster is full, only working with locals, etc.).
-      This is completely normal, so please don't be discouraged.
+      <br>This is completely normal, so please don't be discouraged.
     </p>
-
     <p>
       ✅ A 10% discount for the long-targeting emails adjustment is already reflected in your invoice.
     </p>
-
     <p>
       ✅ Please note that our responsibility at Smart Talent Matcher ends here.
     </p>
-
     <p>
-      ✅ You may be invited to phone calls or Zoom meetings. Present yourself professionally
-      to leave a great impression and seize the opportunity!
+      ✅ You may be invited to phone calls or Zoom meetings. <br>
+      Present yourself professionally to leave a great impression and seize the opportunity!
     </p>
-
     <p>
       ✅ You'll receive a 1-week follow-up email in one week! Stay tuned!
     </p><br><br>
-
     <p>
       Best Regards,<br>
       Smart Talent Matcher Team
