@@ -483,13 +483,18 @@ async function sendTwoWeekEmail(order) {
             <br>
             <p style="margin:0 0 15px 0;">
               We hope you've found <strong>the Right Person</strong>.<br><br>
-              However, if not, don’t be discouraged!<br> 
-              You can always <strong>update your materials and try again.</strong>
+             
+              💡 Check which <strong>platform</strong> they use and the regions they have access to for breakdown services.<br>
+              💡 Verify whether the contract is <strong>Exclusive</strong> or <strong>Non-Exclusive</strong>.<br>
+              💡 Always review any contracts before signing (ask ChatGPT for help if needed)!<br><br>
+             
+              However, <strong>if not,</strong> don't be discouraged!<br>
+              You can always update your materials and try again.<br>
               (I personally tried <strong>2 times</strong> before success!)
             </p>
             <br>
             <p style="margin:0 0 15px 0;">
-             Use the promo code below to get <strong>10% off</strong> on your next trial:
+              Use the promo code below to get <strong>10% off on your next trial!</strong>
             </p>
             <div style="
               font-size: 1.4rem; 
@@ -505,10 +510,10 @@ async function sendTwoWeekEmail(order) {
             </div>
             <br><br>
             <p style="margin:15px 0 20px 0;">
-              We’d also love to hear your feedback! Whether you succeeded or faced challenges, 
+              We’d also love to hear your feedback!<br>
+              Whether you succeeded or faced challenges,<br>
               your thoughts help us improve.
             </p>
-            <br><br>
             <a 
               href="https://smarttalentmatcher.com/review.html"
               target="_blank" 
