@@ -8,8 +8,19 @@
     .filter-container { margin-bottom: 10px; }
     .filter-container label { margin-right: 10px; }
     .filter-container select { margin-right: 20px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; vertical-align: top; }
+    table { 
+      width: 100%; 
+      border-collapse: collapse; 
+      margin-top: 10px; 
+      table-layout: fixed; 
+    }
+    th, td { 
+      border: 1px solid #ccc; 
+      padding: 8px; 
+      text-align: left; 
+      vertical-align: top; 
+      word-wrap: break-word;
+    }
     th { background: #f0f0f0; }
     .back-button {
       margin-bottom: 20px;
@@ -43,6 +54,19 @@
   </div>
 
   <table id="eventsTable">
+    <colgroup>
+      <col style="width: 9.09%;">
+      <col style="width: 9.09%;">
+      <col style="width: 9.09%;">
+      <col style="width: 9.09%;">
+      <col style="width: 9.09%;">
+      <col style="width: 9.09%;">
+      <col style="width: 9.09%;">
+      <col style="width: 9.09%;">
+      <col style="width: 9.09%;">
+      <col style="width: 9.09%;">
+      <col style="width: 9.09%;">
+    </colgroup>
     <thead>
       <tr>
         <th>Received At</th>
@@ -128,7 +152,7 @@
           filtered.forEach(event => {
             const row = document.createElement('tr');
 
-            // 구조분해: email, messageId, extratag, 그 외 나머지 데이터
+            // 구조분해: email, messageId, extratag, 나머지 데이터
             const { email, messageId, extratag, ...rest } = event.data || {};
             const eventType = (event.eventType || "").toLowerCase();
 
