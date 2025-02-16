@@ -1307,6 +1307,12 @@ app.get("/admin/toggle-payment", async (req, res) => {
     res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 });
+// 웹훅 수신 라우트: Elastic Email이 이벤트 발생 시 POST 요청을 보내면 처리
+app.post("/webhook", (req, res) => {
+  console.log(">>> Received Webhook from Elastic Email:", req.body);
+  // 이벤트 데이터 처리 로직을 여기에 추가할 수 있습니다.
+  res.sendStatus(200); // 반드시 200 OK를 반환
+});
 
 // ───────── [서버 리슨 및 초기 정리 작업] ─────────
 app.listen(PORT, "0.0.0.0", () => {
