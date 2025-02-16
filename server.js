@@ -1,6 +1,6 @@
 // --------------------------------------------------------------------------------
 // SERVER.JS (ESM 버전) - 전체 코드
-//  + 1주(ONE_WEEK) / 2주(TWO_WEEKS) 팔로업 메일 + 타이머 복원
+//  + 2주(TWO_WEEKS) 팔로업 메일 + 타이머 복원
 //  + Review (CRUD) 기능 추가
 // --------------------------------------------------------------------------------
 
@@ -75,7 +75,7 @@ const orderSchema = new mongoose.Schema({
 
   // ───────── (추가) 대량 메일 완료 시점 & 팔로업 메일 전송 여부 ─────────
   bulkEmailsCompletedAt: { type: Date, default: null },
-  oneWeekFollowUpSent: { type: Boolean, default: false },
+  // oneWeekFollowUpSent: { type: Boolean, default: false }, // 제거
   twoWeekFollowUpSent: { type: Boolean, default: false }
 });
 const Order = mongoose.model("Order", orderSchema);
@@ -241,14 +241,12 @@ app.get("/", (req, res) => {
 const TWELVE_HOURS = 1 * 60 * 1000; // 12분 (테스트용)
 const TWENTY_FOUR_HOURS = 2 * 60 * 1000; // 24분 (테스트용)
 const FORTY_EIGHT_HOURS = 3 * 60 * 1000; // 48분 (테스트용)
-const ONE_WEEK = 1 * 60 * 1000;  // 1주 (테스트용)
-const TWO_WEEKS = 2 * 60 * 1000; // 2주 (테스트용)
+const TWO_WEEKS = 1 * 60 * 1000; // 2주 (테스트용)
 
-// 타이머 기록용 객체
+// 타이머 기록용 객체 (1주 관련은 제거)
 const reminderTimers = {};
 const autoCancelTimers = {};
 const autoDeleteTimers = {};
-const oneWeekTimers = {};  
 const twoWeekTimers = {};
 
 // ───────── [12시간 후 리마인더 이메일 & 전송 함수] ─────────
@@ -438,35 +436,8 @@ async function autoDeleteOrder(order) {
   }
 }
 
-// ───────── [1주 / 2주 팔로업 메일: 스케줄 및 발송 함수] ─────────
-function scheduleOneWeekFollowUpEmail(order) {
-  // 이미 보냈거나 bulkEmailsCompletedAt 없으면 skip
-  if (order.oneWeekFollowUpSent) return;
-  if (!order.bulkEmailsCompletedAt) {
-    console.log(">>> [DEBUG] bulkEmailsCompletedAt not set. Cannot schedule 1-week follow-up for", order.orderId);
-    return;
-  }
-  if (oneWeekTimers[order.orderId]) {
-    clearTimeout(oneWeekTimers[order.orderId]);
-    delete oneWeekTimers[order.orderId];
-  }
-
-  const timePassed = Date.now() - order.bulkEmailsCompletedAt.getTime();
-  const timeLeft = ONE_WEEK - timePassed;
-  if (timeLeft <= 0) {
-    // 이미 1주일 이상 지났다면 즉시 발송
-    sendOneWeekEmail(order);
-    return;
-  }
-  oneWeekTimers[order.orderId] = setTimeout(() => {
-    sendOneWeekEmail(order);
-  }, timeLeft);
-
-  console.log(`⏰ Scheduled 1-week follow-up email for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
-}
-
+// ───────── [2주 팔로업 메일: 스케줄 및 발송 함수] ─────────
 function scheduleTwoWeekFollowUpEmail(order) {
-  // 이미 보냈거나 bulkEmailsCompletedAt 없으면 skip
   if (order.twoWeekFollowUpSent) return;
   if (!order.bulkEmailsCompletedAt) {
     console.log(">>> [DEBUG] bulkEmailsCompletedAt not set. Cannot schedule 2-week follow-up for", order.orderId);
@@ -489,86 +460,6 @@ function scheduleTwoWeekFollowUpEmail(order) {
   }, timeLeft);
 
   console.log(`⏰ Scheduled 2-week follow-up email for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
-}
-
-async function sendOneWeekEmail(order) {
-  const followUpHtml = `
-<!-- 테이블 100% 폭, 가운데 정렬 -->
-<table width="100%" border="0" cellspacing="0" cellpadding="0" 
-       style="font-family: Arial, sans-serif; background-color:#f9f9f9; color:#333; line-height:1.6;">
-  <tr>
-    <td align="center" style="padding: 30px;">
-      <table width="600" border="0" cellspacing="0" cellpadding="0" 
-             style="background-color:#ffffff; border-radius:8px; padding:20px;">
-        <tr>
-          <td align="center" style="padding: 20px;">
-            
-            <!-- 제목 -->
-            <h2 style="color:#d9534f; margin-top:0;">
-              It's Been a Week! How's It Going?
-            </h2>
-            
-            <!-- 받는 사람 이름 -->
-            <p style="margin: 20px 0 15px 0;">
-              Hello ${order.emailAddress ? order.emailAddress.split("@")[0] : ""},
-            </p>
-            
-            <!-- 안내 문구 1 -->
-            <p style="margin: 0 0 15px 0;">
-              We hope you've received some meaningful replies.<br>
-              Usually, responses come steadily throughout the first two weeks.
-            </p>
-            
-            <!-- 안내 문구 2 -->
-            <p style="margin: 0 0 15px 0; text-align: left;">
-              💡 Check which <strong>platform</strong> they use, and which <strong>regions</strong> they have access to for breakdown services.<br>
-              💡 Check whether the contract is <strong>Exclusive</strong> or <strong>Non-Exclusive</strong>.<br>
-              💡 Make sure to <strong>REVIEW</strong> any contracts before signing 
-              <strong>(you can even use ChatGPT for help!)</strong>
-            </p>
-            
-            <!-- 안내 문구 3 -->
-            <p style="margin: 0 0 15px 0;">
-              You'll receive a 2-week follow-up email in two weeks! Stay tuned!
-            </p>
-            
-            <!-- 서명 -->
-            <p style="margin:30px 0 0 0;">
-              Best Regards,<br>
-              Smart Talent Matcher
-            </p>
-            
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>
-  `;
-  const mailDataFollowUp = {
-    subject: "[Smart Talent Matcher] One-Week Follow-Up",
-    from: process.env.ELASTIC_EMAIL_USER,
-    fromName: "Smart Talent Matcher",
-    to: order.emailAddress,
-    bodyHtml: followUpHtml,
-    isTransactional: true,
-  };
-  try {
-    console.log(">>> [DEBUG] Sending 1-week follow-up email to:", order.emailAddress);
-    await sendEmailAPI(mailDataFollowUp);
-
-    // DB 업데이트
-    order.oneWeekFollowUpSent = true;
-    await order.save();
-
-    console.log("✅ [DEBUG] 1-week follow-up email sent & order updated.");
-
-    // 1주차 메일 보낸 뒤, 2주차 스케줄 설정
-    scheduleTwoWeekFollowUpEmail(order);
-
-  } catch (err) {
-    console.error("❌ [DEBUG] Error sending 1-week follow-up email:", err);
-  }
 }
 
 async function sendTwoWeekEmail(order) {
@@ -673,7 +564,7 @@ async function sendTwoWeekEmail(order) {
   }
 }
 
-// ───────── [서버 시작 시, 미결제 final 주문 & 1주/2주 팔로업 복원] ─────────
+// ───────── [서버 시작 시, 미결제 final 주문 & 2주 팔로업 복원] ─────────
 async function restoreTimers() {
   try {
     // 1) (기존) 미결제 final 주문: 12h, 24h, 48h
@@ -685,30 +576,18 @@ async function restoreTimers() {
       scheduleAutoDelete(order);
     });
 
-    // 2) 결제된 + bulkEmailsCompletedAt 설정 + 1주차 안 보낸
-    const needOneWeek = await Order.find({
-      status: "final",
-      paid: true,
-      bulkEmailsCompletedAt: { $ne: null },
-      oneWeekFollowUpSent: false
-    });
-    needOneWeek.forEach((order) => {
-      scheduleOneWeekFollowUpEmail(order);
-    });
-
-    // 3) 결제된 + bulkEmailsCompletedAt 설정 + 1주차는 보냈지만 2주차 안 보낸
+    // 2) 결제된 + bulkEmailsCompletedAt 설정 + 2주차 안 보낸 (1주 팔로업은 제거)
     const needTwoWeek = await Order.find({
       status: "final",
       paid: true,
       bulkEmailsCompletedAt: { $ne: null },
-      oneWeekFollowUpSent: true,
       twoWeekFollowUpSent: false
     });
     needTwoWeek.forEach((order) => {
       scheduleTwoWeekFollowUpEmail(order);
     });
 
-    console.log(`✅ Timers restored. (unpaid final=${pendingOrders.length}, 1-week=${needOneWeek.length}, 2-week=${needTwoWeek.length})`);
+    console.log(`✅ Timers restored. (unpaid final=${pendingOrders.length}, 2-week=${needTwoWeek.length})`);
   } catch (err) {
     console.error("❌ Error restoring timers:", err);
   }
@@ -1076,7 +955,10 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     scheduleAutoCancel(draftOrder);
     scheduleAutoDelete(draftOrder);
 
-    // (4) 최종 응답
+    // (4) 2주 후 팔로업 메일 스케줄링
+    scheduleTwoWeekFollowUpEmail(draftOrder);
+
+    // (5) 최종 응답
     console.log(">>> [final-submit] Step 8: Returning success response");
     return res.json({
       success: true,
@@ -1332,14 +1214,13 @@ app.get("/admin/toggle-payment", async (req, res) => {
     </p><br>
     <p>
       ✅ Now that your introduction has reached Talent Agents, Casting Directors, and Managers in
-      <strong>${selectedCountries.join(", ")}</strong>, we hope you see positive results soon.
+      <strong>${selectedCountries.join(", ")}</strong>.
     </p>
     <p>
       ✅ Replies will be sent directly to the email you provided.
     </p>
     <p>
-      ✅ Some may respond with rejections (e.g., roster is full, only working with locals, etc.).
-      <br>This is completely normal, so please don't be discouraged.
+      ✅ Some may respond with rejections (e.g., roster is full, only working with locals, etc.). This is completely normal, so please don't be discouraged.
     </p>
     <p>
       ✅ A 10% discount for the long-targeting emails adjustment is already reflected in your invoice.
@@ -1348,11 +1229,10 @@ app.get("/admin/toggle-payment", async (req, res) => {
       ✅ Please note that our responsibility at Smart Talent Matcher ends here.
     </p>
     <p>
-      ✅ You may be invited to phone calls or Zoom meetings. <br>
-      Present yourself professionally to leave a great impression and seize the opportunity!
+      ✅ You may be invited to phone calls or Zoom meetings. Present yourself professionally to leave a great impression and seize the opportunity!
     </p>
     <p>
-      ✅ You'll receive a 1-week follow-up email in one week! Stay tuned!
+      ✅ You'll receive a 2-week follow-up email in two weeks! Stay tuned!
     </p><br><br>
     <p>
       Best Regards,<br>
@@ -1374,8 +1254,8 @@ app.get("/admin/toggle-payment", async (req, res) => {
         await sendEmailAPI(mailDataCompleted);
         console.log("✅ [DEBUG] Final confirmation email sent.");
 
-        // (H) 1주 후 팔로업 메일 스케줄링
-        scheduleOneWeekFollowUpEmail(order);
+        // (H) 2주 후 팔로업 메일 스케줄링
+        scheduleTwoWeekFollowUpEmail(order);
       });
 
       // 모든 bulk 이메일 작업 끝날 때까지 대기
