@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Review Admin</title>
+  <style>
+    body {
+      margin: 0; 
+      padding: 0;
+      font-family: Arial, sans-serif;
+      background-color: #f2f2f2;
+    }
+    /* 중앙 정렬 + 최대 폭 */
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+    /* 노란색 배경의 REVIEWS 헤더 */
+    .reviews-header {
+      text-align: center;
+      margin-bottom: 10px;
+      font-size: 1.3rem;
+      color: #000;
+      background-color: #FFFF00;
+      display: inline-block;
+      padding: 8px 16px;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+      border-radius: 5px;
+    }
+    /* DB 리뷰 각 항목 래퍼 */
+    .db-review-item {
+      background: #fff;
+      padding: 15px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      font-size: 1rem;
+      position: relative;
+    }
+    .db-review-item p {
+      margin: 0;
+      font-size: 1rem;
+      color: #333;
+      white-space: pre-line; /* 줄바꿈 지원 */
+      word-break: break-word;
+    }
+    .db-review-item small {
+      display: inline-block;
+      margin-top: 5px;
+      color: #666;
+    }
+    /* Edit/Delete 버튼 스타일 */
+    .review-actions {
+      margin-top: 10px;
+    }
+    .review-button {
+      display: inline-block;
+      padding: 6px 12px;
+      margin-right: 8px;
+      font-size: 0.9rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .edit-button {
+      background-color: #00BCD4;
+      color: #fff;
+    }
+    .delete-button {
+      background-color: #e74c3c;
+      color: #fff;
+    }
+    /* 안내 문구 */
+    .no-reviews {
+      font-style: italic;
+      color: #777;
+      text-align: center;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    
+    <!-- 노란색 REVIEWS 헤더 -->
+    <h2 class="reviews-header">REVIEWS</h2>
+
+    <!-- DB에서 가져온 리뷰(동적) 섹션 -->
+    <section id="dbReviewsContainer">
+      <!-- JS로 /admin/reviews fetch 결과를 표시 -->
+    </section>
+  </div>
+
+  <script>
+    // 페이지 로드 후 실행
+    window.onload = loadDBReviews;
+
+    // 1) 서버에서 DB 리뷰를 불러와 표시
+    async function loadDBReviews() {
+      try {
+        const res = await fetch("/admin/reviews");
+        const data = await res.json();
+        const reviewsContainer = document.getElementById("dbReviewsContainer");
+        reviewsContainer.innerHTML = ""; // 기존 내용 비우기
+
+        if (!data.success) {
+          console.error("Failed to fetch reviews: ", data);
+          reviewsContainer.innerHTML = "<p class='no-reviews'>Could not load reviews (success=false)</p>";
+          return;
+        }
+        if (data.reviews.length === 0) {
+          reviewsContainer.innerHTML = "<p class='no-reviews'>No user-submitted reviews found.</p>";
+          return;
+        }
+
+        // 각 리뷰를 DOM으로 생성
+        data.reviews.forEach(review => {
+          const div = document.createElement("div");
+          div.className = "db-review-item";
+          div.innerHTML = `
+            <p>${review.reviewText}</p>
+            <small>Posted at: ${new Date(review.createdAt).toLocaleString()}</small>
+            <div class="review-actions">
+              <button class="review-button edit-button" data-review-id="${review._id}">Edit</button>
+              <button class="review-button delete-button" data-review-id="${review._id}">Delete</button>
+            </div>
+          `;
+          reviewsContainer.appendChild(div);
+        });
+
+        // Edit/Delete 버튼 이벤트 할당
+        attachReviewButtonHandlers();
+      } catch (err) {
+        console.error("Error fetching /admin/reviews:", err);
+        const reviewsContainer = document.getElementById("dbReviewsContainer");
+        reviewsContainer.innerHTML = "<p class='no-reviews'>An error occurred while loading reviews.</p>";
+      }
+    }
+
+    // 2) Edit/Delete 버튼 핸들러
+    function attachReviewButtonHandlers() {
+      // Edit
+      const editButtons = document.querySelectorAll(".edit-button");
+      editButtons.forEach(button => {
+        button.addEventListener("click", async function() {
+          const reviewId = this.dataset.reviewId;
+          const newText = prompt("Enter new review text:");
+          if (newText === null) return; // 취소시
+
+          // 서버로 edit 요청
+          try {
+            const res = await fetch("/admin/edit-review", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reviewId, newText })
+            });
+            const data = await res.json();
+            if (data.success) {
+              // 성공 시 목록 재로딩 (or 해당 항목만 업데이트)
+              loadDBReviews();
+            } else {
+              alert(data.message || "Failed to update review.");
+            }
+          } catch (err) {
+            console.error("Error editing review:", err);
+          }
+        });
+      });
+
+      // Delete
+      const deleteButtons = document.querySelectorAll(".delete-button");
+      deleteButtons.forEach(button => {
+        button.addEventListener("click", async function() {
+          const reviewId = this.dataset.reviewId;
+          const confirmDel = confirm("Are you sure you want to delete this review?");
+          if (!confirmDel) return;
+
+          try {
+            const res = await fetch("/admin/delete-review", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reviewId })
+            });
+            const data = await res.json();
+            if (data.success) {
+              loadDBReviews();
+            } else {
+              alert(data.message || "Failed to delete review.");
+            }
+          } catch (err) {
+            console.error("Error deleting review:", err);
+          }
+        });
+      });
+    }
+  </script>
+</body>
+</html>

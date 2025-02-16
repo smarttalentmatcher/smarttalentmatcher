@@ -38,13 +38,13 @@ function applyPromo() {
   promoRate = 0.0;
   promoFlat = 0.0;
 
-  // 예: WELCOME10 (10%), RETURN15 (15%)
+  // 예: WELCOME10 (10%), RETURN10 (10%)
   if (code === "WELCOME10") {
     promoRate = 0.1;
     promoMessage.textContent = "WELCOME10 applied: +10% discount!";
-  } else if (code === "RETURN15") {
-    promoRate = 0.15;
-    promoMessage.textContent = "RETURN15 applied: +15% discount!";
+  } else if (code === "RETURN10") {
+    promoRate = 0.1;
+    promoMessage.textContent = "RETURN10 applied: +15% discount!";
   } else if (code !== "") {
     promoMessage.textContent = "Invalid promo code.";
   }

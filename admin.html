@@ -58,7 +58,6 @@
       margin: 5px;
       font-size: 1rem;
     }
-    /* 간단한 스타일 */
     .admin-header {
       text-align: center;
       background-color: #003366;
@@ -74,15 +73,33 @@
     <h1>Admin Panel - Orders (Test Mode)</h1>
   </header>
 
-  <!-- 필터 (여기서 "expired" 선택 시, unpaid이면서 3분 이상 지난 주문만 보이도록 할 예정) -->
+  <!-- 필터 & REVIEW 버튼 -->
   <div class="filter-container">
     <select id="filter-status">
       <option value="all">All Orders</option>
-      <option value="expired">3+ Minutes Passed (Unpaid)</option>
+      <option value="expired">Expired (24hrs)</option>
       <option value="paid">Paid Orders</option>
       <option value="unpaid">Unpaid Orders</option>
-      <option value="3weeks">Services Started Over 3 Weeks Ago</option>
+      <option value="1week">1week Follow-Up</option>
+      <option value="2weeks">2weeks Follow-Up</option>
+      <option value="draft">Draft</option>
     </select>
+    <!-- REVIEW 버튼 -->
+    <button id="reviewBtn"
+      style="
+        background-color: #00BCD4;
+        color: #fff;
+        border: none;
+        padding: 8px 16px;
+        font-size: 1rem;
+        border-radius: 4px;
+        cursor: pointer;
+        box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+        margin-left: 10px;
+      "
+    >
+      REVIEW
+    </button>
   </div>
 
   <div class="orders-container">
@@ -124,11 +141,15 @@
   <script>
     let ordersData = [];
 
+    // REVIEW 버튼 클릭 시 reviewadmin.html 이동
+    document.getElementById("reviewBtn").addEventListener("click", () => {
+      window.location.href = "/reviewadmin.html";
+    });
+
     // (서버에서) 주문 데이터 불러오기
     fetch('/admin/orders')
       .then(response => response.json())
       .then(data => {
-        // data는 { success: true, orders: [...] } 구조
         if (!data.success) {
           document.getElementById('orders-tbody').innerHTML =
             "<tr><td colspan='11'>Failed to load orders (success=false).</td></tr>";
@@ -151,8 +172,10 @@
         const tr = document.createElement('tr');
         const timeSinceCreation = Date.now() - new Date(order.createdAt).getTime();
 
-        // [테스트 환경] 3분 경과 & unpaid인 경우 "24hrs" 표시
-        const isExpiredUnpaid = (timeSinceCreation >= 24 * 60 * 60 * 1000) && (!order.paid);
+        // (테스트 모드) EXPIRED 기준 => 24시간 실제
+        // 하지만 테스트에서는 3분 or 5분으로 단축시켜 사용하는 경우도 가능
+        const expiredThreshold = 24 * 60 * 60 * 1000; 
+        const isExpiredUnpaid = (timeSinceCreation >= expiredThreshold) && (!order.paid);
 
         // 열 순서대로 생성
         // 1) orderId
@@ -206,7 +229,6 @@
         // 9) status
         const tdStatus = document.createElement('td');
         tdStatus.textContent = order.status || "";
-        // 만약 canceled_24hr이면 붉게 표시
         if (order.status === "canceled_24hr") {
           tdStatus.style.color = "red";
           tdStatus.style.fontWeight = "bold";
@@ -219,21 +241,28 @@
         tdInvoice.innerHTML = order.invoice || "";
         tr.appendChild(tdInvoice);
 
-        // 11) payment/delete
+        // 11) payment/delete + badges
         const tdPayment = document.createElement('td');
         let finalCost = order.finalCost || "";
         if (finalCost !== "") {
           finalCost = "$" + parseFloat(finalCost).toFixed(2);
         }
 
-        // 여기서 unpaid + 만료 시에만 "24hrs" 표시
-        const expiredText = isExpiredUnpaid
-          ? `<div style="color:red; font-weight:bold;">24hrs</div>`
-          : "";
+        // 만료/1주/2주 배지 표시
+        let badgesHTML = "";
+        if (isExpiredUnpaid) {
+          badgesHTML += `<div style="color:red; font-weight:bold;">24hrs</div>`;
+        }
+        if (order.oneWeekFollowUpSent) {
+          badgesHTML += `<div style="color:green; font-weight:bold;">1week</div>`;
+        }
+        if (order.twoWeekFollowUpSent) {
+          badgesHTML += `<div style="color:blue; font-weight:bold;">2weeks</div>`;
+        }
 
         tdPayment.innerHTML = `
           ${finalCost}
-          ${expiredText}
+          ${badgesHTML}
           <br>
           <label>
             <input type="checkbox" class="payment-checkbox" data-order-id="${order.orderId}"
@@ -243,8 +272,8 @@
           <br>
           <button class="delete-button" data-order-id="${order.orderId}">Delete</button>
         `;
-
         tr.appendChild(tdPayment);
+
         tbody.appendChild(tr);
       });
 
@@ -259,12 +288,11 @@
           const orderId = this.dataset.orderId;
           const paid = this.checked;
 
-          // /admin/toggle-payment (GET) 요청
           fetch(`/admin/toggle-payment?orderId=${orderId}&paid=${paid}`, { method: 'GET' })
             .then(response => response.json())
             .then(data => {
               console.log("toggle-payment response:", data);
-              // 여기서는 단순히 상태만 토글
+              // 토글 후 별도 갱신 로직이 필요하면 작성
             })
             .catch(error => {
               console.error("Error updating payment:", error);
@@ -278,7 +306,6 @@
       deleteButtons.forEach(button => {
         button.addEventListener('click', function() {
           const orderId = this.dataset.orderId;
-          // /admin/delete-order로 POST 요청
           fetch('/admin/delete-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -304,16 +331,14 @@
     document.getElementById("filter-status").addEventListener("change", function () {
       const filter = this.value;
       const now = Date.now();
-      // 테스트 모드: 3분
+      // (테스트) 24시간 => 24 * 60 * 60 * 1000
       const expiredThreshold = 24 * 60 * 60 * 1000;
 
       const filteredOrders = ordersData.filter(order => {
         const timeSinceCreation = now - new Date(order.createdAt).getTime();
-        // (unpaid + 3분 경과) => expired
         const isExpiredUnpaid = (timeSinceCreation >= expiredThreshold) && (!order.paid);
 
         if (filter === "expired") {
-          // 3분 이상 & 결제 안됨
           return isExpiredUnpaid;
         }
         if (filter === "paid") {
@@ -322,11 +347,16 @@
         if (filter === "unpaid") {
           return !order.paid;
         }
-        if (filter === "3weeks") {
-          // 실제 운영이면 21일 => 21*24*60*60*1000
-          return timeSinceCreation >= 21 * 24 * 60 * 60 * 1000;
+        if (filter === "1week") {
+          return order.oneWeekFollowUpSent === true;
         }
-        // "all"
+        if (filter === "2weeks") {
+          return order.twoWeekFollowUpSent === true;
+        }
+        if (filter === "draft") {
+          return (order.status === "draft");
+        }
+        // default "all"
         return true;
       });
       renderOrders(filteredOrders);

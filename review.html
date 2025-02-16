@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Smart Talent Matcher - Leave a Review</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: #f9f9f9;
+    }
+    .container {
+      max-width: 600px;
+      margin: 20px auto; 
+      background: #fff;
+      padding: 20px; /* 좌우 패딩 */
+      border-radius: 8px;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+      box-sizing: border-box; /* box-sizing 적용 */
+    }
+    h1 {
+      margin-top: 0;
+      color: #333;
+    }
+    label {
+      font-weight: bold;
+    }
+    textarea {
+      width: 100%;
+      height: 150px;
+      margin-bottom: 10px;
+      padding: 10px; /* 내부 여백 */
+      font-size: 16px;
+      resize: vertical;
+      border: 1px solid #000; /* 검은 테두리 */
+      box-sizing: border-box; /* 패딩+테두리 포함 100% */
+    }
+    button {
+      background-color: #00BCD4;
+      color: #fff;
+      border: none;
+      padding: 14px 20px;
+      font-size: 16px;
+      border-radius: 30px;
+      cursor: pointer;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+      transition: background 0.3s ease;
+    }
+    button:hover {
+      background-color: #008C9E;
+    }
+    .message {
+      margin-top: 20px;
+      font-weight: bold;
+      color: green;
+    }
+    .error {
+      margin-top: 20px;
+      font-weight: bold;
+      color: red;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Leave Your Review</h1>
+    <p>We value your feedback! Please share your experience or suggestions.</p>
+    <label for="reviewText">Review:</label>
+    <textarea id="reviewText"></textarea>
+    <button id="submitBtn">Submit Review</button>
+
+    <div id="resultMessage" class="message" style="display:none;"></div>
+    <div id="errorMessage" class="error" style="display:none;"></div>
+  </div>
+
+  <script>
+    const submitBtn = document.getElementById("submitBtn");
+    const reviewTextElem = document.getElementById("reviewText");
+    const resultMessageElem = document.getElementById("resultMessage");
+    const errorMessageElem = document.getElementById("errorMessage");
+
+    submitBtn.addEventListener("click", async () => {
+      const reviewText = reviewTextElem.value.trim();
+      if (!reviewText) {
+        errorMessageElem.style.display = "block";
+        errorMessageElem.textContent = "Review text cannot be empty.";
+        return;
+      }
+      errorMessageElem.style.display = "none";
+      resultMessageElem.style.display = "none";
+
+      try {
+        const response = await fetch("/review-submission", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reviewText })
+        });
+        const data = await response.json();
+        if (data.success) {
+          resultMessageElem.style.display = "block";
+          resultMessageElem.textContent = "Thank you! Your review has been saved.";
+          reviewTextElem.value = "";
+        } else {
+          errorMessageElem.style.display = "block";
+          errorMessageElem.textContent = data.message || "Failed to submit review.";
+        }
+      } catch (err) {
+        console.error("Error submitting review:", err);
+        errorMessageElem.style.display = "block";
+        errorMessageElem.textContent = "An error occurred. Please try again later.";
+      }
+    });
+  </script>
+</body>
+</html>

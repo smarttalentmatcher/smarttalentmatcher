@@ -1,5 +1,7 @@
 // --------------------------------------------------------------------------------
-// SERVER.JS (ESM 버전) - 전체 코드 (Reply-To, parseSelectedNames for multiple countries)
+// SERVER.JS (ESM 버전) - 전체 코드
+//  + 1주(ONE_WEEK) / 2주(TWO_WEEKS) 팔로업 메일 + 타이머 복원
+//  + Review (CRUD) 기능 추가
 // --------------------------------------------------------------------------------
 
 // ───────── [필요한 import들 & dotenv 설정] ─────────
@@ -51,7 +53,7 @@ mongoose
   })
   .catch(err => console.error("❌ MongoDB Connection Error:", err));
 
-// 주문 스키마 (Order)
+// 주문(Order) 스키마
 const orderSchema = new mongoose.Schema({
   orderId: String,
   emailAddress: { type: String, default: "" },
@@ -69,7 +71,12 @@ const orderSchema = new mongoose.Schema({
   introduction: { type: String, default: "" },
   venmoId: { type: String, default: "" },
   headshot: { type: String, default: "" },
-  status: { type: String, default: "draft" }
+  status: { type: String, default: "draft" },
+
+  // ───────── (추가) 대량 메일 완료 시점 & 팔로업 메일 전송 여부 ─────────
+  bulkEmailsCompletedAt: { type: Date, default: null },
+  oneWeekFollowUpSent: { type: Boolean, default: false },
+  twoWeekFollowUpSent: { type: Boolean, default: false }
 });
 const Order = mongoose.model("Order", orderSchema);
 
@@ -79,6 +86,13 @@ const bulkEmailRecipientSchema = new mongoose.Schema({
   countryOrSource: { type: String, default: "" }
 });
 const BulkEmailRecipient = mongoose.model("BulkEmailRecipient", bulkEmailRecipientSchema);
+
+// (추가) 리뷰(Review) 스키마
+const reviewSchema = new mongoose.Schema({
+  reviewText: { type: String, default: "" },
+  createdAt: { type: Date, default: Date.now },
+});
+const Review = mongoose.model("Review", reviewSchema);
 
 // ───────── [Express 앱 설정] ─────────
 const app = express();
@@ -224,13 +238,18 @@ app.get("/", (req, res) => {
 });
 
 // ───────── [타이머 관련 상수 & 변수] ─────────
-const TWELVE_HOURS = 12 * 60 * 60 * 1000;
-const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
-const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
+const TWELVE_HOURS = 12 * 60 * 60 * 1000; // 12 * 60 * 60 * 1000
+const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000; //24 * 60 * 60 * 1000
+const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000; //48 * 60 * 60 * 1000
+const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;  // 1주 7 * 24 * 60 * 60 * 1000
+const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000; // 2주 14 * 24 * 60 * 60 * 1000
 
+// 타이머 기록용 객체
 const reminderTimers = {};
 const autoCancelTimers = {};
 const autoDeleteTimers = {};
+const oneWeekTimers = {};  
+const twoWeekTimers = {}; 
 
 // ───────── [12시간 후 리마인더 이메일 & 전송 함수] ─────────
 function scheduleReminder(order) {
@@ -419,17 +438,271 @@ async function autoDeleteOrder(order) {
   }
 }
 
-// ───────── [서버 시작 시, 미결제 final 주문에 대해 타이머 복원] ─────────
+// ───────── [1주 / 2주 팔로업 메일: 스케줄 및 발송 함수] ─────────
+function scheduleOneWeekFollowUpEmail(order) {
+  // 이미 보냈거나 bulkEmailsCompletedAt 없으면 skip
+  if (order.oneWeekFollowUpSent) return;
+  if (!order.bulkEmailsCompletedAt) {
+    console.log(">>> [DEBUG] bulkEmailsCompletedAt not set. Cannot schedule 1-week follow-up for", order.orderId);
+    return;
+  }
+  if (oneWeekTimers[order.orderId]) {
+    clearTimeout(oneWeekTimers[order.orderId]);
+    delete oneWeekTimers[order.orderId];
+  }
+
+  const timePassed = Date.now() - order.bulkEmailsCompletedAt.getTime();
+  const timeLeft = ONE_WEEK - timePassed;
+  if (timeLeft <= 0) {
+    // 이미 1주일 이상 지났다면 즉시 발송
+    sendOneWeekEmail(order);
+    return;
+  }
+  oneWeekTimers[order.orderId] = setTimeout(() => {
+    sendOneWeekEmail(order);
+  }, timeLeft);
+
+  console.log(`⏰ Scheduled 1-week follow-up email for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
+}
+
+function scheduleTwoWeekFollowUpEmail(order) {
+  // 이미 보냈거나 bulkEmailsCompletedAt 없으면 skip
+  if (order.twoWeekFollowUpSent) return;
+  if (!order.bulkEmailsCompletedAt) {
+    console.log(">>> [DEBUG] bulkEmailsCompletedAt not set. Cannot schedule 2-week follow-up for", order.orderId);
+    return;
+  }
+  if (twoWeekTimers[order.orderId]) {
+    clearTimeout(twoWeekTimers[order.orderId]);
+    delete twoWeekTimers[order.orderId];
+  }
+
+  const timePassed = Date.now() - order.bulkEmailsCompletedAt.getTime();
+  const timeLeft = TWO_WEEKS - timePassed;
+  if (timeLeft <= 0) {
+    // 이미 2주 이상 지났다면 즉시 발송
+    sendTwoWeekEmail(order);
+    return;
+  }
+  twoWeekTimers[order.orderId] = setTimeout(() => {
+    sendTwoWeekEmail(order);
+  }, timeLeft);
+
+  console.log(`⏰ Scheduled 2-week follow-up email for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
+}
+
+async function sendOneWeekEmail(order) {
+  const followUpHtml = `
+    <html>
+      <body style="font-family: Arial, sans-serif; line-height:1.6;">
+        <h2 style="margin-bottom: 0;">It's Been a Week! How's It Going?</h2>
+        <p style="margin-top: 5px;">Hello from Smart Talent Matcher,</p>
+        <p>
+          It's been a week since we sent out your introduction. Usually, replies from talent agents,
+          casting directors, and managers come steadily within the first two weeks, though some may trickle in later.
+          Don’t lose hope even if you haven't received as many responses as you'd like!
+        </p>
+        <p>
+          If you do get good news, please make sure to read the contract thoroughly before signing.
+          People often get swept up in excitement and sign without fully understanding the agreement,
+          which can lead to difficulties later. If the contract is too complex, feel free to ask ChatGPT for help
+          in simplifying the language.
+        </p>
+        <p>
+          Keep in mind that different agents may use different platforms. Verify which platform they use,
+          and note that access levels can differ by region even on the same platform.
+          The more access they have, the more opportunities they can bring you.
+        </p>
+        <p>
+          Also, managers can vary widely in how they handle 'career management.' Make sure you clarify
+          their scope of support since it can sometimes be quite broad or ambiguous.
+        </p>
+        <p>
+          Finally, expect another follow-up email in the second week—so stay tuned!
+        </p>
+        <br>
+        
+        <p>Best Regards,<br>Smart Talent Matcher Team</p>
+      </body>
+    </html>
+  `;
+  const mailDataFollowUp = {
+    subject: "[Smart Talent Matcher] One-Week Follow-Up",
+    from: process.env.ELASTIC_EMAIL_USER,
+    fromName: "Smart Talent Matcher",
+    to: order.emailAddress,
+    bodyHtml: followUpHtml,
+    isTransactional: true,
+  };
+  try {
+    console.log(">>> [DEBUG] Sending 1-week follow-up email to:", order.emailAddress);
+    await sendEmailAPI(mailDataFollowUp);
+
+    // DB 업데이트
+    order.oneWeekFollowUpSent = true;
+    await order.save();
+
+    console.log("✅ [DEBUG] 1-week follow-up email sent & order updated.");
+
+    // 1주차 메일 보낸 뒤, 2주차 스케줄 설정
+    scheduleTwoWeekFollowUpEmail(order);
+
+  } catch (err) {
+    console.error("❌ [DEBUG] Error sending 1-week follow-up email:", err);
+  }
+}
+
+async function sendTwoWeekEmail(order) {
+  // 2주차 메일 템플릿
+  const twoWeekHtml = `
+  <html>
+    <body style="font-family: Arial, sans-serif; background-color:#f9f9f9; color:#333; line-height:1.6;">
+      <table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: Arial, sans-serif; background-color:#f9f9f9; color: #333;">
+        <tr>
+          <td align="center" style="padding: 30px;">
+            <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color:#ffffff; border-radius:8px; padding:20px;">
+              <tr>
+                <td align="center" style="padding: 20px;">
+                  <h2 style="color:#d9534f; margin-top:0;">
+                    It's Been 2 Weeks. How Are You Doing?
+                  </h2>
+                  <br>
+                  <p style="margin:0 0 15px 0;">
+                    Hello from Smart Talent Matcher,
+                  </p>
+                  <br>
+                  <p style="margin:0 0 15px 0;">
+                    By now, you’ve reached the 2-week mark. Usually, most replies come in during these first two weeks,
+                    though it’s possible to still receive occasional responses afterward.
+                  </p>
+                  <p style="margin:0 0 15px 0;">
+                    If things are going well and you’re about to sign a contract, make sure you’ve carefully reviewed 
+                    all the terms. We hope you connect with the right person for your career!
+                  </p>
+                  <p style="margin:0 0 15px 0;">
+                    If it’s not going so well, please don’t be discouraged. You can always update your materials 
+                    and try again. (I personally tried 2 times before success!)
+                  </p>
+                  <p style="margin:0 0 15px 0;">
+                    Here’s a special promo code for your return: 
+                  </p>
+                  <div style="
+                    font-size: 1.4rem; 
+                    font-weight: bold; 
+                    background:#28a745; 
+                    color:#ffffff;
+                    border-radius:8px;
+                    display:inline-block;
+                    padding:10px 20px; 
+                    margin:15px 0;
+                  ">
+                    RETURN10
+                  </div>
+                  <p style="margin:0 0 15px 0;">
+                    Apply this when you create a new order.
+                  </p>
+                  <p style="margin:0 0 15px 0;">
+                    We’d also love to hear your feedback! Whether you succeeded or faced challenges, 
+                    your thoughts on our service help us improve. 
+                  </p>
+                  <br>
+                  <a 
+                    href="smarttalentmatcher.com/review.html" 
+                    target="_blank" 
+                    style="
+                      display: inline-block;
+                      background: #00BCD4;
+                      color: #FFFFFF;
+                      padding: 20px 40px;
+                      font-size: 1.5rem;
+                      font-weight: bold;
+                      font-style: italic;
+                      border-radius: 30px;
+                      border: 4px solid #001f3f;
+                      transition: background 0.3s ease;
+                      box-shadow: 0 8px 12px rgba(0,0,0,0.4);
+                      text-decoration: none;
+                    "
+                    rel="noopener noreferrer"
+                  >
+                    REVIEW
+                  </a>
+                  <br><br>
+             <p style="margin:0 0 15px 0;">
+          Thank you for trusting our service. We are committed to helping you find the right people.
+        </p>
+                  <p style="margin:30px 0 0 0;">
+                    Best Regards,<br>
+                    Smart Talent Matcher Team
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+  </html>
+  `;
+
+  const mailDataFollowUp = {
+    subject: "[Smart Talent Matcher] Two-Week Follow-Up",
+    from: process.env.ELASTIC_EMAIL_USER,
+    fromName: "Smart Talent Matcher",
+    to: order.emailAddress,
+    bodyHtml: twoWeekHtml,
+    isTransactional: true,
+  };
+  try {
+    console.log(">>> [DEBUG] Sending 2-week follow-up email to:", order.emailAddress);
+    await sendEmailAPI(mailDataFollowUp);
+
+    // 보냈다면 DB 업데이트
+    order.twoWeekFollowUpSent = true;
+    await order.save();
+
+    console.log("✅ [DEBUG] 2-week follow-up email sent & order updated.");
+  } catch (err) {
+    console.error("❌ [DEBUG] Error sending 2-week follow-up email:", err);
+  }
+}
+
+// ───────── [서버 시작 시, 미결제 final 주문 & 1주/2주 팔로업 복원] ─────────
 async function restoreTimers() {
   try {
+    // 1) (기존) 미결제 final 주문: 12h, 24h, 48h
     const pendingOrders = await Order.find({ status: "final", paid: false });
-    console.log(`>>> [DEBUG] restoreTimers: found ${pendingOrders.length} final/pending orders.`);
+    console.log(`>>> [DEBUG] restoreTimers: found ${pendingOrders.length} final/pending orders (unpaid).`);
     pendingOrders.forEach((order) => {
       if (!order.reminderSent) scheduleReminder(order);
       scheduleAutoCancel(order);
       scheduleAutoDelete(order);
     });
-    console.log(`✅ Restored ${pendingOrders.length} orders with pending reminders, cancellations, and auto-deletions.`);
+
+    // 2) 결제된 + bulkEmailsCompletedAt 설정 + 1주차 안 보낸
+    const needOneWeek = await Order.find({
+      status: "final",
+      paid: true,
+      bulkEmailsCompletedAt: { $ne: null },
+      oneWeekFollowUpSent: false
+    });
+    needOneWeek.forEach((order) => {
+      scheduleOneWeekFollowUpEmail(order);
+    });
+
+    // 3) 결제된 + bulkEmailsCompletedAt 설정 + 1주차는 보냈지만 2주차 안 보낸
+    const needTwoWeek = await Order.find({
+      status: "final",
+      paid: true,
+      bulkEmailsCompletedAt: { $ne: null },
+      oneWeekFollowUpSent: true,
+      twoWeekFollowUpSent: false
+    });
+    needTwoWeek.forEach((order) => {
+      scheduleTwoWeekFollowUpEmail(order);
+    });
+
+    console.log(`✅ Timers restored. (unpaid final=${pendingOrders.length}, 1-week=${needOneWeek.length}, 2-week=${needTwoWeek.length})`);
   } catch (err) {
     console.error("❌ Error restoring timers:", err);
   }
@@ -496,7 +769,79 @@ const cleanUpNonFinalOrders = async () => {
   // 필요한 경우 추가 정리 작업 구현
 };
 
-// ───────── [라우트 설정] ─────────
+// ───────── [리뷰 관련 라우트] ─────────
+
+// 1) 새 리뷰 제출 (review.html)
+app.post("/review-submission", async (req, res) => {
+  try {
+    const { reviewText } = req.body;
+    if (!reviewText || !reviewText.trim()) {
+      return res.status(400).json({ success: false, message: "Review text cannot be empty." });
+    }
+    const newReview = new Review({ reviewText: reviewText.trim() });
+    await newReview.save();
+    console.log(">>> [DEBUG] New review saved:", newReview);
+    return res.json({ success: true, message: "Review saved successfully!" });
+  } catch (err) {
+    console.error("❌ Error in /review-submission:", err);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// 2) 리뷰 목록 조회 (reviewadmin.html)
+app.get("/admin/reviews", async (req, res) => {
+  try {
+    const reviews = await Review.find().sort({ createdAt: -1 });
+    return res.json({ success: true, reviews });
+  } catch (err) {
+    console.error("❌ Error in /admin/reviews:", err);
+    return res.status(500).json({ success: false, message: "Failed to load reviews." });
+  }
+});
+
+// 3) 리뷰 수정
+app.post("/admin/edit-review", async (req, res) => {
+  try {
+    const { reviewId, newText } = req.body;
+    if (!reviewId || !newText || !newText.trim()) {
+      return res.status(400).json({ success: false, message: "Invalid data." });
+    }
+    const updated = await Review.findByIdAndUpdate(
+      reviewId,
+      { reviewText: newText.trim() },
+      { new: true }
+    );
+    if (!updated) {
+      return res.status(404).json({ success: false, message: "Review not found." });
+    }
+    console.log(">>> [DEBUG] Review updated:", updated);
+    return res.json({ success: true, message: "Review updated successfully." });
+  } catch (err) {
+    console.error("❌ Error in /admin/edit-review:", err);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// 4) 리뷰 삭제
+app.post("/admin/delete-review", async (req, res) => {
+  try {
+    const { reviewId } = req.body;
+    if (!reviewId) {
+      return res.status(400).json({ success: false, message: "No reviewId provided." });
+    }
+    const deleted = await Review.findByIdAndDelete(reviewId);
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: "Review not found or already deleted." });
+    }
+    console.log(">>> [DEBUG] Review deleted:", deleted);
+    return res.json({ success: true, message: "Review deleted successfully." });
+  } catch (err) {
+    console.error("❌ Error in /admin/delete-review:", err);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// ───────── [라우트 설정: Orders 등] ─────────
 
 // (기본 페이지)
 app.get("/", (req, res) => {
@@ -541,7 +886,7 @@ app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res)
   }
 });
 
-// ───────── [주문 생성 라우트 (Draft Order 생성)] ─────────
+// (주문 생성 라우트: Draft Order)
 app.post("/submit-order", async (req, res) => {
   try {
     const { emailAddress, invoice, subtotal, baseDiscount, promoDiscount, finalCost } = req.body;
@@ -573,7 +918,7 @@ app.post("/submit-order", async (req, res) => {
   }
 });
 
-// ───────── [주문 수정 라우트 (Draft Order 업데이트)] ─────────
+// (주문 수정 라우트: Draft Order 업데이트)
 app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) => {
   try {
     const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice } = req.body;
@@ -598,7 +943,7 @@ app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) =>
   }
 });
 
-// ───────── [최종 제출 라우트 (Draft → Final 주문 전환)] ─────────
+// (최종 제출: Draft -> Final)
 app.post("/final-submit", multer().none(), async (req, res) => {
   try {
     console.log(">>> [final-submit] Step 0: Endpoint called");
@@ -802,6 +1147,7 @@ function parseSelectedNames(invoiceHtml) {
 
   return selected;
 }
+
 // ───────── [대량 메일 전송(Chunk+Delay)] ─────────
 async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, delayMs = 1000) {
   console.log(">>> [DEBUG] sendBulkEmailsInChunks() called");
@@ -863,7 +1209,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
     if (!oldPaid && order.paid) {
       console.log(">>> [DEBUG] Payment changed from false -> true. Will send 'service started' email AND do bulk emailing.");
 
-      // 서비스 시작 이메일 발송
+      // 1) 서비스 시작 이메일 발송
       const startedHtml = `
       <html>
       <body style="font-family: Arial, sans-serif; line-height:1.6;">
@@ -893,15 +1239,15 @@ app.get("/admin/toggle-payment", async (req, res) => {
         bodyHtml: startedHtml,
         isTransactional: true,
       };
-
       console.log(">>> [DEBUG] Sending service-start email to:", order.emailAddress);
       await sendEmailAPI(mailDataStart);
       console.log("✅ [DEBUG] Service start email sent.");
 
-      // bulk 이메일 작업을 전역 큐에 추가하여 순차 실행
+      // 2) bulk 이메일 작업을 전역 큐에 추가하여 순차 실행
       bulkEmailQueue = bulkEmailQueue.then(async () => {
         console.log(">>> [DEBUG] Starting Bulk Email Logic for order", order.orderId);
 
+        // (A) invoice에서 지역 분석
         const selectedCountries = parseSelectedNames(order.invoice);
         console.log(">>> [DEBUG] selectedCountries =", selectedCountries);
 
@@ -910,6 +1256,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
           return;
         }
 
+        // (B) 해당 국가 이메일 목록 수집
         let allEmails = [];
         for (const country of selectedCountries) {
           const recipients = await BulkEmailRecipient.find({ countryOrSource: country });
@@ -923,10 +1270,10 @@ app.get("/admin/toggle-payment", async (req, res) => {
         const uniqueEmails = [...new Set(allEmails)];
         console.log(">>> [DEBUG] uniqueEmails after dedup =", uniqueEmails.length);
 
+        // (C) 메일 본문 구성
         const formattedIntro = order.introduction
           ? order.introduction.replace(/\r?\n/g, "<br>")
           : "";
-
         let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
         if (order.headshot) {
           emailHtml += `
@@ -944,6 +1291,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
         `;
         emailHtml += `</div>`;
 
+        // (D) 공통 Bulk Template
         const bulkMailDataTemplate = {
           subject: order.emailSubject || "[No Subject Provided]",
           from: process.env.ELASTIC_EMAIL_USER,
@@ -954,13 +1302,95 @@ app.get("/admin/toggle-payment", async (req, res) => {
           replyToName: order.emailAddress
         };
 
+        // (E) 실제 전송 (Chunk/Delay)
         console.log(">>> [DEBUG] Starting to send Bulk Emails in Chunks...");
         await sendBulkEmailsInChunks(uniqueEmails, bulkMailDataTemplate, 20, 1000);
         console.log("✅ [DEBUG] Bulk emailing completed for order", order.orderId);
+
+        // (F) 모든 대량메일 발송 완료 시점 기록
+        order.bulkEmailsCompletedAt = new Date();
+        await order.save();
+
+        // (G) All Emails Sent 안내메일
+        const completedHtml = `
+        <html>
+          <body style="font-family: Arial, sans-serif; line-height:1.6;">
+            <h2 style="margin-bottom: 0;">🎉🥳 All Emails Have Been Sent! 🥳🎉</h2>
+            <p style="margin-top: 5px;">
+              Dear Customer,
+            </p>
+            <p>
+              We are thrilled to inform you that all bulk emails for your selected region(s)
+              <strong>${selectedCountries.join(", ")}</strong>
+              have been successfully delivered.
+            </p>
+            <p>
+              Thank you for trusting our service. We are committed to helping you find the right people.
+            </p>
+            <br>
+        
+            <!-- What's Next? -->
+            <table style="border-top:2px solid #cccccc; width:100%; max-width:600px; margin:0 auto; padding-top:20px;">
+              <tr>
+                <td align="center" style="padding:0 20px;">
+                  <h3 style="margin-top:0; margin-bottom:15px; font-family:Arial, sans-serif; font-size:1.6rem; font-weight:bold; color:#000; line-height:1.3;">
+                    What's Next?
+                  </h3>
+                  <p style="margin:0 0 10px 0; max-width:500px; text-align:left; font-family:Arial, sans-serif; font-size:14px; color:#555; line-height:1.5;">
+                    &#10003; Now that your introduction has reached relevant talent agents, casting directors, and managers in
+                    <strong>${selectedCountries.join(", ")}</strong>,
+                    you can expect replies directly to your email.
+                  </p>
+                  <p style="margin:0 0 10px 0; max-width:500px; text-align:left; font-family:Arial, sans-serif; font-size:14px; color:#555; line-height:1.5;">
+                    &#10003; Some may respond with rejections (e.g., roster is full, only working with locals, etc.). 
+                    This is completely normal, so please don't be discouraged.
+                  </p>
+                  <p style="margin:0 0 10px 0; max-width:500px; text-align:left; font-family:Arial, sans-serif; font-size:14px; color:#FF0000; font-weight:bold; line-height:1.5;">
+                    &#9888; A 10% discount for your extended targeting campaign is already reflected in your invoice.
+                  </p>
+                  <p style="margin:0 0 10px 0; max-width:500px; text-align:left; font-family:Arial, sans-serif; font-size:14px; color:#555; line-height:1.5;">
+                    &#10003; Our responsibility at Smart Talent Matcher ends here, 
+                    and any further steps or responses will be up to you.
+                  </p>
+                  <p style="margin:0 0 10px 0; max-width:500px; text-align:left; font-family:Arial, sans-serif; font-size:14px; color:#555; line-height:1.5;">
+                    &#10003; You may be invited to phone calls or Zoom meetings. Please present yourself professionally 
+                    to leave a great impression and seize the opportunity.
+                  </p>
+                  <p style="margin:0 0 20px 0; max-width:500px; text-align:left; font-family:Arial, sans-serif; font-size:14px; color:#555; line-height:1.5;">
+                    &#10003; In about one week, we'll send another email packed with additional tips and insights 
+                    based on our experience. Stay tuned!
+                  </p>
+                </td>
+              </tr>
+            </table>
+        
+            <p style="margin-top:20px;">
+              Good luck with your next steps! We genuinely hope this campaign helps you connect with the right people and takes your career to new heights.
+            </p>
+        
+            <p>Best Regards,<br>Smart Talent Matcher Team</p>
+          </body>
+        </html>
+        `;
+        const mailDataCompleted = {
+          subject: `[Smart Talent Matcher] #${order.orderId} All Emails Sent!`,
+          from: process.env.ELASTIC_EMAIL_USER,
+          fromName: "Smart Talent Matcher",
+          to: `${order.emailAddress}, info@smarttalentmatcher.com`,
+          bodyHtml: completedHtml,
+          isTransactional: true,
+        };
+        console.log(">>> [DEBUG] Sending final 'all sent' email to:", order.emailAddress);
+        await sendEmailAPI(mailDataCompleted);
+        console.log("✅ [DEBUG] Final confirmation email sent.");
+
+        // (H) 1주 후 팔로업 메일 스케줄링
+        scheduleOneWeekFollowUpEmail(order);
       });
-      
-      // 기다렸다가 모든 bulk 이메일 작업이 완료된 후 계속 진행
+
+      // 모든 bulk 이메일 작업 끝날 때까지 대기
       await bulkEmailQueue;
+
     } else {
       console.log(">>> [DEBUG] Payment either remains false or toggled true->false. No mailing logic triggered.");
     }
@@ -975,6 +1405,8 @@ app.get("/admin/toggle-payment", async (req, res) => {
 // ───────── [서버 리슨 및 초기 정리 작업] ─────────
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
+
+  // CSV 로드 및 타이머/정리작업 실행
   uploadCSVToDB()
     .then(() => {
       console.log("Bulk email recipients updated from CSV (Full Refresh).");
@@ -985,6 +1417,7 @@ app.listen(PORT, "0.0.0.0", () => {
     })
     .catch(err => {
       console.error("Error uploading CSV to DB:", err);
+      // CSV 로드 실패해도 나머지 루틴은 계속 진행
       restoreTimers();
       cleanUpIncompleteOrders();
       syncCloudinaryWithDB();
