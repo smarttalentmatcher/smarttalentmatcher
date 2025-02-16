@@ -918,7 +918,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     `;
     adminEmailHtml += `</div>`;
     await sendEmailAPI({
-      subject: emailSubject || "[No Subject Provided]",
+      subject: `#${draftOrder.orderId} ${emailSubject || "[No Subject Provided]"}`,
       from: process.env.ELASTIC_EMAIL_USER,
       fromName: "Smart Talent Matcher",
       to: process.env.ELASTIC_EMAIL_USER,
