@@ -16,6 +16,21 @@
       margin: 0 auto;
       padding: 40px 20px;
     }
+    /* 상단의 Admin으로 가기 버튼 */
+    .admin-nav {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .admin-nav button {
+      background-color: #003366;
+      color: #fff;
+      border: none;
+      padding: 10px 20px;
+      font-size: 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
     /* 노란색 배경의 REVIEWS 헤더 */
     .reviews-header {
       text-align: center;
@@ -50,7 +65,7 @@
       margin-top: 5px;
       color: #666;
     }
-    /* Edit/Delete 버튼 스타일 */
+    /* Delete 버튼 스타일 */
     .review-actions {
       margin-top: 10px;
     }
@@ -63,10 +78,6 @@
       border-radius: 4px;
       cursor: pointer;
       box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-    }
-    .edit-button {
-      background-color: #00BCD4;
-      color: #fff;
     }
     .delete-button {
       background-color: #e74c3c;
@@ -83,6 +94,10 @@
 </head>
 <body>
   <div class="container">
+    <!-- 상단 Admin으로 가기 버튼 -->
+    <div class="admin-nav">
+      <button onclick="window.location.href='https://smarttalentmatcher.com/admin.html'">Go to Admin</button>
+    </div>
     
     <!-- 노란색 REVIEWS 헤더 -->
     <h2 class="reviews-header">REVIEWS</h2>
@@ -115,7 +130,7 @@
           return;
         }
 
-        // 각 리뷰를 DOM으로 생성
+        // 각 리뷰를 DOM으로 생성 (Edit 버튼 제거)
         data.reviews.forEach(review => {
           const div = document.createElement("div");
           div.className = "db-review-item";
@@ -123,14 +138,13 @@
             <p>${review.reviewText}</p>
             <small>Posted at: ${new Date(review.createdAt).toLocaleString()}</small>
             <div class="review-actions">
-              <button class="review-button edit-button" data-review-id="${review._id}">Edit</button>
               <button class="review-button delete-button" data-review-id="${review._id}">Delete</button>
             </div>
           `;
           reviewsContainer.appendChild(div);
         });
 
-        // Edit/Delete 버튼 이벤트 할당
+        // Delete 버튼 이벤트 할당
         attachReviewButtonHandlers();
       } catch (err) {
         console.error("Error fetching /admin/reviews:", err);
@@ -139,37 +153,8 @@
       }
     }
 
-    // 2) Edit/Delete 버튼 핸들러
+    // 2) Delete 버튼 핸들러
     function attachReviewButtonHandlers() {
-      // Edit
-      const editButtons = document.querySelectorAll(".edit-button");
-      editButtons.forEach(button => {
-        button.addEventListener("click", async function() {
-          const reviewId = this.dataset.reviewId;
-          const newText = prompt("Enter new review text:");
-          if (newText === null) return; // 취소시
-
-          // 서버로 edit 요청
-          try {
-            const res = await fetch("/admin/edit-review", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ reviewId, newText })
-            });
-            const data = await res.json();
-            if (data.success) {
-              // 성공 시 목록 재로딩 (or 해당 항목만 업데이트)
-              loadDBReviews();
-            } else {
-              alert(data.message || "Failed to update review.");
-            }
-          } catch (err) {
-            console.error("Error editing review:", err);
-          }
-        });
-      });
-
-      // Delete
       const deleteButtons = document.querySelectorAll(".delete-button");
       deleteButtons.forEach(button => {
         button.addEventListener("click", async function() {

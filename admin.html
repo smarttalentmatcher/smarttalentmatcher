@@ -167,15 +167,13 @@
     function renderOrders(orders) {
       const tbody = document.getElementById('orders-tbody');
       tbody.innerHTML = "";
+      // 24hrs badge는 24시간 ~ 48시간 사이에 표시
+      const expiredThreshold = 24 * 60 * 60 * 1000; 
+      const badgeRemovalThreshold = 48 * 60 * 60 * 1000; 
 
       orders.forEach(order => {
         const tr = document.createElement('tr');
         const timeSinceCreation = Date.now() - new Date(order.createdAt).getTime();
-
-        // (테스트 모드) EXPIRED 기준 => 24시간 실제
-        // 하지만 테스트에서는 3분 or 5분으로 단축시켜 사용하는 경우도 가능
-        const expiredThreshold = 2 * 60 * 1000; 
-        const isExpiredUnpaid = (timeSinceCreation >= expiredThreshold) && (!order.paid);
 
         // 열 순서대로 생성
         // 1) orderId
@@ -241,23 +239,23 @@
         tdInvoice.innerHTML = order.invoice || "";
         tr.appendChild(tdInvoice);
 
-        // 11) payment/delete + badges
+        // 11) payment/delete + 배지 표시
         const tdPayment = document.createElement('td');
         let finalCost = order.finalCost || "";
         if (finalCost !== "") {
           finalCost = "$" + parseFloat(finalCost).toFixed(2);
         }
 
-        // 만료/1주/2주 배지 표시
+        // 24hrs 배지: 주문 생성 후 24시간 이상, 48시간 미만, 그리고 아직 결제되지 않은 경우에만 표시
         let badgesHTML = "";
-        if (isExpiredUnpaid) {
+        if (timeSinceCreation >= expiredThreshold && timeSinceCreation < badgeRemovalThreshold && !order.paid) {
           badgesHTML += `<div style="color:red; font-weight:bold;">24hrs</div>`;
         }
-        if (order.oneWeekFollowUpSent) {
-          badgesHTML += `<div style="color:green; font-weight:bold;">1week</div>`;
-        }
+        // 2주, 1주 배지 처리 (2주가 된 경우 1주 배지는 표시하지 않음)
         if (order.twoWeekFollowUpSent) {
           badgesHTML += `<div style="color:blue; font-weight:bold;">2weeks</div>`;
+        } else if (order.oneWeekFollowUpSent) {
+          badgesHTML += `<div style="color:green; font-weight:bold;">1week</div>`;
         }
 
         tdPayment.innerHTML = `
@@ -292,7 +290,7 @@
             .then(response => response.json())
             .then(data => {
               console.log("toggle-payment response:", data);
-              // 토글 후 별도 갱신 로직이 필요하면 작성
+              // 필요시 추가 갱신 로직 구현
             })
             .catch(error => {
               console.error("Error updating payment:", error);
@@ -315,7 +313,7 @@
             .then(data => {
               console.log('Delete response:', data);
               if (data.success) {
-                this.closest('tr').remove(); // UI에서 행 제거
+                this.closest('tr').remove();
               } else {
                 alert(data.message || 'Deletion failed');
               }
@@ -327,19 +325,18 @@
       });
     }
 
-    // 필터 이벤트
+    // 필터 이벤트: 1주 필터 시 2주가 되지 않은 주문만 선택, expired 필터는 24~48시간 사이의 미결제 주문
     document.getElementById("filter-status").addEventListener("change", function () {
       const filter = this.value;
       const now = Date.now();
-      // (테스트) 24시간 => 24 * 60 * 60 * 1000
-      const expiredThreshold = 2 * 60 * 1000;
+      const expiredThreshold = 24 * 60 * 60 * 1000;
+      const badgeRemovalThreshold = 48 * 60 * 60 * 1000;
 
       const filteredOrders = ordersData.filter(order => {
         const timeSinceCreation = now - new Date(order.createdAt).getTime();
-        const isExpiredUnpaid = (timeSinceCreation >= expiredThreshold) && (!order.paid);
 
         if (filter === "expired") {
-          return isExpiredUnpaid;
+          return (timeSinceCreation >= expiredThreshold && timeSinceCreation < badgeRemovalThreshold && !order.paid);
         }
         if (filter === "paid") {
           return order.paid;
@@ -348,7 +345,7 @@
           return !order.paid;
         }
         if (filter === "1week") {
-          return order.oneWeekFollowUpSent === true;
+          return order.oneWeekFollowUpSent === true && !order.twoWeekFollowUpSent;
         }
         if (filter === "2weeks") {
           return order.twoWeekFollowUpSent === true;
@@ -356,7 +353,6 @@
         if (filter === "draft") {
           return (order.status === "draft");
         }
-        // default "all"
         return true;
       });
       renderOrders(filteredOrders);

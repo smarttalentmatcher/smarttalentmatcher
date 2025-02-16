@@ -493,38 +493,57 @@ function scheduleTwoWeekFollowUpEmail(order) {
 
 async function sendOneWeekEmail(order) {
   const followUpHtml = `
-    <html>
-      <body style="font-family: Arial, sans-serif; line-height:1.6;">
-        <h2 style="margin-bottom: 0;">It's Been a Week! How's It Going?</h2>
-        <p style="margin-top: 5px;">Hello from Smart Talent Matcher,</p>
-        <p>
-          It's been a week since we sent out your introduction. Usually, replies from talent agents,
-          casting directors, and managers come steadily within the first two weeks, though some may trickle in later.
-          Don’t lose hope even if you haven't received as many responses as you'd like!
-        </p>
-        <p>
-          If you do get good news, please make sure to read the contract thoroughly before signing.
-          People often get swept up in excitement and sign without fully understanding the agreement,
-          which can lead to difficulties later. If the contract is too complex, feel free to ask ChatGPT for help
-          in simplifying the language.
-        </p>
-        <p>
-          Keep in mind that different agents may use different platforms. Verify which platform they use,
-          and note that access levels can differ by region even on the same platform.
-          The more access they have, the more opportunities they can bring you.
-        </p>
-        <p>
-          Also, managers can vary widely in how they handle 'career management.' Make sure you clarify
-          their scope of support since it can sometimes be quite broad or ambiguous.
-        </p>
-        <p>
-          Finally, expect another follow-up email in the second week—so stay tuned!
-        </p>
-        <br>
-        
-        <p>Best Regards,<br>Smart Talent Matcher Team</p>
-      </body>
-    </html>
+    <!-- 테이블 100% 폭, 가운데 정렬 -->
+<table width="100%" border="0" cellspacing="0" cellpadding="0" 
+       style="font-family: Arial, sans-serif; background-color:#f9f9f9; color:#333; line-height:1.6;">
+  <tr>
+    <td align="center" style="padding: 30px;">
+      <table width="600" border="0" cellspacing="0" cellpadding="0" 
+             style="background-color:#ffffff; border-radius:8px; padding:20px;">
+        <tr>
+          <td align="center" style="padding: 20px;">
+            
+            <!-- 제목 -->
+            <h2 style="color:#d9534f; margin-top:0;">
+              It's Been a Week! How's It Going?
+            </h2>
+            
+            <!-- 받는 사람 이름 -->
+            <p style="margin: 20px 0 15px 0;">
+              Hello ${order.emailAddress ? order.emailAddress.split("@")[0] : ""},
+            </p>
+            
+            <!-- 안내 문구 1 -->
+            <p style="margin: 0 0 15px 0;">
+              We hope you've received some meaningful replies.<br>
+              Usually, responses come steadily throughout the first two weeks.
+            </p>
+            
+            <!-- 안내 문구 2 -->
+            <p style="margin: 0 0 15px 0; text-align: left;">
+              💡 Check which <strong>platform</strong> they use, and which <strong>regions</strong> they have access to for breakdown services.<br>
+              💡 Check whether the contract is <strong>Exclusive</strong> or <strong>Non-Exclusive</strong>.<br>
+              💡 Make sure to <strong>REVIEW</strong> any contracts before signing 
+              <strong>(you can even use ChatGPT for help!)</strong>
+            </p>
+            
+            <!-- 안내 문구 3 -->
+            <p style="margin: 0 0 15px 0;">
+              You'll receive a 2-week follow-up email in two weeks! Stay tuned!
+            </p>
+            
+            <!-- 서명 -->
+            <p style="margin:30px 0 0 0;">
+              Best Regards,<br>
+              Smart Talent Matcher
+            </p>
+            
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
   `;
   const mailDataFollowUp = {
     subject: "[Smart Talent Matcher] One-Week Follow-Up",
@@ -555,94 +574,80 @@ async function sendOneWeekEmail(order) {
 async function sendTwoWeekEmail(order) {
   // 2주차 메일 템플릿
   const twoWeekHtml = `
-  <html>
-    <body style="font-family: Arial, sans-serif; background-color:#f9f9f9; color:#333; line-height:1.6;">
-      <table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: Arial, sans-serif; background-color:#f9f9f9; color: #333;">
+<!-- 테이블 100% 폭, 가운데 정렬 -->
+<table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: Arial, sans-serif; background-color:#f9f9f9; color: #333; line-height:1.6;">
+  <tr>
+    <td align="center" style="padding: 30px;">
+      <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color:#ffffff; border-radius:8px; padding:20px;">
         <tr>
-          <td align="center" style="padding: 30px;">
-            <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color:#ffffff; border-radius:8px; padding:20px;">
-              <tr>
-                <td align="center" style="padding: 20px;">
-                  <h2 style="color:#d9534f; margin-top:0;">
-                    It's Been 2 Weeks. How Are You Doing?
-                  </h2>
-                  <br>
-                  <p style="margin:0 0 15px 0;">
-                    Hello from Smart Talent Matcher,
-                  </p>
-                  <br>
-                  <p style="margin:0 0 15px 0;">
-                    By now, you’ve reached the 2-week mark. Usually, most replies come in during these first two weeks,
-                    though it’s possible to still receive occasional responses afterward.
-                  </p>
-                  <p style="margin:0 0 15px 0;">
-                    If things are going well and you’re about to sign a contract, make sure you’ve carefully reviewed 
-                    all the terms. We hope you connect with the right person for your career!
-                  </p>
-                  <p style="margin:0 0 15px 0;">
-                    If it’s not going so well, please don’t be discouraged. You can always update your materials 
-                    and try again. (I personally tried 2 times before success!)
-                  </p>
-                  <p style="margin:0 0 15px 0;">
-                    Here’s a special promo code for your return: 
-                  </p>
-                  <div style="
-                    font-size: 1.4rem; 
-                    font-weight: bold; 
-                    background:#28a745; 
-                    color:#ffffff;
-                    border-radius:8px;
-                    display:inline-block;
-                    padding:10px 20px; 
-                    margin:15px 0;
-                  ">
-                    RETURN10
-                  </div>
-                  <p style="margin:0 0 15px 0;">
-                    Apply this when you create a new order.
-                  </p>
-                  <p style="margin:0 0 15px 0;">
-                    We’d also love to hear your feedback! Whether you succeeded or faced challenges, 
-                    your thoughts on our service help us improve. 
-                  </p>
-                  <br>
-                  <a 
-                    href="smarttalentmatcher.com/review.html" 
-                    target="_blank" 
-                    style="
-                      display: inline-block;
-                      background: #00BCD4;
-                      color: #FFFFFF;
-                      padding: 20px 40px;
-                      font-size: 1.5rem;
-                      font-weight: bold;
-                      font-style: italic;
-                      border-radius: 30px;
-                      border: 4px solid #001f3f;
-                      transition: background 0.3s ease;
-                      box-shadow: 0 8px 12px rgba(0,0,0,0.4);
-                      text-decoration: none;
-                    "
-                    rel="noopener noreferrer"
-                  >
-                    REVIEW
-                  </a>
-                  <br><br>
-             <p style="margin:0 0 15px 0;">
-          Thank you for trusting our service. We are committed to helping you find the right people.
-        </p>
-                  <p style="margin:30px 0 0 0;">
-                    Best Regards,<br>
-                    Smart Talent Matcher Team
-                  </p>
-                </td>
-              </tr>
-            </table>
+          <td align="center" style="padding: 20px;">
+            <h2 style="color:#d9534f; margin-top:0;">
+              It's Been 2 Weeks. How Are You Doing?
+            </h2>
+            <br><br>
+            <p style="margin:0 0 15px 0;">
+              Hello ${order.emailAddress ? order.emailAddress.split("@")[0] : ""},
+            </p>
+            <br>
+            <p style="margin:0 0 15px 0;">
+              We hope you've found <strong>the Right Person</strong>,<br><br>
+              However, if not, don’t be discouraged!<br> 
+              You can always <strong>update your materials and try again.</strong>
+              (I personally tried <strong>2 times</strong> before success!)
+            </p>
+            <br>
+            <p style="margin:0 0 15px 0;">
+             Use the promo code below to get <strong>10% off</strong> on your next trial:
+            </p>
+            <div style="
+              font-size: 1.4rem; 
+              font-weight: bold; 
+              background:#28a745; 
+              color:#ffffff;
+              border-radius:8px;
+              display:inline-block;
+              padding:10px 20px; 
+              margin:15px 0;
+            ">
+              RETURN10
+            </div>
+            <br><br><p style="margin:15px 0 20px 0;">
+              We’d also love to hear your feedback! Whether you succeeded or faced challenges, 
+                  your thoughts help us improve.
+            </p>
+            <br><br>
+            <a 
+              href="https://smarttalentmatcher.com/review.html"
+              target="_blank" 
+              style="
+                display: inline-block;
+                background: #00BCD4;
+                color: #FFFFFF;
+                padding: 20px 40px;
+                font-size: 1.5rem;
+                font-weight: bold;
+                font-style: italic;
+                border-radius: 30px;
+                border: 4px solid #001f3f;
+                transition: background 0.3s ease;
+                box-shadow: 0 8px 12px rgba(0,0,0,0.4);
+                text-decoration: none;
+              "
+              rel="noopener noreferrer"
+            >
+              REVIEW
+            </a>
+            <br><br>
+            <p style="margin:30px 0 0 0;">
+              Best Regards,<br>
+              Smart Talent Matcher
+            </p>
           </td>
         </tr>
       </table>
-    </body>
-  </html>
+    </td>
+  </tr>
+</table>
   `;
 
   const mailDataFollowUp = {
@@ -1214,19 +1219,20 @@ app.get("/admin/toggle-payment", async (req, res) => {
       <html>
       <body style="font-family: Arial, sans-serif; line-height:1.6;">
         <h2>🎉 Your service has started! 🎉</h2>
-        <p>Dear Customer,</p>
+        <p>Dear Customer,</p><br><br>
         <p>
           We are pleased to inform you that your payment has been successfully processed,
           and your service has now begun.
         </p>
-        <p>
-          Once all emails corresponding to your selected region have been sent,
-          you will receive a confirmation email.
-        </p>
-        <p>
+         <p>
           Thank you for trusting our service. We are committed to helping you find the right people.
-        </p>
-        <br>
+        </p><br>
+        <p>
+          ✅Once all emails corresponding to your selected region have been sent,
+          you will receive a confirmation email.
+        </p><br><br>
+       
+        
         <p>Best Regards,<br>Smart Talent Matcher Team</p>
       </body>
       </html>
@@ -1312,66 +1318,61 @@ app.get("/admin/toggle-payment", async (req, res) => {
         await order.save();
 
         // (G) All Emails Sent 안내메일
-        const completedHtml = `
-        <html>
-          <body style="font-family: Arial, sans-serif; line-height:1.6;">
-            <h2 style="margin-bottom: 0;">🎉🥳 All Emails Have Been Sent! 🥳🎉</h2>
-            <p style="margin-top: 5px;">
-              Dear Customer,
-            </p>
-            <p>
-              We are thrilled to inform you that all bulk emails for your selected region(s)
-              <strong>${selectedCountries.join(", ")}</strong>
-              have been successfully delivered.
-            </p>
-            <p>
-              Thank you for trusting our service. We are committed to helping you find the right people.
-            </p>
-            <br>
-        
-            <!-- What's Next? -->
-            <table style="border-top:2px solid #cccccc; width:100%; max-width:600px; margin:0 auto; padding-top:20px;">
-              <tr>
-                <td align="center" style="padding:0 20px;">
-                  <h3 style="margin-top:0; margin-bottom:15px; font-family:Arial, sans-serif; font-size:1.6rem; font-weight:bold; color:#000; line-height:1.3;">
-                    What's Next?
-                  </h3>
-                  <p style="margin:0 0 10px 0; max-width:500px; text-align:left; font-family:Arial, sans-serif; font-size:14px; color:#555; line-height:1.5;">
-                    &#10003; Now that your introduction has reached relevant talent agents, casting directors, and managers in
-                    <strong>${selectedCountries.join(", ")}</strong>,
-                    you can expect replies directly to your email.
-                  </p>
-                  <p style="margin:0 0 10px 0; max-width:500px; text-align:left; font-family:Arial, sans-serif; font-size:14px; color:#555; line-height:1.5;">
-                    &#10003; Some may respond with rejections (e.g., roster is full, only working with locals, etc.). 
-                    This is completely normal, so please don't be discouraged.
-                  </p>
-                  <p style="margin:0 0 10px 0; max-width:500px; text-align:left; font-family:Arial, sans-serif; font-size:14px; color:#FF0000; font-weight:bold; line-height:1.5;">
-                    &#9888; A 10% discount for your extended targeting campaign is already reflected in your invoice.
-                  </p>
-                  <p style="margin:0 0 10px 0; max-width:500px; text-align:left; font-family:Arial, sans-serif; font-size:14px; color:#555; line-height:1.5;">
-                    &#10003; Our responsibility at Smart Talent Matcher ends here, 
-                    and any further steps or responses will be up to you.
-                  </p>
-                  <p style="margin:0 0 10px 0; max-width:500px; text-align:left; font-family:Arial, sans-serif; font-size:14px; color:#555; line-height:1.5;">
-                    &#10003; You may be invited to phone calls or Zoom meetings. Please present yourself professionally 
-                    to leave a great impression and seize the opportunity.
-                  </p>
-                  <p style="margin:0 0 20px 0; max-width:500px; text-align:left; font-family:Arial, sans-serif; font-size:14px; color:#555; line-height:1.5;">
-                    &#10003; In about one week, we'll send another email packed with additional tips and insights 
-                    based on our experience. Stay tuned!
-                  </p>
-                </td>
-              </tr>
-            </table>
-        
-            <p style="margin-top:20px;">
-              Good luck with your next steps! We genuinely hope this campaign helps you connect with the right people and takes your career to new heights.
-            </p>
-        
-            <p>Best Regards,<br>Smart Talent Matcher Team</p>
-          </body>
-        </html>
-        `;
+const completedHtml = `
+<html>
+  <body style="font-family: Arial, sans-serif; line-height:1.6;">
+    <h2 style="margin-bottom: 0;">🚀 All Emails Have Been Sent! 🚀</h2>
+
+    <p>Dear Customer,</p><br><br>
+    <p>
+      We are thrilled to inform you that all bulk emails for your selected region(s)
+      <br><strong>${selectedCountries.join(", ")}</strong><br>
+      have been successfully delivered!
+    </p>
+
+    <p>
+      Thank you for trusting our service. We are committed to helping you find the right people.
+    </p><br>
+
+    <p>
+      ✅ Now that your introduction has reached Talent Agents, Casting Directors, and Managers in
+      <strong>${selectedCountries.join(", ")}</strong>, we hope you see positive results soon.
+    </p>
+
+    <p>
+      ✅ Replies will be sent directly to the email you provided.
+    </p>
+
+    <p>
+      ✅ Some may respond with rejections (e.g., roster is full, only working with locals, etc.).
+      This is completely normal, so please don't be discouraged.
+    </p>
+
+    <p>
+      ✅ A 10% discount for the long-targeting emails adjustment is already reflected in your invoice.
+    </p>
+
+    <p>
+      ✅ Please note that our responsibility at Smart Talent Matcher ends here.
+    </p>
+
+    <p>
+      ✅ You may be invited to phone calls or Zoom meetings. Present yourself professionally
+      to leave a great impression and seize the opportunity!
+    </p>
+
+    <p>
+      ✅ You'll receive a 1-week follow-up email in one week! Stay tuned!
+    </p><br><br>
+
+    <p>
+      Best Regards,<br>
+      Smart Talent Matcher Team
+    </p>
+  </body>
+</html>
+`;
+ 
         const mailDataCompleted = {
           subject: `[Smart Talent Matcher] #${order.orderId} All Emails Sent!`,
           from: process.env.ELASTIC_EMAIL_USER,
