@@ -80,7 +80,7 @@
       <option value="expired">Expired (24hrs)</option>
       <option value="paid">Paid Orders</option>
       <option value="unpaid">Unpaid Orders</option>
-      <option value="1week">1week Follow-Up</option>
+      <!-- 1week 옵션 제거 -->
       <option value="2weeks">2weeks Follow-Up</option>
       <option value="draft">Draft</option>
     </select>
@@ -167,7 +167,7 @@
     function renderOrders(orders) {
       const tbody = document.getElementById('orders-tbody');
       tbody.innerHTML = "";
-      // 24hrs badge는 24시간 ~ 48시간 사이에 표시
+      // 24hrs badge: 주문 생성 후 24시간 이상, 48시간 미만, 미결제일 경우
       const expiredThreshold = 24 * 60 * 60 * 1000; 
       const badgeRemovalThreshold = 48 * 60 * 60 * 1000; 
 
@@ -175,43 +175,42 @@
         const tr = document.createElement('tr');
         const timeSinceCreation = Date.now() - new Date(order.createdAt).getTime();
 
-        // 열 순서대로 생성
-        // 1) orderId
+        // 1) Order ID
         const tdOrderId = document.createElement('td');
         tdOrderId.textContent = order.orderId || "";
         tr.appendChild(tdOrderId);
 
-        // 2) venmoId
+        // 2) Venmo
         const tdVenmo = document.createElement('td');
         tdVenmo.textContent = order.venmoId || "";
         tr.appendChild(tdVenmo);
 
-        // 3) emailAddress
+        // 3) Email
         const tdEmail = document.createElement('td');
         tdEmail.textContent = order.emailAddress || "";
         tr.appendChild(tdEmail);
 
-        // 4) emailSubject
+        // 4) Email Subject
         const tdSubject = document.createElement('td');
         tdSubject.textContent = order.emailSubject || "";
         tr.appendChild(tdSubject);
 
-        // 5) actingReel
+        // 5) Acting Reel
         const tdReel = document.createElement('td');
         tdReel.textContent = order.actingReel || "";
         tr.appendChild(tdReel);
 
-        // 6) resumeLink
+        // 6) Resume Link
         const tdResume = document.createElement('td');
         tdResume.textContent = order.resumeLink || "";
         tr.appendChild(tdResume);
 
-        // 7) introduction
+        // 7) Introduction
         const tdIntro = document.createElement('td');
         tdIntro.textContent = order.introduction || "";
         tr.appendChild(tdIntro);
 
-        // 8) headshot
+        // 8) Headshot
         const tdHeadshot = document.createElement('td');
         if (order.headshot) {
           const img = document.createElement('img');
@@ -224,7 +223,7 @@
         }
         tr.appendChild(tdHeadshot);
 
-        // 9) status
+        // 9) Status
         const tdStatus = document.createElement('td');
         tdStatus.textContent = order.status || "";
         if (order.status === "canceled_24hr") {
@@ -233,29 +232,27 @@
         }
         tr.appendChild(tdStatus);
 
-        // 10) invoice
+        // 10) Invoice
         const tdInvoice = document.createElement('td');
         tdInvoice.classList.add("scroll-cell");
         tdInvoice.innerHTML = order.invoice || "";
         tr.appendChild(tdInvoice);
 
-        // 11) payment/delete + 배지 표시
+        // 11) Payment/Delete + Badge 표시
         const tdPayment = document.createElement('td');
         let finalCost = order.finalCost || "";
         if (finalCost !== "") {
           finalCost = "$" + parseFloat(finalCost).toFixed(2);
         }
 
-        // 24hrs 배지: 주문 생성 후 24시간 이상, 48시간 미만, 그리고 아직 결제되지 않은 경우에만 표시
+        // 24hrs 배지: 주문 생성 후 24시간 이상, 48시간 미만, 미결제일 경우
         let badgesHTML = "";
         if (timeSinceCreation >= expiredThreshold && timeSinceCreation < badgeRemovalThreshold && !order.paid) {
           badgesHTML += `<div style="color:red; font-weight:bold;">24hrs</div>`;
         }
-        // 2주, 1주 배지 처리 (2주가 된 경우 1주 배지는 표시하지 않음)
+        // 2주 배지 표시 (1주 관련 배지는 제거)
         if (order.twoWeekFollowUpSent) {
           badgesHTML += `<div style="color:blue; font-weight:bold;">2weeks</div>`;
-        } else if (order.oneWeekFollowUpSent) {
-          badgesHTML += `<div style="color:green; font-weight:bold;">1week</div>`;
         }
 
         tdPayment.innerHTML = `
@@ -325,7 +322,7 @@
       });
     }
 
-    // 필터 이벤트: 1주 필터 시 2주가 되지 않은 주문만 선택, expired 필터는 24~48시간 사이의 미결제 주문
+    // 필터 이벤트: '1week' 관련 옵션 제거 (나머지 조건만 적용)
     document.getElementById("filter-status").addEventListener("change", function () {
       const filter = this.value;
       const now = Date.now();
@@ -343,9 +340,6 @@
         }
         if (filter === "unpaid") {
           return !order.paid;
-        }
-        if (filter === "1week") {
-          return order.oneWeekFollowUpSent === true && !order.twoWeekFollowUpSent;
         }
         if (filter === "2weeks") {
           return order.twoWeekFollowUpSent === true;
