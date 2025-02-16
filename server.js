@@ -75,7 +75,7 @@ const orderSchema = new mongoose.Schema({
 
   // ───────── (추가) 대량 메일 완료 시점 & 팔로업 메일 전송 여부 ─────────
   bulkEmailsCompletedAt: { type: Date, default: null },
-  // oneWeekFollowUpSent: { type: Boolean, default: false }, // 1주 메일 제거
+  // oneWeekFollowUpSent: { type: Boolean, default: false }, // 제거
   twoWeekFollowUpSent: { type: Boolean, default: false }
 });
 const Order = mongoose.model("Order", orderSchema);
@@ -400,40 +400,52 @@ function autoCancelOrder(order) {
 }
 
 // ───────── [48시간 후 주문 자동 삭제 함수 (DB & Cloudinary)] ─────────
-// 수정된 부분: 삭제 직전에 DB에서 주문을 다시 조회하여, paid 상태인 경우 삭제를 건너뜁니다.
-async function autoDeleteOrder(order) {
-  // 최신 상태 확인을 위해 DB에서 주문 재조회
-  const currentOrder = await Order.findOne({ orderId: order.orderId });
-  if (!currentOrder) {
-    console.error(`Order #${order.orderId} not found during auto-delete check.`);
-    return;
-  }
-  if (currentOrder.paid) {
-    console.log(`Order #${order.orderId} is paid. Skipping auto-delete.`);
-    return;
-  }
-  console.log(`>>> autoDeleteOrder called for order #${order.orderId}`);
-  if (currentOrder.headshot) {
-    const parts = currentOrder.headshot.split("/");
-    const uploadIndex = parts.findIndex(part => part === "upload");
-    if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
-      const fileNameWithExtension = parts.slice(uploadIndex + 2).join("/");
-      const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, "");
-      console.log("Deleting Cloudinary resource with public_id:", publicId);
-      try {
-        await cloudinary.uploader.destroy(publicId);
-      } catch (err) {
-        console.error("Error deleting Cloudinary resource:", err);
-      }
+function scheduleAutoDelete(order) {
+  const timeLeft = order.createdAt.getTime() + FORTY_EIGHT_HOURS - Date.now();
+  if (timeLeft > 0 && !order.paid) {
+    if (autoDeleteTimers[order.orderId]) {
+      clearTimeout(autoDeleteTimers[order.orderId]);
+      delete autoDeleteTimers[order.orderId];
     }
-  }
-  try {
-    await Order.deleteOne({ orderId: currentOrder.orderId });
-    console.log(`✅ Order #${currentOrder.orderId} auto-deleted from DB after 48 hours.`);
-  } catch (err) {
-    console.error("Error auto-deleting order from DB:", err);
+    autoDeleteTimers[order.orderId] = setTimeout(() => autoDeleteOrder(order), timeLeft);
+    console.log(`⏰ Scheduled auto-delete for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
   }
 }
+/* 수정된 부분: 주문 삭제 전에 DB에서 최신 주문 상태를 확인하여, 
+   paid 상태인 경우 삭제하지 않도록 처리 */
+   async function autoDeleteOrder(order) {
+    // 최신 상태 확인을 위해 DB에서 주문 재조회
+    const currentOrder = await Order.findOne({ orderId: order.orderId });
+    if (!currentOrder) {
+      console.error(`Order #${order.orderId} not found during auto-delete check.`);
+      return;
+    }
+    if (currentOrder.paid) {
+      console.log(`Order #${order.orderId} is paid. Skipping auto-delete.`);
+      return;
+    }
+    console.log(`>>> autoDeleteOrder called for order #${order.orderId}`);
+    if (currentOrder.headshot) {
+      const parts = currentOrder.headshot.split("/");
+      const uploadIndex = parts.findIndex(part => part === "upload");
+      if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
+        const fileNameWithExtension = parts.slice(uploadIndex + 2).join("/");
+        const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, "");
+        console.log("Deleting Cloudinary resource with public_id:", publicId);
+        try {
+          await cloudinary.uploader.destroy(publicId);
+        } catch (err) {
+          console.error("Error deleting Cloudinary resource:", err);
+        }
+      }
+    }
+    try {
+      await Order.deleteOne({ orderId: currentOrder.orderId });
+      console.log(`✅ Order #${currentOrder.orderId} auto-deleted from DB after 48 hours.`);
+    } catch (err) {
+      console.error("Error auto-deleting order from DB:", err);
+    }
+  }
 
 // ───────── [2주 팔로업 메일: 스케줄 및 발송 함수] ─────────
 function scheduleTwoWeekFollowUpEmail(order) {
@@ -482,9 +494,11 @@ async function sendTwoWeekEmail(order) {
             <br>
             <p style="margin:0 0 15px 0;">
               We hope you've found <strong>the Right Person</strong>.<br><br>
+             
               💡 Check which <strong>platform</strong> they use and the <strong>regions</strong> they have access to for breakdown services.<br>
               💡 Verify whether the contract is <strong>Exclusive</strong> or <strong>Non-Exclusive</strong>.<br>
               💡 Always <strong>REVIEW</strong> any contracts before signing (ask ChatGPT for help if needed)!<br><br>
+             
               However, <strong>if not,</strong> don't be discouraged!<br>
               You can always <strong>update your materials and try again.</strong><br>
               (I personally tried <strong>2 times</strong> before success!)
