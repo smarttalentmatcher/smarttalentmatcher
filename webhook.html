@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Webhook Events</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background: #f0f0f0; }
+  </style>
+</head>
+<body>
+  <h1>Webhook Events</h1>
+  <table id="eventsTable">
+    <thead>
+      <tr>
+        <th>Event Type</th>
+        <th>Data</th>
+        <th>Received At</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <script>
+    async function fetchEvents() {
+      try {
+        const response = await fetch('/api/webhook-events');
+        const result = await response.json();
+        if (result.success) {
+          const tbody = document.querySelector('#eventsTable tbody');
+          tbody.innerHTML = '';
+          result.events.forEach(event => {
+            const row = document.createElement('tr');
+            const typeCell = document.createElement('td');
+            typeCell.textContent = event.eventType || 'N/A';
+            const dataCell = document.createElement('td');
+            dataCell.textContent = JSON.stringify(event.data);
+            const receivedCell = document.createElement('td');
+            receivedCell.textContent = new Date(event.receivedAt).toLocaleString();
+            row.appendChild(typeCell);
+            row.appendChild(dataCell);
+            row.appendChild(receivedCell);
+            tbody.appendChild(row);
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching events:', err);
+      }
+    }
+    // 페이지 로드 시 이벤트 데이터 조회
+    fetchEvents();
+  </script>
+</body>
+</html>

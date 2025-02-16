@@ -94,6 +94,14 @@ const reviewSchema = new mongoose.Schema({
 });
 const Review = mongoose.model("Review", reviewSchema);
 
+// ───────── [이메일 이벤트 저장 스키마] ─────────
+const emailEventSchema = new mongoose.Schema({
+  eventType: { type: String, default: "" }, // 예: "Opened", "Clicked" 등
+  data: { type: mongoose.Schema.Types.Mixed }, // 웹훅에서 받은 전체 데이터
+  receivedAt: { type: Date, default: Date.now }
+});
+const EmailEvent = mongoose.model("EmailEvent", emailEventSchema);
+
 // ───────── [Express 앱 설정] ─────────
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -237,11 +245,11 @@ app.get("/", (req, res) => {
   res.send("<h1>Hello from server.js - CSV Reload test</h1>");
 });
 
-// ───────── [타이머 관련 상수 & 변수 (테스트용 시간 단축)] ─────────
-const TWELVE_HOURS = 1 * 60 * 1000;     // 12 hours -> 1 min (for test)
-const TWENTY_FOUR_HOURS = 2 * 60 * 1000; // 24 hours -> 2 min
-const FORTY_EIGHT_HOURS = 3 * 60 * 1000; // 48 hours -> 3 min
-const TWO_WEEKS = 1 * 60 * 1000;         // 2 weeks -> 1 min
+// ───────── [타이머 관련 상수 & 변수 (원래 시간)] ─────────
+const TWELVE_HOURS = 12 * 60 * 60 * 1000;     // 12시간 = 12 * 60분 * 60초 * 1000밀리초
+const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000; // 24시간 = 24 * 60분 * 60초 * 1000밀리초
+const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;  // 48시간 = 48 * 60분 * 60초 * 1000밀리초
+const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000;     // 2주 = 14일 * 24시간 * 60분 * 60초 * 1000밀리초
 
 // 타이머 기록용 객체
 const reminderTimers = {};
@@ -1307,13 +1315,40 @@ app.get("/admin/toggle-payment", async (req, res) => {
     res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 });
-app.all("/webhook", (req, res) => {
+
+// ───────── [웹훅 라우트] ─────────
+// GET, POST 모두 처리 (Elastic Email이 이벤트를 GET 방식으로 보낼 수도 있음)
+app.all("/webhook", async (req, res) => {
+  let eventData;
   if (req.method === "GET") {
+    eventData = req.query;
     console.log(">>> [GET] Webhook from Elastic Email:", req.query);
   } else if (req.method === "POST") {
+    eventData = req.body;
     console.log(">>> [POST] Webhook from Elastic Email:", req.body);
   }
-  res.sendStatus(200);
+  
+  // 웹훅 이벤트를 MongoDB에 저장
+  try {
+    const eventType = eventData.event || ""; // 웹훅 데이터에 'event' 필드가 있다면 사용
+    await EmailEvent.create({ eventType, data: eventData });
+    console.log("Webhook event saved to DB.");
+  } catch (err) {
+    console.error("Error saving webhook event:", err);
+  }
+  
+  res.sendStatus(200); // 반드시 200 OK 반환
+});
+
+// ───────── [웹훅 이벤트 조회 API] ─────────
+app.get("/api/webhook-events", async (req, res) => {
+  try {
+    const events = await EmailEvent.find({}).sort({ receivedAt: -1 });
+    res.json({ success: true, events });
+  } catch (err) {
+    console.error("Error fetching webhook events:", err);
+    res.status(500).json({ success: false, message: "Error fetching webhook events" });
+  }
 });
 
 // ───────── [서버 리슨 및 초기 정리 작업] ─────────
