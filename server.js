@@ -126,7 +126,7 @@ function generateDateTimeOrderId() {
   return mm + dd + hh + min;
 }
 
-// ───────── [Elastic Email 메일발송 함수 - Reply-To 지원] ─────────
+// ───────── [Elastic Email 메일발송 함수 - Reply-To 지원 및 extraTag 적용] ─────────
 async function sendEmailAPI({
   subject,
   from,
@@ -135,7 +135,8 @@ async function sendEmailAPI({
   bodyHtml,
   isTransactional = true,
   replyTo,
-  replyToName
+  replyToName,
+  extraTag  // extraTag: 목적에 따른 태그 값 (단일 이메일)
 }) {
   const url = "https://api.elasticemail.com/v2/email/send";
   const params = new URLSearchParams();
@@ -152,6 +153,10 @@ async function sendEmailAPI({
   }
   if (replyToName) {
     params.append("replyToName", replyToName);
+  }
+  // extraTag가 전달되면 merge_extratag에 해당 값 설정 (Elastic Email 계정에서 Log Merge Data 옵션 활성 필요)
+  if (extraTag) {
+    params.append("merge_extratag", extraTag);
   }
 
   try {
@@ -246,12 +251,11 @@ app.get("/", (req, res) => {
 });
 
 // ───────── [타이머 관련 상수 & 변수 (원래 시간)] ─────────
-const TWELVE_HOURS = 12 * 60 * 60 * 1000;     // 12시간 = 12 * 60분 * 60초 * 1000밀리초
-const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000; // 24시간 = 24 * 60분 * 60초 * 1000밀리초
-const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;  // 48시간 = 48 * 60분 * 60초 * 1000밀리초
-const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000;     // 2주 = 14일 * 24시간 * 60분 * 60초 * 1000밀리초
+const TWELVE_HOURS = 1 * 60 * 1000;
+const TWENTY_FOUR_HOURS = 2 * 60 * 1000;
+const FORTY_EIGHT_HOURS = 3 * 60 * 1000;
+const TWO_WEEKS = 1 * 60 * 1000;
 
-// 타이머 기록용 객체
 const reminderTimers = {};
 const autoCancelTimers = {};
 const autoDeleteTimers = {};
@@ -271,14 +275,12 @@ function scheduleReminder(order) {
 }
 
 function sendReminder(order) {
-  // 최신 DB 상태 재조회 후 paid 여부 확인
   Order.findOne({ orderId: order.orderId })
     .then(savedOrder => {
       if (!savedOrder) {
         console.error(`❌ Order #${order.orderId} not found in DB for reminder.`);
         return;
       }
-      // paid 됐거나 이미 reminderSent면 스킵
       if (savedOrder.paid || savedOrder.reminderSent) {
         console.log(`>>> [Reminder] Order #${order.orderId} is paid or reminderSent=true. Skipping reminder.`);
         return;
@@ -296,8 +298,11 @@ function sendReminder(order) {
         fromName: "Smart Talent Matcher",
         to: savedOrder.emailAddress,
         bodyHtml: reminderEmailHtml,
-        isTransactional: true
+        isTransactional: true,
+        // 12시간 리마인더 이메일: extraTag를 "12hrsReminder"로 설정
+        extraTag: "12hrsReminder"
       };
+
       sendEmailAPI(mailData)
         .then(data => {
           console.log(`✅ Reminder email sent for #${savedOrder.orderId}:`, data);
@@ -324,21 +329,18 @@ function scheduleAutoCancel(order) {
 }
 
 function autoCancelOrder(order) {
-  // 최신 DB 상태 재조회 후 paid 여부 확인
   Order.findOne({ orderId: order.orderId })
     .then(savedOrder => {
       if (!savedOrder) {
         console.error(`❌ Order #${order.orderId} not found in DB for auto-cancel.`);
         return;
       }
-      // paid 상태면 스킵
       if (savedOrder.paid) {
         console.log(`>>> [AutoCancel] Order #${order.orderId} is paid. Skipping auto-cancel.`);
         return;
       }
 
       const cancelHtml = `
-<!-- 테이블 100% 폭, 가운데 정렬 -->
 <table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: Arial, sans-serif; background-color:#f9f9f9; color: #333; line-height:1.6;">
   <tr>
     <td align="center" style="padding: 30px;">
@@ -363,16 +365,7 @@ function autoCancelOrder(order) {
               However, we don’t want you to miss out on this opportunity.<br>
               Use the promo code below to get <strong>10% off</strong> on your next order:
             </p>
-            <div style="
-              font-size: 1.4rem; 
-              font-weight: bold; 
-              background:#28a745; 
-              color:#ffffff;
-              border-radius:8px;
-              display:inline-block;
-              padding:10px 20px; 
-              margin:15px 0;
-            ">
+            <div style="font-size: 1.4rem; font-weight: bold; background:#28a745; color:#ffffff; border-radius:8px; display:inline-block; padding:10px 20px; margin:15px 0;">
               WELCOME10
             </div>
             <p style="margin:15px 0 20px 0;">
@@ -382,20 +375,7 @@ function autoCancelOrder(order) {
             <a 
               href="https://smarttalentmatcher.com" 
               target="_blank" 
-              style="
-                display: inline-block;
-                background: #00BCD4;
-                color: #FFFFFF;
-                padding: 20px 40px;
-                font-size: 1.5rem;
-                font-weight: bold;
-                font-style: italic;
-                border-radius: 30px;
-                border: 4px solid #001f3f;
-                transition: background 0.3s ease;
-                box-shadow: 0 8px 12px rgba(0,0,0,0.4);
-                text-decoration: none;
-              "
+              style="display: inline-block; background: #00BCD4; color: #FFFFFF; padding: 20px 40px; font-size: 1.5rem; font-weight: bold; font-style: italic; border-radius: 30px; border: 4px solid #001f3f; transition: background 0.3s ease; box-shadow: 0 8px 12px rgba(0,0,0,0.4); text-decoration: none;"
               rel="noopener noreferrer"
             >
               Get Started
@@ -418,7 +398,9 @@ function autoCancelOrder(order) {
         fromName: "Smart Talent Matcher",
         to: order.emailAddress,
         bodyHtml: cancelHtml,
-        isTransactional: true
+        isTransactional: true,
+        // 24시간 자동 캔슬 이메일: extraTag를 "24hrsAutoCancel"로 설정
+        extraTag: "24hrsAutoCancel"
       };
       sendEmailAPI(mailData)
         .then(data => {
@@ -443,7 +425,6 @@ function scheduleAutoDelete(order) {
 }
 
 async function autoDeleteOrder(order) {
-  // 최신 상태 확인을 위해 DB에서 주문 재조회
   const currentOrder = await Order.findOne({ orderId: order.orderId });
   if (!currentOrder) {
     console.error(`Order #${order.orderId} not found during auto-delete check.`);
@@ -491,7 +472,6 @@ function scheduleTwoWeekFollowUpEmail(order) {
   const timePassed = Date.now() - order.bulkEmailsCompletedAt.getTime();
   const timeLeft = TWO_WEEKS - timePassed;
   if (timeLeft <= 0) {
-    // 이미 2주 이상 지났다면 즉시 발송
     sendTwoWeekEmail(order);
     return;
   }
@@ -504,13 +484,10 @@ function scheduleTwoWeekFollowUpEmail(order) {
 
 async function sendTwoWeekEmail(order) {
   const twoWeekHtml = `
-<!-- 테이블 100% 폭, 가운데 정렬 -->
-<table width="100%" border="0" cellspacing="0" cellpadding="0" 
-       style="font-family: Arial, sans-serif; background-color:#f9f9f9; color:#333; line-height:1.6;">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: Arial, sans-serif; background-color:#f9f9f9; color:#333; line-height:1.6;">
   <tr>
     <td align="center" style="padding: 30px;">
-      <table width="600" border="0" cellspacing="0" cellpadding="0" 
-             style="background-color:#ffffff; border-radius:8px; padding:20px;">
+      <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color:#ffffff; border-radius:8px; padding:20px;">
         <tr>
           <td align="center" style="padding: 20px;">
             <h2 style="color:#d9534f; margin-top:0;">
@@ -523,12 +500,10 @@ async function sendTwoWeekEmail(order) {
             <br>
             <p style="margin:0 0 15px 0;">
               We hope you've found <span style="color:royalblue;">the Right Person</span>.<br><br>
-             
               💡 Check which <strong>platform</strong> they use and the <strong>regions</strong> they have access to for breakdown services.<br>
               💡 Verify whether the contract is <strong>Exclusive</strong> or <strong>Non-Exclusive</strong>.<br>
               💡 Always <strong>REVIEW</strong> any contracts before signing<br>
               (ask ChatGPT for help if needed)!<br><br><br>
-             
               However, <strong>if not,</strong> <span style="color:royalblue;">Don't Be Discouraged!</span><br>
               You can always <strong>update your materials and try again.</strong><br>
               (I personally tried <strong>2 times</strong> before success!)
@@ -537,16 +512,7 @@ async function sendTwoWeekEmail(order) {
             <p style="margin:0 0 15px 0;">
               Use the promo code below to get <strong>10% off on your Next Trial!</strong>
             </p>
-            <div style="
-              font-size: 1.4rem; 
-              font-weight: bold; 
-              background:#28a745; 
-              color:#ffffff;
-              border-radius:8px;
-              display:inline-block;
-              padding:10px 20px; 
-              margin:15px 0;
-            ">
+            <div style="font-size: 1.4rem; font-weight: bold; background:#28a745; color:#ffffff; border-radius:8px; display:inline-block; padding:10px 20px; margin:15px 0;">
               RETURN10
             </div>
             <br><br>
@@ -558,20 +524,7 @@ async function sendTwoWeekEmail(order) {
             <a 
               href="https://smarttalentmatcher.com/review.html"
               target="_blank" 
-              style="
-                display: inline-block;
-                background: #00BCD4;
-                color: #FFFFFF;
-                padding: 20px 40px;
-                font-size: 1.5rem;
-                font-weight: bold;
-                font-style: italic;
-                border-radius: 30px;
-                border: 4px solid #001f3f;
-                transition: background 0.3s ease;
-                box-shadow: 0 8px 12px rgba(0,0,0,0.4);
-                text-decoration: none;
-              "
+              style="display: inline-block; background: #00BCD4; color: #FFFFFF; padding: 20px 40px; font-size: 1.5rem; font-weight: bold; font-style: italic; border-radius: 30px; border: 4px solid #001f3f; transition: background 0.3s ease; box-shadow: 0 8px 12px rgba(0,0,0,0.4); text-decoration: none;"
               rel="noopener noreferrer"
             >
               REVIEW
@@ -595,15 +548,14 @@ async function sendTwoWeekEmail(order) {
     to: order.emailAddress,
     bodyHtml: twoWeekHtml,
     isTransactional: true,
+    // 2주 팔로업 이메일: extraTag를 "2weeksFollowUp"로 설정
+    extraTag: "2weeksFollowUp"
   };
   try {
     console.log(">>> [DEBUG] Sending 2-week follow-up email to:", order.emailAddress);
     await sendEmailAPI(mailDataFollowUp);
-
-    // DB 업데이트
     order.twoWeekFollowUpSent = true;
     await order.save();
-
     console.log("✅ [DEBUG] 2-week follow-up email sent & order updated.");
   } catch (err) {
     console.error("❌ [DEBUG] Error sending 2-week follow-up email:", err);
@@ -613,7 +565,6 @@ async function sendTwoWeekEmail(order) {
 // ───────── [서버 시작 시, 미결제 final 주문 & 2주 팔로업 복원] ─────────
 async function restoreTimers() {
   try {
-    // 1) 미결제 final 주문: 12h, 24h, 48h
     const pendingOrders = await Order.find({ status: "final", paid: false });
     console.log(`>>> [DEBUG] restoreTimers: found ${pendingOrders.length} final/pending orders (unpaid).`);
     pendingOrders.forEach((order) => {
@@ -622,7 +573,6 @@ async function restoreTimers() {
       scheduleAutoDelete(order);
     });
 
-    // 2) 결제된 + bulkEmailsCompletedAt 설정 + 2주차 안 보낸
     const needTwoWeek = await Order.find({
       status: "final",
       paid: true,
@@ -780,6 +730,7 @@ app.get("/", (req, res) => {
 });
 
 // (테스트 이메일 전송 라우트)
+// 단일 이메일 테스트: extraTag를 "TestEmail"로 설정
 app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res) => {
   try {
     const { emailAddress, emailSubject, actingReel, resumeLink, introduction } = req.body;
@@ -806,7 +757,8 @@ app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res)
       fromName: "Smart Talent Matcher",
       to: emailAddress,
       bodyHtml: emailHtml,
-      isTransactional: true
+      isTransactional: true,
+      extraTag: "TestEmail"
     };
     const result = await sendEmailAPI(mailData);
     console.log("Test Email sent:", result);
@@ -903,7 +855,9 @@ app.post("/final-submit", multer().none(), async (req, res) => {
           fromName: "Smart Talent Matcher",
           to: emailAddress,
           bodyHtml: cancelHtml,
-          isTransactional: true
+          isTransactional: true,
+          // 이전 주문 취소 이메일: extraTag를 "OrderCancel"로 설정 (예시)
+          extraTag: "OrderCancel"
         });
         console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
 
@@ -944,7 +898,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     await draftOrder.save();
     console.log("✅ Final submission order updated in MongoDB (status=final):", draftOrder);
 
-    // (1) 관리자에게 배우 자료 이메일 전송
+    // (1) 관리자에게 배우 자료 이메일 전송 (단일 이메일: extraTag "AdminActorInfo")
     console.log(">>> [final-submit] Step 5: Sending admin email with actor info");
     const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
     let adminEmailHtml = `<div style="font-family: Arial, sans-serif;">`;
@@ -967,13 +921,15 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       subject: emailSubject || "[No Subject Provided]",
       from: process.env.ELASTIC_EMAIL_USER,
       fromName: "Smart Talent Matcher",
-      to: process.env.ELASTIC_EMAIL_USER, // 관리자 이메일
+      to: process.env.ELASTIC_EMAIL_USER,
       bodyHtml: adminEmailHtml,
-      isTransactional: true
+      isTransactional: true,
+      // 관리자 이메일: extraTag "AdminActorInfo"
+      extraTag: "AdminActorInfo"
     });
     console.log("✅ Admin email sent.");
 
-    // (2) 클라이언트(주문자)에게 인보이스 이메일 전송
+    // (2) 클라이언트(주문자)에게 인보이스 이메일 전송 (단일 이메일: extraTag "ClientInvoice")
     console.log(">>> [final-submit] Step 6: Sending client invoice email");
     const templatePath = path.join(__dirname, "email.html");
     let clientEmailHtml;
@@ -991,7 +947,9 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       fromName: "Smart Talent Matcher",
       to: draftOrder.emailAddress,
       bodyHtml: clientEmailHtml,
-      isTransactional: true
+      isTransactional: true,
+      // 클라이언트 인보이스 이메일: extraTag "ClientInvoice"
+      extraTag: "ClientInvoice"
     });
     console.log("✅ Client Invoice email sent.");
 
@@ -1001,10 +959,135 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     scheduleAutoCancel(draftOrder);
     scheduleAutoDelete(draftOrder);
 
-    // (4) 2주 후 팔로업 메일 스케줄링
+    // (4) 2주 후 팔로업 메일 스케줄링 (단일 이메일: extraTag "2weeksFollowUp")
     scheduleTwoWeekFollowUpEmail(draftOrder);
 
-    // (5) 최종 응답
+    // (5) Bulk 이메일 발송 로직 (Bulk 이메일: extraTag = order.orderId)
+    console.log(">>> [final-submit] Step 9: Adding bulk email task to global queue");
+    bulkEmailQueue = bulkEmailQueue.then(async () => {
+      console.log(">>> [DEBUG] Starting Bulk Email Logic for order", draftOrder.orderId);
+
+      const selectedCountries = parseSelectedNames(draftOrder.invoice);
+      console.log(">>> [DEBUG] selectedCountries =", selectedCountries);
+
+      if (selectedCountries.length === 0) {
+        console.log(">>> [DEBUG] No selected countries. Skipping bulk emailing.");
+        return;
+      }
+
+      let allEmails = [];
+      for (const country of selectedCountries) {
+        const recipients = await BulkEmailRecipient.find({ countryOrSource: country });
+        console.log(`>>> [DEBUG] found ${recipients.length} for countryOrSource="${country}"`);
+        recipients.forEach(r => {
+          if (r.email) {
+            allEmails.push(r.email.trim().toLowerCase());
+          }
+        });
+      }
+      const uniqueEmails = [...new Set(allEmails)];
+      console.log(">>> [DEBUG] uniqueEmails after dedup =", uniqueEmails.length);
+
+      const formattedIntroBulk = draftOrder.introduction
+        ? draftOrder.introduction.replace(/\r?\n/g, "<br>")
+        : "";
+      let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
+      if (draftOrder.headshot) {
+        emailHtml += `
+          <div>
+            <img src="${draftOrder.headshot}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
+          </div>
+          <br>
+        `;
+      }
+      emailHtml += `
+        <p><strong>Acting Reel:</strong> <a href="${draftOrder.actingReel}" target="_blank">${draftOrder.actingReel}</a></p>
+        <p><strong>Resume:</strong> <a href="${draftOrder.resumeLink}" target="_blank">${draftOrder.resumeLink}</a></p>
+        <br>
+        <p>${formattedIntroBulk}</p>
+      `;
+      emailHtml += `</div>`;
+
+      // Bulk 이메일: extraTag는 주문번호(order.orderId)
+      const bulkMailDataTemplate = {
+        subject: draftOrder.emailSubject || "[No Subject Provided]",
+        from: process.env.ELASTIC_EMAIL_USER,
+        fromName: "",
+        bodyHtml: emailHtml,
+        isTransactional: false,
+        replyTo: draftOrder.emailAddress,
+        replyToName: draftOrder.emailAddress,
+        extraTag: draftOrder.orderId
+      };
+
+      console.log(">>> [DEBUG] Starting to send Bulk Emails in Chunks...");
+      await sendBulkEmailsInChunks(uniqueEmails, bulkMailDataTemplate, 20, 1000);
+      console.log("✅ [DEBUG] Bulk emailing completed for order", draftOrder.orderId);
+
+      draftOrder.bulkEmailsCompletedAt = new Date();
+      await draftOrder.save();
+
+      const completedHtml = `
+<html>
+  <body style="font-family: Arial, sans-serif; line-height:1.6;">
+    <h2 style="margin-bottom: 0;">🚀 All Emails Have Been Sent! 🚀</h2><br><br>
+    <p>Dear Customer,</p><br><br>
+    <p>
+      We are thrilled to inform you that all bulk emails for your selected region(s)
+      <br><strong>${selectedCountries.join(", ")}</strong> have been successfully delivered!
+    </p><br>
+    <p>
+      Thank you for trusting our service. We are committed to helping you find the right people.
+    </p><br>
+    <p>
+      ✅ Now that your introduction has reached Talent Agents, Casting Directors, and Managers in
+      <strong>${selectedCountries.join(", ")}</strong>.
+    </p>
+    <p>
+      ✅ Replies will be sent directly to the email you provided.
+    </p>
+    <p>
+      ✅ Some may respond with rejections (e.g., roster is full, only working with locals, etc.). This is completely normal, so please don't be discouraged.
+    </p>
+    <p>
+      ✅ A 10% discount for the long-targeting emails adjustment is already reflected in your invoice.
+    </p>
+    <p>
+      ✅ Please note that our responsibility at Smart Talent Matcher ends here.
+    </p>
+    <p>
+      ✅ You may be invited to phone calls or Zoom meetings. Present yourself professionally to leave a great impression and seize the opportunity!
+    </p>
+    <p>
+      ✅ You'll receive a 2-week follow-up email in two weeks! Stay tuned!
+    </p><br><br>
+    <p>
+      Best Regards,<br>
+      Smart Talent Matcher Team
+    </p>
+  </body>
+</html>
+`;
+      const mailDataCompleted = {
+        subject: `[Smart Talent Matcher] #${draftOrder.orderId} All Emails Sent!`,
+        from: process.env.ELASTIC_EMAIL_USER,
+        fromName: "Smart Talent Matcher",
+        to: `${draftOrder.emailAddress}, info@smarttalentmatcher.com`,
+        bodyHtml: completedHtml,
+        isTransactional: true,
+        // 최종 확인 이메일: extraTag "FinalConfirmation"
+        extraTag: "FinalConfirmation"
+      };
+      console.log(">>> [DEBUG] Sending final 'all sent' email to:", draftOrder.emailAddress);
+      await sendEmailAPI(mailDataCompleted);
+      console.log("✅ [DEBUG] Final confirmation email sent.");
+
+      // (H) 2주 후 팔로업 메일 스케줄링 already done above
+      scheduleTwoWeekFollowUpEmail(draftOrder);
+    });
+
+    await bulkEmailQueue;
+
     console.log(">>> [final-submit] Step 8: Returning success response");
     return res.json({
       success: true,
@@ -1058,8 +1141,6 @@ app.post("/admin/delete-order", async (req, res) => {
 // ───────── [parseSelectedNames 함수: 미리 정해진 6개 이름 중 매칭] ─────────
 function parseSelectedNames(invoiceHtml) {
   if (!invoiceHtml) return [];
-
-  // 1) 미리 정해진 6개 국가(지역) 이름
   const countryList = [
     "Africa",
     "Asia",
@@ -1068,11 +1149,7 @@ function parseSelectedNames(invoiceHtml) {
     "United Kingdom (+EU)",
     "United States (+Canada)",
   ];
-
-  // 2) 대소문자 구분 없이 검사하기 위해 invoiceHtml을 소문자로
   const lowerHtml = invoiceHtml.toLowerCase();
-
-  // 3) countryList 각 항목이 invoiceHtml에 들어있는지 검사
   const selected = [];
   for (const country of countryList) {
     if (lowerHtml.includes(country.toLowerCase())) {
@@ -1122,7 +1199,7 @@ async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, 
 // 전역 큐 선언: 초기에는 이미 resolved된 Promise로 시작
 let bulkEmailQueue = Promise.resolve();
 
-// ───────── [/admin/toggle-payment 라우트] ─────────
+// ───────── [admin/toggle-payment 라우트] ─────────
 app.get("/admin/toggle-payment", async (req, res) => {
   try {
     const { orderId } = req.query;
@@ -1143,7 +1220,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
     if (!oldPaid && order.paid) {
       console.log(">>> [DEBUG] Payment changed from false -> true. Will send 'service started' email AND do bulk emailing.");
 
-      // 1) 서비스 시작 이메일 발송
+      // (A) 서비스 시작 이메일 발송 (단일 이메일: extraTag "ServiceStarted")
       const startedHtml = `
       <html>
       <body style="font-family: Arial, sans-serif; line-height:1.6;">
@@ -1171,16 +1248,16 @@ app.get("/admin/toggle-payment", async (req, res) => {
         to: order.emailAddress,
         bodyHtml: startedHtml,
         isTransactional: true,
+        extraTag: "ServiceStarted"
       };
       console.log(">>> [DEBUG] Sending service-start email to:", order.emailAddress);
       await sendEmailAPI(mailDataStart);
       console.log("✅ [DEBUG] Service start email sent.");
 
-      // 2) bulk 이메일 작업을 전역 큐에 추가하여 순차 실행
+      // (B) bulk 이메일 작업을 전역 큐에 추가하여 순차 실행
       bulkEmailQueue = bulkEmailQueue.then(async () => {
         console.log(">>> [DEBUG] Starting Bulk Email Logic for order", order.orderId);
 
-        // (A) invoice에서 지역 분석
         const selectedCountries = parseSelectedNames(order.invoice);
         console.log(">>> [DEBUG] selectedCountries =", selectedCountries);
 
@@ -1189,7 +1266,6 @@ app.get("/admin/toggle-payment", async (req, res) => {
           return;
         }
 
-        // (B) 해당 국가 이메일 목록 수집
         let allEmails = [];
         for (const country of selectedCountries) {
           const recipients = await BulkEmailRecipient.find({ countryOrSource: country });
@@ -1203,7 +1279,6 @@ app.get("/admin/toggle-payment", async (req, res) => {
         const uniqueEmails = [...new Set(allEmails)];
         console.log(">>> [DEBUG] uniqueEmails after dedup =", uniqueEmails.length);
 
-        // (C) 메일 본문 구성
         const formattedIntro = order.introduction
           ? order.introduction.replace(/\r?\n/g, "<br>")
           : "";
@@ -1224,7 +1299,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
         `;
         emailHtml += `</div>`;
 
-        // (D) 공통 Bulk Template
+        // Bulk 이메일: extraTag는 주문번호(order.orderId)
         const bulkMailDataTemplate = {
           subject: order.emailSubject || "[No Subject Provided]",
           from: process.env.ELASTIC_EMAIL_USER,
@@ -1232,19 +1307,17 @@ app.get("/admin/toggle-payment", async (req, res) => {
           bodyHtml: emailHtml,
           isTransactional: false,
           replyTo: order.emailAddress,
-          replyToName: order.emailAddress
+          replyToName: order.emailAddress,
+          extraTag: order.orderId
         };
 
-        // (E) 실제 전송 (Chunk/Delay)
         console.log(">>> [DEBUG] Starting to send Bulk Emails in Chunks...");
         await sendBulkEmailsInChunks(uniqueEmails, bulkMailDataTemplate, 20, 1000);
         console.log("✅ [DEBUG] Bulk emailing completed for order", order.orderId);
 
-        // (F) 모든 대량메일 발송 완료 시점 기록
         order.bulkEmailsCompletedAt = new Date();
         await order.save();
 
-        // (G) All Emails Sent 안내메일
         const completedHtml = `
 <html>
   <body style="font-family: Arial, sans-serif; line-height:1.6;">
@@ -1293,6 +1366,8 @@ app.get("/admin/toggle-payment", async (req, res) => {
           to: `${order.emailAddress}, info@smarttalentmatcher.com`,
           bodyHtml: completedHtml,
           isTransactional: true,
+          // 최종 확인 이메일: extraTag "FinalConfirmation"
+          extraTag: "FinalConfirmation"
         };
         console.log(">>> [DEBUG] Sending final 'all sent' email to:", order.emailAddress);
         await sendEmailAPI(mailDataCompleted);
@@ -1302,7 +1377,6 @@ app.get("/admin/toggle-payment", async (req, res) => {
         scheduleTwoWeekFollowUpEmail(order);
       });
 
-      // 모든 bulk 이메일 작업 끝날 때까지 대기
       await bulkEmailQueue;
 
     } else {
@@ -1317,7 +1391,6 @@ app.get("/admin/toggle-payment", async (req, res) => {
 });
 
 // ───────── [웹훅 라우트] ─────────
-// GET, POST 모두 처리 (Elastic Email이 이벤트를 GET 방식으로 보낼 수도 있음)
 app.all("/webhook", async (req, res) => {
   let eventData;
   if (req.method === "GET") {
@@ -1328,16 +1401,15 @@ app.all("/webhook", async (req, res) => {
     console.log(">>> [POST] Webhook from Elastic Email:", req.body);
   }
   
-  // 웹훅 이벤트를 MongoDB에 저장
   try {
-    const eventType = eventData.event || ""; // 웹훅 데이터에 'event' 필드가 있다면 사용
+    const eventType = eventData.event || "";
     await EmailEvent.create({ eventType, data: eventData });
     console.log("Webhook event saved to DB.");
   } catch (err) {
     console.error("Error saving webhook event:", err);
   }
   
-  res.sendStatus(200); // 반드시 200 OK 반환
+  res.sendStatus(200);
 });
 
 // ───────── [웹훅 이벤트 조회 API] ─────────
@@ -1355,7 +1427,6 @@ app.get("/api/webhook-events", async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
 
-  // CSV 로드 및 타이머/정리작업 실행
   uploadCSVToDB()
     .then(() => {
       console.log("Bulk email recipients updated from CSV (Full Refresh).");
@@ -1366,7 +1437,6 @@ app.listen(PORT, "0.0.0.0", () => {
     })
     .catch(err => {
       console.error("Error uploading CSV to DB:", err);
-      // CSV 로드 실패해도 나머지 루틴은 계속 진행
       restoreTimers();
       cleanUpIncompleteOrders();
       syncCloudinaryWithDB();

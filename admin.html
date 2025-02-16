@@ -73,7 +73,7 @@
     <h1>Admin Panel - Orders (Test Mode)</h1>
   </header>
 
-  <!-- 필터 & REVIEW 버튼 -->
+  <!-- 필터 & 버튼들 -->
   <div class="filter-container">
     <select id="filter-status">
       <option value="all">All Orders</option>
@@ -99,6 +99,22 @@
       "
     >
       REVIEW
+    </button>
+    <!-- WEBHOOK 버튼 -->
+    <button id="webhookBtn"
+      style="
+        background-color: #4CAF50;
+        color: #fff;
+        border: none;
+        padding: 8px 16px;
+        font-size: 1rem;
+        border-radius: 4px;
+        cursor: pointer;
+        box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+        margin-left: 10px;
+      "
+    >
+      WEBHOOK
     </button>
   </div>
 
@@ -144,6 +160,11 @@
     // REVIEW 버튼 클릭 시 reviewadmin.html 이동
     document.getElementById("reviewBtn").addEventListener("click", () => {
       window.location.href = "/reviewadmin.html";
+    });
+
+    // WEBHOOK 버튼 클릭 시 webhook.html 이동
+    document.getElementById("webhookBtn").addEventListener("click", () => {
+      window.location.href = "/webhook.html";
     });
 
     // (서버에서) 주문 데이터 불러오기

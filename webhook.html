@@ -5,49 +5,192 @@
   <title>Webhook Events</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    .filter-container { margin-bottom: 10px; }
+    .filter-container label { margin-right: 10px; }
+    .filter-container select { margin-right: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; vertical-align: top; }
     th { background: #f0f0f0; }
   </style>
 </head>
 <body>
   <h1>Webhook Events</h1>
+
+  <!-- 두 개의 드롭다운: 첫번째는 일반 extraTag, 두번째는 Order ID 전용 -->
+  <div class="filter-container">
+    <label for="nonOrderExtraTagFilter">Filter by Extra Tag (Non-Order):</label>
+    <select id="nonOrderExtraTagFilter">
+      <option value="all">All</option>
+    </select>
+
+    <label for="orderIdFilter">Filter by Order ID:</label>
+    <select id="orderIdFilter">
+      <option value="all">All</option>
+    </select>
+  </div>
+
   <table id="eventsTable">
     <thead>
       <tr>
-        <th>Event Type</th>
-        <th>Data</th>
+        <th>Extra Tag</th>
+        <th>Email</th>
+        <th>Subject</th>
+        <th>Message ID</th>
+        <!-- 아래는 Elastic Email 웹훅의 eventType에 따른 체크박스 표시 열 -->
+        <th>Sent</th>
+        <th>Opened</th>
+        <th>Clicked</th>
+        <th>Unsubscribed</th>
+        <th>Complaints</th>
+        <th>Bounce/Error</th>
+        <th>Other Info</th>
         <th>Received At</th>
       </tr>
     </thead>
     <tbody></tbody>
   </table>
+
   <script>
     async function fetchEvents() {
       try {
         const response = await fetch('/api/webhook-events');
         const result = await response.json();
-        if (result.success) {
+
+        if (!result.success) {
+          console.error('Failed to fetch events:', result);
+          return;
+        }
+
+        // 모든 이벤트
+        const allEvents = result.events;
+
+        // 두 드롭다운에 채울 집합 생성
+        const nonOrderTagSet = new Set();
+        const orderIdSet = new Set();
+        allEvents.forEach(event => {
+          const tag = event.data?.extratag || "N/A";
+          // 주문번호는 generateDateTimeOrderId()로 만들어진 8자리 숫자로 가정
+          if (/^\d{8}$/.test(tag)) {
+            orderIdSet.add(tag);
+          } else {
+            nonOrderTagSet.add(tag);
+          }
+        });
+
+        // 첫번째 드롭다운 (일반 extraTag)
+        const nonOrderFilter = document.getElementById('nonOrderExtraTagFilter');
+        nonOrderTagSet.forEach(tag => {
+          const option = document.createElement('option');
+          option.value = tag;
+          option.textContent = tag;
+          nonOrderFilter.appendChild(option);
+        });
+
+        // 두번째 드롭다운 (Order ID)
+        const orderIdFilter = document.getElementById('orderIdFilter');
+        orderIdSet.forEach(tag => {
+          const option = document.createElement('option');
+          option.value = tag;
+          option.textContent = tag;
+          orderIdFilter.appendChild(option);
+        });
+
+        // 렌더링 함수: 두 드롭다운의 선택값에 해당하는 이벤트를 union (OR) 방식으로 필터링
+        function renderEvents() {
+          const nonOrderSelected = nonOrderFilter.value;
+          const orderSelected = orderIdFilter.value;
+
+          const filtered = allEvents.filter(event => {
+            const tag = event.data?.extratag || "N/A";
+            // 만약 두 드롭다운 모두 "all"이면 전체 이벤트 표시
+            if (nonOrderSelected === "all" && orderSelected === "all") return true;
+            // union: tag가 nonOrderSelected OR orderSelected와 일치하면 포함
+            if (nonOrderSelected !== "all" && tag === nonOrderSelected) return true;
+            if (orderSelected !== "all" && tag === orderSelected) return true;
+            return false;
+          });
+
           const tbody = document.querySelector('#eventsTable tbody');
           tbody.innerHTML = '';
-          result.events.forEach(event => {
+
+          filtered.forEach(event => {
             const row = document.createElement('tr');
-            const typeCell = document.createElement('td');
-            typeCell.textContent = event.eventType || 'N/A';
-            const dataCell = document.createElement('td');
-            dataCell.textContent = JSON.stringify(event.data);
+
+            // 구조분해: email, subject, messageId, extratag, 그 외 나머지 데이터
+            const { email, subject, messageId, extratag, ...rest } = event.data || {};
+
+            // Extra Tag
+            const tagCell = document.createElement('td');
+            tagCell.textContent = extratag || "N/A";
+            row.appendChild(tagCell);
+
+            // Email
+            const emailCell = document.createElement('td');
+            emailCell.textContent = email || "N/A";
+            row.appendChild(emailCell);
+
+            // Subject
+            const subjectCell = document.createElement('td');
+            subjectCell.textContent = subject || "N/A";
+            row.appendChild(subjectCell);
+
+            // Message ID
+            const messageIdCell = document.createElement('td');
+            messageIdCell.textContent = messageId || "N/A";
+            row.appendChild(messageIdCell);
+
+            // Event Type 체크박스 표시 (Sent, Opened, Clicked, Unsubscribed, Complaints, Bounce/Error)
+            const eventType = (event.eventType || "").toLowerCase();
+
+            const sentCell = document.createElement('td');
+            sentCell.textContent = (eventType === "sent") ? "✓" : "";
+            row.appendChild(sentCell);
+
+            const openedCell = document.createElement('td');
+            openedCell.textContent = (eventType === "opened") ? "✓" : "";
+            row.appendChild(openedCell);
+
+            const clickedCell = document.createElement('td');
+            clickedCell.textContent = (eventType === "clicked") ? "✓" : "";
+            row.appendChild(clickedCell);
+
+            const unsubCell = document.createElement('td');
+            unsubCell.textContent = (eventType === "unsubscribed") ? "✓" : "";
+            row.appendChild(unsubCell);
+
+            const complaintCell = document.createElement('td');
+            complaintCell.textContent = (eventType === "complaint" || eventType === "spamreport") ? "✓" : "";
+            row.appendChild(complaintCell);
+
+            const bounceCell = document.createElement('td');
+            bounceCell.textContent = (["bounce", "error", "failed"].includes(eventType)) ? "✓" : "";
+            row.appendChild(bounceCell);
+
+            // Other Info (나머지 데이터)
+            const otherInfoCell = document.createElement('td');
+            otherInfoCell.textContent = JSON.stringify(rest);
+            row.appendChild(otherInfoCell);
+
+            // Received At
             const receivedCell = document.createElement('td');
             receivedCell.textContent = new Date(event.receivedAt).toLocaleString();
-            row.appendChild(typeCell);
-            row.appendChild(dataCell);
             row.appendChild(receivedCell);
+
             tbody.appendChild(row);
           });
         }
+
+        // 초기 렌더링
+        renderEvents();
+
+        // 드롭다운 변경 시 다시 렌더링
+        nonOrderFilter.addEventListener('change', renderEvents);
+        orderIdFilter.addEventListener('change', renderEvents);
       } catch (err) {
         console.error('Error fetching events:', err);
       }
     }
+
     // 페이지 로드 시 이벤트 데이터 조회
     fetchEvents();
   </script>
