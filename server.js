@@ -514,19 +514,20 @@ async function sendTwoWeekEmail(order) {
             </p>
             <br>
             <p style="margin:0 0 15px 0;">
-              We hope you've found <strong>the Right Person</strong>.<br><br>
+              We hope you've found <span style="color:royalblue;">the Right Person</span>.<br><br>
              
               💡 Check which <strong>platform</strong> they use and the <strong>regions</strong> they have access to for breakdown services.<br>
               💡 Verify whether the contract is <strong>Exclusive</strong> or <strong>Non-Exclusive</strong>.<br>
-              💡 Always <strong>REVIEW</strong> any contracts before signing (ask ChatGPT for help if needed)!<br><br>
+              💡 Always <strong>REVIEW</strong> any contracts before signing<br>
+              (ask ChatGPT for help if needed)!<br><br><br>
              
-              However, <strong>if not,</strong> don't be discouraged!<br>
+              However, <strong>if not,</strong> <span style="color:royalblue;">Don't Be Discouraged!</span><br>
               You can always <strong>update your materials and try again.</strong><br>
               (I personally tried <strong>2 times</strong> before success!)
             </p>
             <br>
             <p style="margin:0 0 15px 0;">
-              Use the promo code below to get <strong>10% off on your next trial!</strong>
+              Use the promo code below to get <strong>10% off on your Next Trial!</strong>
             </p>
             <div style="
               font-size: 1.4rem; 
@@ -542,7 +543,7 @@ async function sendTwoWeekEmail(order) {
             </div>
             <br><br>
             <p style="margin:15px 0 20px 0;">
-              We’d also love to hear your feedback!<br>
+              We’d also love to hear your <span style="color:royalblue;">Feedback!</span><br>
               Whether you succeeded or faced challenges,<br>
               your thoughts help us improve.
             </p>
