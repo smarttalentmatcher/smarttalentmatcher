@@ -4,6 +4,7 @@
 //  + Review (CRUD) 기능 추가
 //  + Paid 상태 재확인 (12h/24h 메일 발송 전) 수정 완료
 //  + [FIX] 결제 이전에는 대량 메일·2주 팔로업이 발송되지 않도록 수정
+//  + [ADDED] 웹훅 삭제 라우트 및 모든 최종 정리
 // --------------------------------------------------------------------------------
 
 // ───────── [필요한 import들 & dotenv 설정] ─────────
@@ -25,6 +26,7 @@ import FormData from "form-data";
 import https from "https";
 import { fileURLToPath } from "url";
 
+// __dirname, __filename
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -55,7 +57,7 @@ mongoose
   })
   .catch(err => console.error("❌ MongoDB Connection Error:", err));
 
-// 주문(Order) 스키마
+// ───────── [Order 스키마 정의] ─────────
 const orderSchema = new mongoose.Schema({
   orderId: String,
   emailAddress: { type: String, default: "" },
@@ -75,30 +77,30 @@ const orderSchema = new mongoose.Schema({
   headshot: { type: String, default: "" },
   status: { type: String, default: "draft" },
 
-  // ───────── (추가) 대량 메일 완료 시점 & 팔로업 메일 전송 여부 ─────────
+  // 대량 메일 완료 시점 & 2주 팔로업 여부
   bulkEmailsCompletedAt: { type: Date, default: null },
   twoWeekFollowUpSent: { type: Boolean, default: false }
 });
 const Order = mongoose.model("Order", orderSchema);
 
-// 이메일 수신자 (BulkEmailRecipient) 스키마
+// ───────── [BulkEmailRecipient 스키마 정의] ─────────
 const bulkEmailRecipientSchema = new mongoose.Schema({
   email: { type: String, required: true },
   countryOrSource: { type: String, default: "" }
 });
 const BulkEmailRecipient = mongoose.model("BulkEmailRecipient", bulkEmailRecipientSchema);
 
-// (추가) 리뷰(Review) 스키마
+// ───────── [Review 스키마 정의] ─────────
 const reviewSchema = new mongoose.Schema({
   reviewText: { type: String, default: "" },
   createdAt: { type: Date, default: Date.now },
 });
 const Review = mongoose.model("Review", reviewSchema);
 
-// ───────── [이메일 이벤트 저장 스키마] ─────────
+// ───────── [EmailEvent 스키마 (웹훅)] ─────────
 const emailEventSchema = new mongoose.Schema({
-  eventType: { type: String, default: "" }, // 예: "Opened", "Clicked" 등
-  data: { type: mongoose.Schema.Types.Mixed }, // 웹훅에서 받은 전체 데이터
+  eventType: { type: String, default: "" },
+  data: { type: mongoose.Schema.Types.Mixed }, 
   receivedAt: { type: Date, default: Date.now }
 });
 const EmailEvent = mongoose.model("EmailEvent", emailEventSchema);
@@ -127,7 +129,7 @@ function generateDateTimeOrderId() {
   return mm + dd + hh + min;
 }
 
-// ───────── [Elastic Email 메일발송 함수 - Reply-To 지원 및 extraTag 적용] ─────────
+// ───────── [Elastic Email 메일발송 함수 (Reply-To, extraTag)] ─────────
 async function sendEmailAPI({
   subject,
   from,
@@ -137,7 +139,7 @@ async function sendEmailAPI({
   isTransactional = true,
   replyTo,
   replyToName,
-  extraTag  // extraTag: 목적에 따른 태그 값 (단일 이메일)
+  extraTag
 }) {
   const url = "https://api.elasticemail.com/v2/email/send";
   const params = new URLSearchParams();
@@ -155,7 +157,7 @@ async function sendEmailAPI({
   if (replyToName) {
     params.append("replyToName", replyToName);
   }
-  // extraTag가 전달되면 merge_extratag에 해당 값 설정 (Elastic Email 계정에서 Log Merge Data 옵션 활성 필요)
+  // ExtraTag → merge_extratag
   if (extraTag) {
     params.append("merge_extratag", extraTag);
   }
@@ -170,7 +172,7 @@ async function sendEmailAPI({
   }
 }
 
-// ───────── [CSV → BulkEmailRecipient 업로드 함수] ─────────
+// ───────── [CSV 파일 → BulkEmailRecipient DB 업로드] ─────────
 function uploadCSVToDB() {
   return new Promise((resolve, reject) => {
     const csvFolderPath = path.join(__dirname, "csv");
@@ -192,6 +194,7 @@ function uploadCSVToDB() {
 
       console.log(`[CSV Import] Found ${csvFiles.length} CSV file(s):`, csvFiles);
 
+      // 전체 삭제 후 재업로드
       BulkEmailRecipient.deleteMany({})
         .then(() => {
           let filesProcessed = 0;
@@ -211,7 +214,6 @@ function uploadCSVToDB() {
                 })
               )
               .on("data", async (row) => {
-                console.log(`[CSV DEBUG] raw row from ${file}:`, row);
                 const emailVal = row.email;
                 if (emailVal && emailVal.trim() !== "") {
                   try {
@@ -251,19 +253,18 @@ app.get("/", (req, res) => {
   res.send("<h1>Hello from server.js - CSV Reload test</h1>");
 });
 
-// ───────── [타이머 관련 상수 (테스트 간격 1/2/3분, 실제는 12/24/48h)] ─────────
-// 여기서는 1분 = 12시간, 2분 = 24시간, 3분 = 48시간, 1분 = 2주 로 단축
-const TWELVE_HOURS = 1 * 60 * 1000;
-const TWENTY_FOUR_HOURS = 2 * 60 * 1000;
-const FORTY_EIGHT_HOURS = 3 * 60 * 1000;
-const TWO_WEEKS = 1 * 60 * 1000;
+// ───────── [타이머 관련 (테스트용 1/2/3분)] ─────────
+const TWELVE_HOURS = 1 * 60 * 1000;    // 실제 12시간 → 테스트 1분
+const TWENTY_FOUR_HOURS = 2 * 60 * 1000; // 실제 24시간 → 테스트 2분
+const FORTY_EIGHT_HOURS = 3 * 60 * 1000; // 실제 48시간 → 테스트 3분
+const TWO_WEEKS = 1 * 60 * 1000;       // 실제 2주 → 테스트 1분
 
 const reminderTimers = {};
 const autoCancelTimers = {};
 const autoDeleteTimers = {};
 const twoWeekTimers = {};
 
-// ───────── [12시간 후 리마인더 이메일 & 전송 함수] ─────────
+// 12h 리마인더
 function scheduleReminder(order) {
   const timeLeft = order.createdAt.getTime() + TWELVE_HOURS - Date.now();
   if (timeLeft > 0 && !order.paid && !order.reminderSent) {
@@ -301,7 +302,6 @@ function sendReminder(order) {
         to: savedOrder.emailAddress,
         bodyHtml: reminderEmailHtml,
         isTransactional: true,
-        // 12시간 리마인더 이메일: extraTag를 "12hrsReminder"로 설정
         extraTag: "12hrsReminder"
       };
 
@@ -316,7 +316,7 @@ function sendReminder(order) {
     .catch(err => console.error("❌ DB Error in sendReminder:", err));
 }
 
-// ───────── [24시간 후 자동 캔슬 & 프로모 코드 이메일 스케줄링] ─────────
+// 24h Auto-Cancel
 function scheduleAutoCancel(order) {
   console.log(`>>> scheduleAutoCancel called for order #${order.orderId}`);
   const timeLeft = order.createdAt.getTime() + TWENTY_FOUR_HOURS - Date.now();
@@ -401,7 +401,6 @@ function autoCancelOrder(order) {
         to: order.emailAddress,
         bodyHtml: cancelHtml,
         isTransactional: true,
-        // 24시간 자동 캔슬 이메일: extraTag를 "24hrsAutoCancel"로 설정
         extraTag: "24hrsAutoCancel+promo"
       };
       sendEmailAPI(mailData)
@@ -413,7 +412,7 @@ function autoCancelOrder(order) {
     .catch(err => console.error("❌ DB Error in autoCancelOrder:", err));
 }
 
-// ───────── [48시간 후 주문 자동 삭제 함수 (DB & Cloudinary)] ─────────
+// 48h Auto-Delete
 function scheduleAutoDelete(order) {
   const timeLeft = order.createdAt.getTime() + FORTY_EIGHT_HOURS - Date.now();
   if (timeLeft > 0 && !order.paid) {
@@ -437,6 +436,8 @@ async function autoDeleteOrder(order) {
     return;
   }
   console.log(`>>> autoDeleteOrder called for order #${order.orderId}`);
+
+  // Cloudinary 이미지 삭제
   if (currentOrder.headshot) {
     const parts = currentOrder.headshot.split("/");
     const uploadIndex = parts.findIndex(part => part === "upload");
@@ -451,6 +452,7 @@ async function autoDeleteOrder(order) {
       }
     }
   }
+
   try {
     await Order.deleteOne({ orderId: currentOrder.orderId });
     console.log(`✅ Order #${currentOrder.orderId} auto-deleted from DB after 48 hours.`);
@@ -459,7 +461,7 @@ async function autoDeleteOrder(order) {
   }
 }
 
-// ───────── [2주 팔로업 메일: 스케줄 및 발송 함수] ─────────
+// 2주 팔로업
 function scheduleTwoWeekFollowUpEmail(order) {
   if (order.twoWeekFollowUpSent) return;
   if (!order.bulkEmailsCompletedAt) {
@@ -550,7 +552,6 @@ async function sendTwoWeekEmail(order) {
     to: order.emailAddress,
     bodyHtml: twoWeekHtml,
     isTransactional: true,
-    // 2주 팔로업 이메일: extraTag를 "2weeksFollowUp"로 설정
     extraTag: "2weeksFollowUp"
   };
   try {
@@ -564,7 +565,7 @@ async function sendTwoWeekEmail(order) {
   }
 }
 
-// ───────── [서버 시작 시, 미결제 final 주문 & 2주 팔로업 복원] ─────────
+// 서버 시작 시 타이머 복원
 async function restoreTimers() {
   try {
     const pendingOrders = await Order.find({ status: "final", paid: false });
@@ -591,7 +592,7 @@ async function restoreTimers() {
   }
 }
 
-// ───────── [미제출(불완전한) 주문 정리 함수] ─────────
+// 미완성(draft) 24h 지나면 DB & Cloudinary 정리
 async function cleanUpIncompleteOrders() {
   const cutoff = new Date(Date.now() - (24 * 60 * 60 * 1000));
   const orders = await Order.find({ status: "draft", createdAt: { $lt: cutoff } });
@@ -615,7 +616,7 @@ async function cleanUpIncompleteOrders() {
   }
 }
 
-// ───────── [DB와 Cloudinary 동기화 함수] ─────────
+// DB와 Cloudinary 동기화 (오펜드 이미지 제거)
 async function syncCloudinaryWithDB() {
   try {
     const orders = await Order.find({ headshot: { $ne: "" } });
@@ -647,14 +648,14 @@ async function syncCloudinaryWithDB() {
   }
 }
 
-// ───────── [cleanUpNonFinalOrders (필요시 추가 정리 작업)] ─────────
+// 필요시 추가 정리
 const cleanUpNonFinalOrders = async () => {
-  // 필요한 경우 추가 정리 작업 구현
+  // 필요에 따라 구현
 };
 
-// ───────── [리뷰 관련 라우트] ─────────
+// ───────── [리뷰(Review) 관련 라우트] ─────────
 
-// 1) 새 리뷰 제출 (review.html)
+// 1) 새 리뷰 제출
 app.post("/review-submission", async (req, res) => {
   try {
     const { reviewText } = req.body;
@@ -671,7 +672,7 @@ app.post("/review-submission", async (req, res) => {
   }
 });
 
-// 2) 리뷰 목록 조회 (reviewadmin.html)
+// 2) 리뷰 목록 조회
 app.get("/admin/reviews", async (req, res) => {
   try {
     const reviews = await Review.find().sort({ createdAt: -1 });
@@ -724,15 +725,14 @@ app.post("/admin/delete-review", async (req, res) => {
   }
 });
 
-// ───────── [라우트 설정: Orders 등] ─────────
+// ───────── [주문(Order) 관련 라우트] ─────────
 
-// (기본 페이지)
+// 기본 페이지
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "resume.html"));
 });
 
-// (테스트 이메일 전송 라우트)
-// 단일 이메일 테스트: extraTag를 "TestEmail"로 설정
+// 테스트 이메일 전송 라우트
 app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res) => {
   try {
     const { emailAddress, emailSubject, actingReel, resumeLink, introduction } = req.body;
@@ -753,6 +753,7 @@ app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res)
       <p>${formattedIntro}</p>
     `;
     emailHtml += `</div>`;
+
     const mailData = {
       subject: emailSubject,
       from: process.env.ELASTIC_EMAIL_USER,
@@ -771,16 +772,18 @@ app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res)
   }
 });
 
-// (주문 생성 라우트: Draft Order)
+// 주문 생성: Draft
 app.post("/submit-order", async (req, res) => {
   try {
     const { emailAddress, invoice, subtotal, baseDiscount, promoDiscount, finalCost } = req.body;
     const orderId = generateDateTimeOrderId();
     const createdAt = Date.now();
+
     const cleanSubtotal = isNaN(parseFloat(subtotal)) ? 0 : parseFloat(subtotal);
     const cleanBaseDiscount = isNaN(parseFloat(baseDiscount)) ? 0 : parseFloat(baseDiscount);
     const cleanPromoDiscount = isNaN(parseFloat(promoDiscount)) ? 0 : parseFloat(promoDiscount);
     const cleanFinalCost = isNaN(parseFloat(finalCost)) ? 0 : parseFloat(finalCost);
+
     const invoiceData = invoice && invoice.trim() !== "" ? invoice : "<p>Invoice details not available.</p>";
 
     const newOrder = new Order({
@@ -803,7 +806,7 @@ app.post("/submit-order", async (req, res) => {
   }
 });
 
-// (주문 수정 라우트: Draft Order 업데이트)
+// 주문 수정 (Draft 상태)
 app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) => {
   try {
     const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice } = req.body;
@@ -828,7 +831,9 @@ app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) =>
   }
 });
 
-// (최종 제출: Draft -> Final) => 인보이스만 발송 + 12/24/48h 타이머. (대량 메일은 결제 후)
+// 최종 제출 (Draft -> Final)
+// => 인보이스 이메일, 관리자 보고 이메일, 12/24/48h 타이머 스케줄 (미결제)
+// => 대량 메일은 결제 후
 app.post("/final-submit", multer().none(), async (req, res) => {
   try {
     console.log(">>> [final-submit] Step 0: Endpoint called");
@@ -859,12 +864,11 @@ app.post("/final-submit", multer().none(), async (req, res) => {
           to: emailAddress,
           bodyHtml: cancelHtml,
           isTransactional: true,
-          // 이전 주문 취소 이메일: extraTag를 "OrderCancel"로 설정 (예시)
           extraTag: "OrderCancel"
         });
         console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
 
-        // Cloudinary 업로드된 headshot 있으면 삭제
+        // 헤드샷 삭제
         if (oldOrder.headshot) {
           const parts = oldOrder.headshot.split("/");
           const uploadIndex = parts.findIndex((part) => part === "upload");
@@ -883,7 +887,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       }
     }
 
-    // 2) Draft Order 가져와서 status=final
+    // 2) Draft → Final
     console.log(">>> [final-submit] Step 3: Finding draftOrder by orderId:", orderId);
     const draftOrder = await Order.findOne({ orderId, status: "draft" });
     if (!draftOrder) {
@@ -929,11 +933,11 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       to: process.env.ELASTIC_EMAIL_USER,
       bodyHtml: adminEmailHtml,
       isTransactional: true,
-      extraTag: "AdminActorInfo" // 관리자 이메일
+      extraTag: "AdminActorInfo"
     });
     console.log("✅ Admin email sent.");
 
-    // 4) 클라이언트(주문자)에게 인보이스 이메일
+    // 4) 클라이언트 인보이스 이메일
     console.log(">>> [final-submit] Step 6: Sending client invoice email");
     const templatePath = path.join(__dirname, "email.html");
     let clientEmailHtml;
@@ -956,15 +960,13 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     });
     console.log("✅ Client Invoice email sent.");
 
-    // 5) 12h/24h/48h 타이머 스케줄
+    // 5) 12h/24h/48h 타이머
     console.log(">>> [final-submit] Step 7: Scheduling timers for reminder, auto-cancel, and auto-delete");
     scheduleReminder(draftOrder);
     scheduleAutoCancel(draftOrder);
     scheduleAutoDelete(draftOrder);
 
-    // !!! [주의] 아직 미결제이므로 대량 메일/2주팔로업은 여기서 안 함 !!!
-    // => 결제(true)로 바뀔 때(admin/toggle-payment) bulkEmail 전송 & 2주 팔로업 스케줄 진행
-
+    // 아직 미결제이므로 대량 메일/2주 팔로업은 여기서 안 함 (결제 후 진행)
     console.log(">>> [final-submit] Step 8: Returning success response");
     return res.json({
       success: true,
@@ -977,7 +979,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
   }
 });
 
-// ───────── [admin/orders 라우트 - 관리자 조회] ─────────
+// 관리자: 주문 목록 조회
 app.get("/admin/orders", async (req, res) => {
   try {
     console.log(">>> [DEBUG] /admin/orders called.");
@@ -990,7 +992,7 @@ app.get("/admin/orders", async (req, res) => {
   }
 });
 
-// ───────── [admin/delete-order 라우트 - 관리자 주문 삭제] ─────────
+// 관리자: 주문 삭제
 app.post("/admin/delete-order", async (req, res) => {
   try {
     const { orderId } = req.body;
@@ -998,6 +1000,7 @@ app.post("/admin/delete-order", async (req, res) => {
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
+    // Cloudinary 삭제
     if (order.headshot) {
       const parts = order.headshot.split("/");
       const uploadIndex = parts.findIndex((part) => part === "upload");
@@ -1015,7 +1018,7 @@ app.post("/admin/delete-order", async (req, res) => {
   }
 });
 
-// ───────── [parseSelectedNames 함수: invoiceHtml 내 선택된 국가 식별] ─────────
+// 인보이스 내 국가명 파싱
 function parseSelectedNames(invoiceHtml) {
   if (!invoiceHtml) return [];
   const countryList = [
@@ -1036,7 +1039,7 @@ function parseSelectedNames(invoiceHtml) {
   return selected;
 }
 
-// ───────── [대량 메일 전송(Chunk+Delay)] ─────────
+// 대량 메일(Chunk) 발송
 async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, delayMs = 1000) {
   console.log(">>> [DEBUG] sendBulkEmailsInChunks() called");
   console.log(">>> [DEBUG] total emails to send:", emails.length);
@@ -1073,10 +1076,10 @@ async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, 
   console.log("✅ [DEBUG] All bulk emails sent with chunk approach!");
 }
 
-// 전역 큐 선언: 초기에는 이미 resolved된 Promise로 시작
+// 전역 큐 (대량 메일 순차화)
 let bulkEmailQueue = Promise.resolve();
 
-// ───────── [admin/toggle-payment 라우트 - 결제상태 토글] ─────────
+// 결제 토글 → 결제(true) 후 대량 메일 & 2주 팔로업
 app.get("/admin/toggle-payment", async (req, res) => {
   try {
     const { orderId } = req.query;
@@ -1094,7 +1097,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
     await order.save();
     console.log(`>>> [DEBUG] Toggled paid from ${oldPaid} to ${order.paid}`);
 
-    // paid가 false→true가 된 시점에 대량 메일 + 2주 팔로업 스케줄
+    // false→true면 대량 메일 로직
     if (!oldPaid && order.paid) {
       console.log(">>> [DEBUG] Payment changed from false -> true. Will send 'service started' email AND then trigger bulk emailing.");
 
@@ -1134,20 +1137,19 @@ app.get("/admin/toggle-payment", async (req, res) => {
         console.log("✅ [DEBUG] Service start email sent.");
       }
 
-      // (B) 결제 직후 Bulk 이메일 로직
+      // (B) Bulk 이메일 발송
       bulkEmailQueue = bulkEmailQueue.then(async () => {
         console.log(">>> [DEBUG] Starting Bulk Email Logic for order", order.orderId);
 
         const selectedCountries = parseSelectedNames(order.invoice);
         console.log(">>> [DEBUG] selectedCountries =", selectedCountries);
 
-        // 인보이스에서 영역을 못찾았다면 스킵
         if (selectedCountries.length === 0) {
           console.log(">>> [DEBUG] No selected countries. Skipping bulk emailing.");
           return;
         }
 
-        // 대상 이메일 목록 (중복 제거)
+        // 이메일 목록
         let allEmails = [];
         for (const country of selectedCountries) {
           const recipients = await BulkEmailRecipient.find({ countryOrSource: country });
@@ -1161,10 +1163,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
         const uniqueEmails = [...new Set(allEmails)];
         console.log(">>> [DEBUG] uniqueEmails after dedup =", uniqueEmails.length);
 
-        // 메일 템플릿
-        const formattedIntro = order.introduction
-          ? order.introduction.replace(/\r?\n/g, "<br>")
-          : "";
+        const formattedIntro = order.introduction ? order.introduction.replace(/\r?\n/g, "<br>") : "";
         let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
         if (order.headshot) {
           emailHtml += `
@@ -1190,19 +1189,17 @@ app.get("/admin/toggle-payment", async (req, res) => {
           isTransactional: false,
           replyTo: order.emailAddress,
           replyToName: order.emailAddress,
-          extraTag: order.orderId // Bulk 이메일: order.orderId
+          extraTag: order.orderId
         };
 
-        // 대량 메일 발송 (chunk)
-        console.log(">>> [DEBUG] Starting to send Bulk Emails in Chunks...");
+        console.log(">>> [DEBUG] Sending Bulk Emails in Chunks...");
         await sendBulkEmailsInChunks(uniqueEmails, bulkMailDataTemplate, 20, 1000);
         console.log("✅ [DEBUG] Bulk emailing completed for order", order.orderId);
 
-        // DB에 bulkEmailsCompletedAt 기록
         order.bulkEmailsCompletedAt = new Date();
         await order.save();
 
-        // (C) 대량 메일 발송 완료 후 최종 안내 이메일
+        // (C) "All Emails Sent" 안내
         const completedHtml = `
 <html>
   <body style="font-family: Arial, sans-serif; line-height:1.6;">
@@ -1257,11 +1254,11 @@ app.get("/admin/toggle-payment", async (req, res) => {
         await sendEmailAPI(mailDataCompleted);
         console.log("✅ [DEBUG] Final confirmation email sent.");
 
-        // (D) 2주 후 팔로업 메일 스케줄
+        // (D) 2주 후 팔로업
         scheduleTwoWeekFollowUpEmail(order);
       });
 
-      await bulkEmailQueue; // 모두 완료 시점
+      await bulkEmailQueue;
     }
 
     res.json({ success: true, order });
@@ -1281,7 +1278,7 @@ app.all("/webhook", async (req, res) => {
     eventData = req.body;
     console.log(">>> [POST] Webhook from Elastic Email:", req.body);
   }
-  
+
   try {
     const eventType = eventData.event || "";
     await EmailEvent.create({ eventType, data: eventData });
@@ -1289,7 +1286,7 @@ app.all("/webhook", async (req, res) => {
   } catch (err) {
     console.error("Error saving webhook event:", err);
   }
-  
+
   res.sendStatus(200);
 });
 
@@ -1303,18 +1300,17 @@ app.get("/api/webhook-events", async (req, res) => {
     res.status(500).json({ success: false, message: "Error fetching webhook events" });
   }
 });
-// ───────── [웹훅 이벤트 삭제 API (여러개 동시 삭제도 지원)] ─────────
+
+// ───────── [웹훅 이벤트 삭제 API] ─────────
 app.post("/api/webhook-events/delete", async (req, res) => {
   try {
-    // 프론트엔드에서 { ids: ["63f935...", "63f936...", ...] } 형태로 전달
     const { ids } = req.body; 
+    // 프론트엔드에서 { ids: ["63f935...", "63f936..."] } 형태로 보냄
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ success: false, message: "No IDs provided." });
     }
 
-    // _id가 해당 배열에 포함된 문서들 모두 삭제
     await EmailEvent.deleteMany({ _id: { $in: ids } });
-
     return res.json({ success: true });
   } catch (err) {
     console.error("Error deleting events:", err);
@@ -1322,11 +1318,11 @@ app.post("/api/webhook-events/delete", async (req, res) => {
   }
 });
 
-// ───────── [서버 리슨 및 초기 정리 작업] ─────────
+// ───────── [서버 시작 및 초기 작업] ─────────
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
 
-  // 서버 시작 시점: CSV 읽어 BulkEmailRecipient 초기화 + 타이머 복원 + 기타 정리
+  // CSV로부터 BulkEmailRecipient 갱신 → 타이머 복원 → 미완성/오펜드 정리
   uploadCSVToDB()
     .then(() => {
       console.log("Bulk email recipients updated from CSV (Full Refresh).");

@@ -4,10 +4,19 @@
   <meta charset="UTF-8">
   <title>Webhook Events</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    .filter-container { margin-bottom: 10px; }
-    .filter-container label { margin-right: 10px; }
-    .filter-container select { margin-right: 20px; }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    .filter-container {
+      margin-bottom: 10px;
+    }
+    .filter-container label {
+      margin-right: 10px;
+    }
+    .filter-container select {
+      margin-right: 20px;
+    }
     .back-button {
       margin-bottom: 20px;
       padding: 10px 20px;
@@ -28,31 +37,41 @@
       border-radius: 4px;
       cursor: pointer;
     }
-
-    table { 
-      width: 100%; 
-      border-collapse: collapse; 
-      margin-top: 10px; 
-      table-layout: fixed; 
-    }
-    th, td { 
-      border: 1px solid #ccc; 
-      padding: 8px; 
-      text-align: left; 
-      vertical-align: top; 
-      word-wrap: break-word;
-    }
-    th { background: #f0f0f0; }
-    .delete-button {
-      background-color: #ff5252;
+    .delete-all-button {
+      margin-left: 20px;
+      padding: 8px 16px;
+      font-size: 0.9rem;
+      background-color: #c0392b;
       color: #fff;
       border: none;
       border-radius: 4px;
-      padding: 6px 10px;
       cursor: pointer;
     }
-    .delete-button:hover {
-      background-color: #ff2e2e;
+
+    /* 테이블 고정 레이아웃 + row 높이 고정 & 스크롤 */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      table-layout: fixed; /* 고정 레이아웃 */
+    }
+    thead th {
+      background: #f0f0f0;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+      word-wrap: break-word;
+    }
+    /* 행 높이 고정 */
+    tbody tr {
+      height: 120px; /* 원하는 높이 */
+    }
+    /* 셀 내부가 넘칠 때 스크롤 */
+    tbody td {
+      overflow: auto; /* 스크롤바 표시 */
     }
   </style>
 </head>
@@ -62,7 +81,7 @@
 
   <h1>Webhook Events</h1>
 
-  <!-- 두 개의 드롭다운: 첫 번째는 일반 extraTag, 두 번째는 Order ID 전용 -->
+  <!-- 필터 & 삭제 버튼들 -->
   <div class="filter-container">
     <label for="nonOrderExtraTagFilter">Filter by Extra Tag (Non-Order):</label>
     <select id="nonOrderExtraTagFilter">
@@ -74,8 +93,11 @@
       <option value="all">All</option>
     </select>
 
-    <!-- 선택된 이벤트 일괄삭제 버튼 -->
+    <!-- 선택된 이벤트 일괄 삭제 -->
     <button class="delete-selected-button" id="deleteSelectedBtn">Delete Selected</button>
+
+    <!-- 전체 이벤트 삭제 (모든 문서) -->
+    <button class="delete-all-button" id="deleteAllBtn">Delete All</button>
   </div>
 
   <table id="eventsTable">
@@ -111,7 +133,6 @@
         <th>Bounce/Error</th>
         <th>Other Info</th>
         <th>ID</th>
-        <th>Delete</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -148,8 +169,8 @@
       const orderIdSet = new Set();
 
       events.forEach(event => {
-        // Elastic Email에서 넘어온 extraTag는 보통 "merge_extratag" 키에 저장됨
-        // 하지만 백엔드에서 event.data.extratag 으로 저장했을 수도 있으니 확인
+        // Elastic Email에서 넘어오는 ExtraTag는 
+        // event.data.merge_extratag OR event.data.extratag 등에 들어있을 수 있음
         const data = event.data || {};
         const tag = data.merge_extratag || data.extratag || 'N/A';
 
@@ -161,7 +182,7 @@
         }
       });
 
-      // 두 드롭다운에 값을 채움
+      // 드롭다운 DOM
       const nonOrderFilter = document.getElementById('nonOrderExtraTagFilter');
       const orderIdFilter = document.getElementById('orderIdFilter');
 
@@ -173,6 +194,7 @@
         orderIdFilter.remove(1);
       }
 
+      // 채우기
       nonOrderTagSet.forEach(tag => {
         const option = document.createElement('option');
         option.value = tag;
@@ -225,10 +247,9 @@
           ...rest
         } = data;
 
-        // eventType (Opened, Sent 등)
+        // 이벤트 타입
         const eventType = (event.eventType || '').toLowerCase();
-
-        // 최종 ExtraTag
+        // 최종 Extra Tag
         const finalExtraTag = merge_extratag || extratag || 'N/A';
 
         const row = document.createElement('tr');
@@ -289,6 +310,7 @@
 
         // (11) Other Info
         const otherInfoCell = document.createElement('td');
+        // ...rest 내 JSON
         otherInfoCell.textContent = JSON.stringify(rest);
         row.appendChild(otherInfoCell);
 
@@ -297,42 +319,11 @@
         idCell.textContent = messageid || 'N/A';
         row.appendChild(idCell);
 
-        // (13) Delete 버튼
-        const deleteCell = document.createElement('td');
-        const deleteBtn = document.createElement('button');
-        deleteBtn.textContent = 'Delete';
-        deleteBtn.className = 'delete-button';
-        deleteBtn.onclick = () => deleteSingleEvent(eventId);
-        deleteCell.appendChild(deleteBtn);
-        row.appendChild(deleteCell);
-
         tbody.appendChild(row);
       });
     }
 
-    // 단일 이벤트 삭제
-    async function deleteSingleEvent(eventId) {
-      if (!confirm('Delete this event?')) return;
-      try {
-        const resp = await fetch('/api/webhook-events/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids: [eventId] })
-        });
-        const result = await resp.json();
-        if (result.success) {
-          alert('Deleted successfully!');
-          // 삭제 후 다시 조회
-          fetchEvents();
-        } else {
-          alert('Failed to delete: ' + (result.message || 'Unknown error'));
-        }
-      } catch (err) {
-        console.error('Error deleting event:', err);
-      }
-    }
-
-    // 여러 이벤트 삭제
+    // 선택된 체크박스 삭제
     async function deleteSelectedEvents() {
       const checkboxes = document.querySelectorAll('.row-checkbox:checked');
       if (!checkboxes.length) {
@@ -341,7 +332,6 @@
       }
       if (!confirm(`Delete ${checkboxes.length} selected event(s)?`)) return;
 
-      // 선택된 체크박스의 value == _id 배열
       const idsToDelete = Array.from(checkboxes).map(cb => cb.value);
 
       try {
@@ -353,12 +343,37 @@
         const result = await resp.json();
         if (result.success) {
           alert('Deleted successfully!');
-          fetchEvents();
+          fetchEvents(); // 새로고침
         } else {
           alert('Failed to delete: ' + (result.message || 'Unknown error'));
         }
       } catch (err) {
         console.error('Error deleting selected events:', err);
+      }
+    }
+
+    // 모든 이벤트 삭제
+    async function deleteAllEvents() {
+      if (!confirm('Delete ALL events in the database?')) return;
+
+      // 서버 라우트에서 "ids" 없이 요청했을 때 모두 삭제하도록 구현할 수도 있음
+      // 또는 서버에서 별도로 /delete-all 라우트 사용 가능
+      try {
+        const resp = await fetch('/api/webhook-events/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: 'ALL' }) 
+          // 예: 서버에서 if (ids === 'ALL') { await EmailEvent.deleteMany({}) }
+        });
+        const result = await resp.json();
+        if (result.success) {
+          alert('All events deleted successfully!');
+          fetchEvents();
+        } else {
+          alert('Failed to delete all: ' + (result.message || 'Unknown error'));
+        }
+      } catch (err) {
+        console.error('Error deleting all events:', err);
       }
     }
 
@@ -374,6 +389,7 @@
     // 초기 바인딩
     document.getElementById('selectAllCheckbox').addEventListener('change', toggleSelectAll);
     document.getElementById('deleteSelectedBtn').addEventListener('click', deleteSelectedEvents);
+    document.getElementById('deleteAllBtn').addEventListener('click', deleteAllEvents);
 
     // 드롭다운 변경 시 다시 렌더링
     document.getElementById('nonOrderExtraTagFilter').addEventListener('change', renderEvents);
