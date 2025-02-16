@@ -238,10 +238,10 @@ app.get("/", (req, res) => {
 });
 
 // ───────── [타이머 관련 상수 & 변수] ─────────
-const TWELVE_HOURS = 1 * 60 * 1000; // 12분 (테스트용)
-const TWENTY_FOUR_HOURS = 2 * 60 * 1000; // 24분 (테스트용)
-const FORTY_EIGHT_HOURS = 3 * 60 * 1000; // 48분 (테스트용)
-const TWO_WEEKS = 1 * 60 * 1000; // 2주 (테스트용)
+const TWELVE_HOURS = 12 * 60 * 60 * 1000; // 12 hours
+const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000; // 24 hours
+const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000; // 48 hours
+const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000; // 2 weeks
 
 // 타이머 기록용 객체 (1주 관련은 제거)
 const reminderTimers = {};
