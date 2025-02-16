@@ -11,12 +11,25 @@
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: left; vertical-align: top; }
     th { background: #f0f0f0; }
+    .back-button {
+      margin-bottom: 20px;
+      padding: 10px 20px;
+      font-size: 1rem;
+      background-color: #00BCD4;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
+  <!-- Back to Admin 버튼 -->
+  <button class="back-button" onclick="window.location.href='admin.html'">Back to Admin</button>
+
   <h1>Webhook Events</h1>
 
-  <!-- 두 개의 드롭다운: 첫번째는 일반 extraTag, 두번째는 Order ID 전용 -->
+  <!-- 두 개의 드롭다운: 첫 번째는 일반 extraTag, 두 번째는 Order ID 전용 -->
   <div class="filter-container">
     <label for="nonOrderExtraTagFilter">Filter by Extra Tag (Non-Order):</label>
     <select id="nonOrderExtraTagFilter">
@@ -32,11 +45,9 @@
   <table id="eventsTable">
     <thead>
       <tr>
+        <th>Received At</th>
         <th>Extra Tag</th>
         <th>Email</th>
-        <th>Subject</th>
-        <th>Message ID</th>
-        <!-- 아래는 Elastic Email 웹훅의 eventType에 따른 체크박스 표시 열 -->
         <th>Sent</th>
         <th>Opened</th>
         <th>Clicked</th>
@@ -44,7 +55,7 @@
         <th>Complaints</th>
         <th>Bounce/Error</th>
         <th>Other Info</th>
-        <th>Received At</th>
+        <th>ID</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -67,6 +78,7 @@
         // 두 드롭다운에 채울 집합 생성
         const nonOrderTagSet = new Set();
         const orderIdSet = new Set();
+
         allEvents.forEach(event => {
           const tag = event.data?.extratag || "N/A";
           // 주문번호는 generateDateTimeOrderId()로 만들어진 8자리 숫자로 가정
@@ -77,7 +89,7 @@
           }
         });
 
-        // 첫번째 드롭다운 (일반 extraTag)
+        // 첫 번째 드롭다운 (일반 extraTag)
         const nonOrderFilter = document.getElementById('nonOrderExtraTagFilter');
         nonOrderTagSet.forEach(tag => {
           const option = document.createElement('option');
@@ -86,7 +98,7 @@
           nonOrderFilter.appendChild(option);
         });
 
-        // 두번째 드롭다운 (Order ID)
+        // 두 번째 드롭다운 (Order ID)
         const orderIdFilter = document.getElementById('orderIdFilter');
         orderIdSet.forEach(tag => {
           const option = document.createElement('option');
@@ -95,14 +107,14 @@
           orderIdFilter.appendChild(option);
         });
 
-        // 렌더링 함수: 두 드롭다운의 선택값에 해당하는 이벤트를 union (OR) 방식으로 필터링
+        // 렌더링 함수: 두 드롭다운의 선택값에 해당하는 이벤트를 union(OR) 방식으로 필터링
         function renderEvents() {
           const nonOrderSelected = nonOrderFilter.value;
           const orderSelected = orderIdFilter.value;
 
           const filtered = allEvents.filter(event => {
             const tag = event.data?.extratag || "N/A";
-            // 만약 두 드롭다운 모두 "all"이면 전체 이벤트 표시
+            // 두 드롭다운 모두 "all"이면 전체 이벤트 표시
             if (nonOrderSelected === "all" && orderSelected === "all") return true;
             // union: tag가 nonOrderSelected OR orderSelected와 일치하면 포함
             if (nonOrderSelected !== "all" && tag === nonOrderSelected) return true;
@@ -116,65 +128,64 @@
           filtered.forEach(event => {
             const row = document.createElement('tr');
 
-            // 구조분해: email, subject, messageId, extratag, 그 외 나머지 데이터
-            const { email, subject, messageId, extratag, ...rest } = event.data || {};
+            // 구조분해: email, messageId, extratag, 그 외 나머지 데이터
+            const { email, messageId, extratag, ...rest } = event.data || {};
+            const eventType = (event.eventType || "").toLowerCase();
 
-            // Extra Tag
+            // 1) Received At
+            const receivedCell = document.createElement('td');
+            receivedCell.textContent = new Date(event.receivedAt).toLocaleString();
+            row.appendChild(receivedCell);
+
+            // 2) Extra Tag
             const tagCell = document.createElement('td');
             tagCell.textContent = extratag || "N/A";
             row.appendChild(tagCell);
 
-            // Email
+            // 3) Email
             const emailCell = document.createElement('td');
             emailCell.textContent = email || "N/A";
             row.appendChild(emailCell);
 
-            // Subject
-            const subjectCell = document.createElement('td');
-            subjectCell.textContent = subject || "N/A";
-            row.appendChild(subjectCell);
-
-            // Message ID
-            const messageIdCell = document.createElement('td');
-            messageIdCell.textContent = messageId || "N/A";
-            row.appendChild(messageIdCell);
-
-            // Event Type 체크박스 표시 (Sent, Opened, Clicked, Unsubscribed, Complaints, Bounce/Error)
-            const eventType = (event.eventType || "").toLowerCase();
-
+            // 4) Sent
             const sentCell = document.createElement('td');
             sentCell.textContent = (eventType === "sent") ? "✓" : "";
             row.appendChild(sentCell);
 
+            // 5) Opened
             const openedCell = document.createElement('td');
             openedCell.textContent = (eventType === "opened") ? "✓" : "";
             row.appendChild(openedCell);
 
+            // 6) Clicked
             const clickedCell = document.createElement('td');
             clickedCell.textContent = (eventType === "clicked") ? "✓" : "";
             row.appendChild(clickedCell);
 
+            // 7) Unsubscribed
             const unsubCell = document.createElement('td');
             unsubCell.textContent = (eventType === "unsubscribed") ? "✓" : "";
             row.appendChild(unsubCell);
 
+            // 8) Complaints
             const complaintCell = document.createElement('td');
             complaintCell.textContent = (eventType === "complaint" || eventType === "spamreport") ? "✓" : "";
             row.appendChild(complaintCell);
 
+            // 9) Bounce/Error
             const bounceCell = document.createElement('td');
             bounceCell.textContent = (["bounce", "error", "failed"].includes(eventType)) ? "✓" : "";
             row.appendChild(bounceCell);
 
-            // Other Info (나머지 데이터)
+            // 10) Other Info
             const otherInfoCell = document.createElement('td');
             otherInfoCell.textContent = JSON.stringify(rest);
             row.appendChild(otherInfoCell);
 
-            // Received At
-            const receivedCell = document.createElement('td');
-            receivedCell.textContent = new Date(event.receivedAt).toLocaleString();
-            row.appendChild(receivedCell);
+            // 11) ID (messageId)
+            const idCell = document.createElement('td');
+            idCell.textContent = messageId || "N/A";
+            row.appendChild(idCell);
 
             tbody.appendChild(row);
           });
