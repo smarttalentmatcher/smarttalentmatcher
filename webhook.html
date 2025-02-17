@@ -37,16 +37,6 @@
       border-radius: 4px;
       cursor: pointer;
     }
-    .delete-all-button {
-      margin-left: 20px;
-      padding: 8px 16px;
-      font-size: 0.9rem;
-      background-color: #c0392b;
-      color: #fff;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
 
     /* 테이블 고정 레이아웃 + row 높이 고정 & 스크롤 */
     table {
@@ -95,9 +85,6 @@
 
     <!-- 선택된 이벤트 일괄 삭제 -->
     <button class="delete-selected-button" id="deleteSelectedBtn">Delete Selected</button>
-
-    <!-- 전체 이벤트 삭제 (모든 문서) -->
-    <button class="delete-all-button" id="deleteAllBtn">Delete All</button>
   </div>
 
   <table id="eventsTable">
@@ -310,7 +297,6 @@
 
         // (11) Other Info
         const otherInfoCell = document.createElement('td');
-        // ...rest 내 JSON
         otherInfoCell.textContent = JSON.stringify(rest);
         row.appendChild(otherInfoCell);
 
@@ -352,31 +338,6 @@
       }
     }
 
-    // 모든 이벤트 삭제
-    async function deleteAllEvents() {
-      if (!confirm('Delete ALL events in the database?')) return;
-
-      // 서버 라우트에서 "ids" 없이 요청했을 때 모두 삭제하도록 구현할 수도 있음
-      // 또는 서버에서 별도로 /delete-all 라우트 사용 가능
-      try {
-        const resp = await fetch('/api/webhook-events/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids: 'ALL' }) 
-          // 예: 서버에서 if (ids === 'ALL') { await EmailEvent.deleteMany({}) }
-        });
-        const result = await resp.json();
-        if (result.success) {
-          alert('All events deleted successfully!');
-          fetchEvents();
-        } else {
-          alert('Failed to delete all: ' + (result.message || 'Unknown error'));
-        }
-      } catch (err) {
-        console.error('Error deleting all events:', err);
-      }
-    }
-
     // "Select All" 체크박스 핸들러
     function toggleSelectAll() {
       const selectAll = document.getElementById('selectAllCheckbox').checked;
@@ -389,7 +350,6 @@
     // 초기 바인딩
     document.getElementById('selectAllCheckbox').addEventListener('change', toggleSelectAll);
     document.getElementById('deleteSelectedBtn').addEventListener('click', deleteSelectedEvents);
-    document.getElementById('deleteAllBtn').addEventListener('click', deleteAllEvents);
 
     // 드롭다운 변경 시 다시 렌더링
     document.getElementById('nonOrderExtraTagFilter').addEventListener('change', renderEvents);

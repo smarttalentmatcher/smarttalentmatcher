@@ -26,7 +26,7 @@ import FormData from "form-data";
 import https from "https";
 import { fileURLToPath } from "url";
 
-// __dirname, __filename
+// __filename, __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -100,7 +100,7 @@ const Review = mongoose.model("Review", reviewSchema);
 // ───────── [EmailEvent 스키마 (웹훅)] ─────────
 const emailEventSchema = new mongoose.Schema({
   eventType: { type: String, default: "" },
-  data: { type: mongoose.Schema.Types.Mixed }, 
+  data: { type: mongoose.Schema.Types.Mixed },
   receivedAt: { type: Date, default: Date.now }
 });
 const EmailEvent = mongoose.model("EmailEvent", emailEventSchema);
@@ -143,6 +143,7 @@ async function sendEmailAPI({
 }) {
   const url = "https://api.elasticemail.com/v2/email/send";
   const params = new URLSearchParams();
+
   params.append("apikey", process.env.ELASTIC_EMAIL_API_KEY);
   params.append("subject", subject);
   params.append("from", from || process.env.ELASTIC_EMAIL_USER);
@@ -157,9 +158,13 @@ async function sendEmailAPI({
   if (replyToName) {
     params.append("replyToName", replyToName);
   }
-  // ExtraTag → merge_extratag
+
+  // 기존에는 merge_extratag만 설정했지만, 현재는 커스텀 헤더도 함께 전송.
   if (extraTag) {
+    // extraTag → merge_extratag + 커스텀 헤더 (X-ExtraTag)
     params.append("merge_extratag", extraTag);
+    // Elastic Email에서 "Custom headers" 기능을 활성화해야 웹훅에서 X-ExtraTag를 확인 가능
+    params.append("headers", `X-ExtraTag: ${extraTag}`);
   }
 
   try {
@@ -1304,7 +1309,7 @@ app.get("/api/webhook-events", async (req, res) => {
 // ───────── [웹훅 이벤트 삭제 API] ─────────
 app.post("/api/webhook-events/delete", async (req, res) => {
   try {
-    const { ids } = req.body; 
+    const { ids } = req.body;
     // 프론트엔드에서 { ids: ["63f935...", "63f936..."] } 형태로 보냄
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ success: false, message: "No IDs provided." });
