@@ -197,7 +197,8 @@ async function getLocalEmailsForCountries(countries) {
       continue;
     }
 
-    const filePath = `/Users/kimsungah/Desktop/SmartTalentMatcher/csv/${fileName}`;
+    // +++ [CHANGED] 절대경로 대신 __dirname을 이용한 상대경로로 수정 +++
+    const filePath = path.join(__dirname, "csv", fileName);
     if (!fs.existsSync(filePath)) {
       console.warn(`>>> [WARNING] CSV file does not exist at: ${filePath}`);
       continue;
