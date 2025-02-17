@@ -1182,7 +1182,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
       ✅ Some may respond with rejections (e.g., roster is full, only working with locals, etc.). This is completely normal, so please don't be discouraged.
     </p>
     <p>
-      ✅ A 10% discount for the long-targeting emails adjustment is already reflected in your invoice.
+      ✅ A 10% discount For adjusting invalid or long-targeted emails is already reflected in your invoice.
     </p>
     <p>
       ✅ Please note that our responsibility at Smart Talent Matcher ends here.
