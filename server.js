@@ -1,7 +1,8 @@
 // --------------------------------------------------------------------------------
-// SERVER.JS (UPDATED)
+// SERVER.JS
 // --------------------------------------------------------------------------------
 
+// ───────── [필요한 import들 & dotenv 설정] ─────────
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -84,6 +85,24 @@ const reviewSchema = new mongoose.Schema({
 });
 const Review = mongoose.model("Review", reviewSchema);
 
+// +++ [CHANGED] 여기서부터: BulkEmailRecipient 스키마 관련 부분 삭제 +++
+//
+//   기존에는 CSV를 DB에 저장하기 위해 BulkEmailRecipient라는 스키마를 만들어
+//   업로드 후 조회했으나, 이제는 로컬 CSV 파일에서 직접 읽어올 것이므로
+//   BulkEmailRecipient 관련 정의 및 사용 코드를 제거했습니다.
+//
+//   (아래 주석 처리 예시)
+// 
+// ----------------------------------------------------------------------
+// // ───────── [BulkEmailRecipient 스키마 정의] ─────────
+// const bulkEmailRecipientSchema = new mongoose.Schema({
+//   email: { type: String, required: true },
+//   countryOrSource: { type: String, default: "" }
+// });
+// const BulkEmailRecipient = mongoose.model("BulkEmailRecipient", bulkEmailRecipientSchema);
+// ----------------------------------------------------------------------
+// +++ [CHANGED] 여기까지 +++
+
 // ───────── [Express 앱 설정] ─────────
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -147,9 +166,19 @@ async function sendEmailAPI({
   }
 }
 
-// ───────── [로컬 CSV에서 이메일 로드] ─────────
-import csvParser from "csv-parser";
+// +++ [CHANGED] 여기서부터: 로컬 CSV에서 이메일을 읽어오는 함수 추가 +++
+//
+//   /Users/kimsungah/Desktop/SmartTalentMatcher/csv/ 경로의
+//   Africa.csv, Asia.csv, Australia.csv, South America.csv,
+//   United Kingdom (+EU).csv, United States (+Canada).csv
+//   파일에서 직접 이메일을 파싱하여 배열로 반환합니다.
+//
+//   아래 경로는 사용 환경에 맞게 수정할 수 있습니다.
+//
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 async function getLocalEmailsForCountries(countries) {
+  // CSV 파일 이름을 매핑하기 위한 객체
   const csvFileMap = {
     "Africa": "Africa.csv",
     "Asia": "Asia.csv",
@@ -167,12 +196,15 @@ async function getLocalEmailsForCountries(countries) {
       console.warn(`>>> [WARNING] No CSV file mapping found for country: ${country}`);
       continue;
     }
+
+    // +++ [CHANGED] 절대경로 대신 __dirname을 이용한 상대경로로 수정 +++
     const filePath = path.join(__dirname, "csv", fileName);
     if (!fs.existsSync(filePath)) {
       console.warn(`>>> [WARNING] CSV file does not exist at: ${filePath}`);
       continue;
     }
 
+    // 파일을 읽어와서 CSV 파싱
     const emails = await new Promise((resolve, reject) => {
       let results = [];
       fs.createReadStream(filePath)
@@ -185,22 +217,28 @@ async function getLocalEmailsForCountries(countries) {
         .on("end", () => resolve(results))
         .on("error", err => reject(err));
     });
+
     allEmails = allEmails.concat(emails);
   }
 
+  // 중복 제거 후 반환
   return [...new Set(allEmails)];
 }
+
+// +++ [CHANGED] 여기까지 +++
 
 // ───────── [테스트 라우트] ─────────
 app.get("/", (req, res) => {
   res.send("<h1>Hello from server.js - CSV Reload test</h1>");
 });
 
-// ───────── [타이머(테스트용으로 단축)] ─────────
-const TWELVE_HOURS = 1 * 60 * 1000;    // 실제 12시간 → 여기서 1분
-const TWENTY_FOUR_HOURS = 2 * 60 * 1000; // 실제 24시간 → 2분
-const FORTY_EIGHT_HOURS = 3 * 60 * 1000; // 실제 48시간 → 3분
-const TWO_WEEKS = 1 * 60 * 1000;       // 실제 2주 → 1분
+// ───────── [타이머 관련 (테스트용 1/2/3분)] ─────────
+// 실제값: 12h / 24h / 48h / 2주
+// 여기서는 테스트 용도로 각각 1분 / 2분 / 3분 / 1분 설정
+const TWELVE_HOURS = 1 * 60 * 1000;    // 실제 12시간 → 테스트 1분
+const TWENTY_FOUR_HOURS = 2 * 60 * 1000; // 실제 24시간 → 테스트 2분
+const FORTY_EIGHT_HOURS = 3 * 60 * 1000; // 실제 48시간 → 테스트 3분
+const TWO_WEEKS = 1 * 60 * 1000;       // 실제 2주 → 테스트 1분
 
 const reminderTimers = {};
 const autoCancelTimers = {};
@@ -210,19 +248,13 @@ const twoWeekTimers = {};
 // 12h 리마인더
 function scheduleReminder(order) {
   const timeLeft = order.createdAt.getTime() + TWELVE_HOURS - Date.now();
-  if (!order.paid && !order.reminderSent) {
-    if (timeLeft > 0) {
-      if (reminderTimers[order.orderId]) {
-        clearTimeout(reminderTimers[order.orderId]);
-        delete reminderTimers[order.orderId];
-      }
-      reminderTimers[order.orderId] = setTimeout(() => sendReminder(order), timeLeft);
-      console.log(`⏰ Scheduled reminder for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
-    } else {
-      // 이미 시간이 지났다면 즉시 실행
-      console.log(`>>> [scheduleReminder] #${order.orderId} timeLeft <= 0, sending reminder now.`);
-      sendReminder(order);
+  if (timeLeft > 0 && !order.paid && !order.reminderSent) {
+    if (reminderTimers[order.orderId]) {
+      clearTimeout(reminderTimers[order.orderId]);
+      delete reminderTimers[order.orderId];
     }
+    reminderTimers[order.orderId] = setTimeout(() => sendReminder(order), timeLeft);
+    console.log(`⏰ Scheduled reminder for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
   }
 }
 
@@ -266,19 +298,15 @@ function sendReminder(order) {
 
 // 24h Auto-Cancel
 function scheduleAutoCancel(order) {
+  console.log(`>>> scheduleAutoCancel called for order #${order.orderId}`);
   const timeLeft = order.createdAt.getTime() + TWENTY_FOUR_HOURS - Date.now();
-  if (!order.paid) {
-    if (timeLeft > 0) {
-      if (autoCancelTimers[order.orderId]) {
-        clearTimeout(autoCancelTimers[order.orderId]);
-        delete autoCancelTimers[order.orderId];
-      }
-      autoCancelTimers[order.orderId] = setTimeout(() => autoCancelOrder(order), timeLeft);
-      console.log(`⏰ Scheduled auto-cancel for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
-    } else {
-      console.log(`>>> [scheduleAutoCancel] #${order.orderId} timeLeft <= 0, auto-cancel immediately.`);
-      autoCancelOrder(order);
+  if (timeLeft > 0 && !order.paid) {
+    if (autoCancelTimers[order.orderId]) {
+      clearTimeout(autoCancelTimers[order.orderId]);
+      delete autoCancelTimers[order.orderId];
     }
+    autoCancelTimers[order.orderId] = setTimeout(() => autoCancelOrder(order), timeLeft);
+    console.log(`⏰ Scheduled auto-cancel for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
   }
 }
 
@@ -366,18 +394,13 @@ function autoCancelOrder(order) {
 // 48h Auto-Delete
 function scheduleAutoDelete(order) {
   const timeLeft = order.createdAt.getTime() + FORTY_EIGHT_HOURS - Date.now();
-  if (!order.paid) {
-    if (timeLeft > 0) {
-      if (autoDeleteTimers[order.orderId]) {
-        clearTimeout(autoDeleteTimers[order.orderId]);
-        delete autoDeleteTimers[order.orderId];
-      }
-      autoDeleteTimers[order.orderId] = setTimeout(() => autoDeleteOrder(order), timeLeft);
-      console.log(`⏰ Scheduled auto-delete for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
-    } else {
-      console.log(`>>> [scheduleAutoDelete] #${order.orderId} timeLeft <= 0, auto-delete immediately.`);
-      autoDeleteOrder(order);
+  if (timeLeft > 0 && !order.paid) {
+    if (autoDeleteTimers[order.orderId]) {
+      clearTimeout(autoDeleteTimers[order.orderId]);
+      delete autoDeleteTimers[order.orderId];
     }
+    autoDeleteTimers[order.orderId] = setTimeout(() => autoDeleteOrder(order), timeLeft);
+    console.log(`⏰ Scheduled auto-delete for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
   }
 }
 
@@ -424,24 +447,22 @@ function scheduleTwoWeekFollowUpEmail(order) {
     console.log(">>> [DEBUG] bulkEmailsCompletedAt not set. Cannot schedule 2-week follow-up for", order.orderId);
     return;
   }
+  if (twoWeekTimers[order.orderId]) {
+    clearTimeout(twoWeekTimers[order.orderId]);
+    delete twoWeekTimers[order.orderId];
+  }
 
   const timePassed = Date.now() - order.bulkEmailsCompletedAt.getTime();
   const timeLeft = TWO_WEEKS - timePassed;
-
-  if (timeLeft > 0) {
-    if (twoWeekTimers[order.orderId]) {
-      clearTimeout(twoWeekTimers[order.orderId]);
-      delete twoWeekTimers[order.orderId];
-    }
-    twoWeekTimers[order.orderId] = setTimeout(() => {
-      sendTwoWeekEmail(order);
-    }, timeLeft);
-    console.log(`⏰ Scheduled 2-week follow-up email for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
-  } else {
-    // 이미 2주 시점이 지났으면 즉시 전송
-    console.log(`>>> [scheduleTwoWeekFollowUpEmail] #${order.orderId} timeLeft <= 0, sending 2-week follow-up now.`);
+  if (timeLeft <= 0) {
     sendTwoWeekEmail(order);
+    return;
   }
+  twoWeekTimers[order.orderId] = setTimeout(() => {
+    sendTwoWeekEmail(order);
+  }, timeLeft);
+
+  console.log(`⏰ Scheduled 2-week follow-up email for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
 }
 
 async function sendTwoWeekEmail(order) {
@@ -684,6 +705,7 @@ app.post("/admin/delete-review", async (req, res) => {
 
 // ───────── [주문(Order) 관련 라우트] ─────────
 
+// 기본 페이지
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "resume.html"));
 });
@@ -915,6 +937,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     scheduleAutoCancel(draftOrder);
     scheduleAutoDelete(draftOrder);
 
+    // 아직 미결제이므로 대량 메일/2주 팔로업은 여기서 안 함 (결제 후 진행)
     console.log(">>> [final-submit] Step 8: Returning success response");
     return res.json({
       success: true,
@@ -1095,8 +1118,10 @@ app.get("/admin/toggle-payment", async (req, res) => {
           return;
         }
 
+        // +++ [CHANGED] 여기서부터: 로컬 CSV에서 메일 목록을 읽어오도록 변경 +++
         const uniqueEmails = await getLocalEmailsForCountries(selectedCountries);
         console.log(">>> [DEBUG] uniqueEmails after reading local CSV =", uniqueEmails.length);
+        // +++ [CHANGED] 여기까지 +++
 
         const formattedIntro = order.introduction ? order.introduction.replace(/\r?\n/g, "<br>") : "";
         let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
@@ -1204,12 +1229,21 @@ app.get("/admin/toggle-payment", async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
 
-  // 타이머 복원
+  // +++ [CHANGED] 여기서부터: CSV를 DB에 업로드하는 로직 제거 +++
+  //
+  //   기존엔 app.listen에서 uploadCSVToDB()를 실행해 BulkEmailRecipient를
+  //   초기화했지만, 이제는 그 과정을 없앴습니다.
+  //
+  //   대신 바로 타이머, 불완료 주문 정리, 클라우드 동기화 등을 진행합니다.
+  //
+  // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+  
+  // uploadCSVToDB()  <-- 삭제됨
+  
   restoreTimers();
-  // 미완성(draft) 24h 청소
   cleanUpIncompleteOrders();
-  // Cloudinary 동기화
   syncCloudinaryWithDB();
-  // 필요시 추가 DB정리
   cleanUpNonFinalOrders();
+  
+  // +++ [CHANGED] 여기까지 +++
 });
