@@ -43,7 +43,7 @@
       width: 100%;
       border-collapse: collapse;
       margin-top: 10px;
-      table-layout: fixed; /* 고정 레이아웃 */
+      table-layout: fixed;
     }
     thead th {
       background: #f0f0f0;
@@ -55,13 +55,11 @@
       vertical-align: top;
       word-wrap: break-word;
     }
-    /* 행 높이 고정 */
     tbody tr {
-      height: 120px; /* 원하는 높이 */
+      height: 120px;
     }
-    /* 셀 내부가 넘칠 때 스크롤 */
     tbody td {
-      overflow: auto; /* 스크롤바 표시 */
+      overflow: auto;
     }
   </style>
 </head>
@@ -83,13 +81,11 @@
       <option value="all">All</option>
     </select>
 
-    <!-- 선택된 이벤트 일괄 삭제 -->
     <button class="delete-selected-button" id="deleteSelectedBtn">Delete Selected</button>
   </div>
 
   <table id="eventsTable">
     <colgroup>
-      <!-- 체크박스 -->
       <col style="width: 4%;">
       <col style="width: 9%;">
       <col style="width: 9%;">
@@ -106,7 +102,6 @@
     <thead>
       <tr>
         <th>
-          <!-- 전체선택 체크박스 -->
           <input type="checkbox" id="selectAllCheckbox" />
         </th>
         <th>Received At</th>
@@ -128,6 +123,21 @@
   <script>
     let allEvents = [];
 
+    // ExtraTag 파싱 함수: merge_extratag → extratag → headers 내 X-ExtraTag
+    function getFinalExtraTag(data) {
+      if (data.merge_extratag) return data.merge_extratag;
+      if (data.extratag) return data.extratag;
+      if (data.headers && typeof data.headers === 'string') {
+        const lines = data.headers.split('\n');
+        for (const line of lines) {
+          if (line.trim().toLowerCase().startsWith('x-extratag:')) {
+            return line.split(':')[1].trim();
+          }
+        }
+      }
+      return 'N/A';
+    }
+
     async function fetchEvents() {
       try {
         const response = await fetch('/api/webhook-events');
@@ -138,13 +148,8 @@
           return;
         }
 
-        // 모든 이벤트
         allEvents = result.events;
-
-        // 필터 옵션 업데이트
         updateFilterOptions(allEvents);
-
-        // 테이블 최초 렌더링
         renderEvents();
       } catch (err) {
         console.error('Error fetching events:', err);
@@ -156,12 +161,8 @@
       const orderIdSet = new Set();
 
       events.forEach(event => {
-        // Elastic Email에서 넘어오는 ExtraTag는 
-        // event.data.merge_extratag OR event.data.extratag 등에 들어있을 수 있음
         const data = event.data || {};
-        const tag = data.merge_extratag || data.extratag || 'N/A';
-
-        // 주문번호는 generateDateTimeOrderId()로 만든 8자리 숫자라고 가정
+        const tag = getFinalExtraTag(data);
         if (/^\d{8}$/.test(tag)) {
           orderIdSet.add(tag);
         } else {
@@ -169,11 +170,9 @@
         }
       });
 
-      // 드롭다운 DOM
       const nonOrderFilter = document.getElementById('nonOrderExtraTagFilter');
       const orderIdFilter = document.getElementById('orderIdFilter');
 
-      // 기존 옵션 제거 (All 제외)
       while (nonOrderFilter.options.length > 1) {
         nonOrderFilter.remove(1);
       }
@@ -181,7 +180,6 @@
         orderIdFilter.remove(1);
       }
 
-      // 채우기
       nonOrderTagSet.forEach(tag => {
         const option = document.createElement('option');
         option.value = tag;
@@ -200,18 +198,15 @@
     function renderEvents() {
       const nonOrderFilter = document.getElementById('nonOrderExtraTagFilter');
       const orderIdFilter = document.getElementById('orderIdFilter');
-
       const nonOrderSelected = nonOrderFilter.value;
       const orderSelected = orderIdFilter.value;
 
-      // union(OR) 방식 필터링
       const filtered = allEvents.filter(event => {
         const data = event.data || {};
-        const tag = data.merge_extratag || data.extratag || 'N/A';
-
+        const finalTag = getFinalExtraTag(data);
         if (nonOrderSelected === 'all' && orderSelected === 'all') return true;
-        if (nonOrderSelected !== 'all' && tag === nonOrderSelected) return true;
-        if (orderSelected !== 'all' && tag === orderSelected) return true;
+        if (nonOrderSelected !== 'all' && finalTag === nonOrderSelected) return true;
+        if (orderSelected !== 'all' && finalTag === orderSelected) return true;
         return false;
       });
 
@@ -219,29 +214,15 @@
       tbody.innerHTML = '';
 
       filtered.forEach(event => {
-        // DB에 저장된 _id
         const eventId = event._id;
         const data = event.data || {};
-
-        // 구조분해
-        const {
-          to,
-          from,
-          status,
-          messageid,
-          merge_extratag,
-          extratag,
-          ...rest
-        } = data;
-
-        // 이벤트 타입
-        const eventType = (event.eventType || '').toLowerCase();
-        // 최종 Extra Tag
-        const finalExtraTag = merge_extratag || extratag || 'N/A';
+        const { to, from, status, messageid, ...rest } = data;
+        const eventType = (event.eventType || "").toLowerCase();
+        const finalExtraTag = getFinalExtraTag(data);
 
         const row = document.createElement('tr');
 
-        // (1) 체크박스 셀
+        // 체크박스
         const checkboxCell = document.createElement('td');
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
@@ -250,57 +231,61 @@
         checkboxCell.appendChild(checkbox);
         row.appendChild(checkboxCell);
 
-        // (2) Received At
+        // Received At
         const receivedCell = document.createElement('td');
         receivedCell.textContent = new Date(event.receivedAt).toLocaleString();
         row.appendChild(receivedCell);
 
-        // (3) Extra Tag
+        // Extra Tag
         const tagCell = document.createElement('td');
         tagCell.textContent = finalExtraTag;
         row.appendChild(tagCell);
 
-        // (4) Email (== "to")
+        // Email
         const emailCell = document.createElement('td');
         emailCell.textContent = to || 'N/A';
         row.appendChild(emailCell);
 
-        // (5) Sent
+        // Sent
         const sentCell = document.createElement('td');
         sentCell.textContent = (eventType === 'sent' || status === 'Sent') ? '✓' : '';
         row.appendChild(sentCell);
 
-        // (6) Opened
+        // Opened
         const openedCell = document.createElement('td');
         openedCell.textContent = (eventType === 'opened' || status === 'Opened') ? '✓' : '';
         row.appendChild(openedCell);
 
-        // (7) Clicked
+        // Clicked
         const clickedCell = document.createElement('td');
         clickedCell.textContent = (eventType === 'clicked') ? '✓' : '';
         row.appendChild(clickedCell);
 
-        // (8) Unsubscribed
+        // Unsubscribed
         const unsubCell = document.createElement('td');
         unsubCell.textContent = (eventType === 'unsubscribed') ? '✓' : '';
         row.appendChild(unsubCell);
 
-        // (9) Complaints (complaint, spamreport)
+        // Complaints
         const complaintCell = document.createElement('td');
         complaintCell.textContent = (eventType === 'complaint' || eventType === 'spamreport') ? '✓' : '';
         row.appendChild(complaintCell);
 
-        // (10) Bounce/Error
+        // Bounce/Error
         const bounceCell = document.createElement('td');
-        bounceCell.textContent = ['bounce', 'error', 'failed'].includes(eventType) ? '✓' : '';
+        bounceCell.textContent = (["bounce", "error", "failed"].includes(eventType)) ? '✓' : '';
         row.appendChild(bounceCell);
 
-        // (11) Other Info
+        // Other Info: 각 key-value 쌍으로 분리하여 줄바꿈 처리
         const otherInfoCell = document.createElement('td');
-        otherInfoCell.textContent = JSON.stringify(rest);
+        let infoHTML = "";
+        Object.entries(rest).forEach(([key, value]) => {
+          infoHTML += `<strong>${key}</strong>: ${value}<br>`;
+        });
+        otherInfoCell.innerHTML = infoHTML;
         row.appendChild(otherInfoCell);
 
-        // (12) ID (messageid)
+        // ID (messageid)
         const idCell = document.createElement('td');
         idCell.textContent = messageid || 'N/A';
         row.appendChild(idCell);
@@ -309,7 +294,6 @@
       });
     }
 
-    // 선택된 체크박스 삭제
     async function deleteSelectedEvents() {
       const checkboxes = document.querySelectorAll('.row-checkbox:checked');
       if (!checkboxes.length) {
@@ -329,7 +313,7 @@
         const result = await resp.json();
         if (result.success) {
           alert('Deleted successfully!');
-          fetchEvents(); // 새로고침
+          fetchEvents();
         } else {
           alert('Failed to delete: ' + (result.message || 'Unknown error'));
         }
@@ -338,7 +322,6 @@
       }
     }
 
-    // "Select All" 체크박스 핸들러
     function toggleSelectAll() {
       const selectAll = document.getElementById('selectAllCheckbox').checked;
       const checkboxes = document.querySelectorAll('.row-checkbox');
@@ -347,15 +330,11 @@
       });
     }
 
-    // 초기 바인딩
     document.getElementById('selectAllCheckbox').addEventListener('change', toggleSelectAll);
     document.getElementById('deleteSelectedBtn').addEventListener('click', deleteSelectedEvents);
-
-    // 드롭다운 변경 시 다시 렌더링
     document.getElementById('nonOrderExtraTagFilter').addEventListener('change', renderEvents);
     document.getElementById('orderIdFilter').addEventListener('change', renderEvents);
 
-    // 페이지 로드 시 이벤트 데이터 조회
     fetchEvents();
   </script>
 </body>
