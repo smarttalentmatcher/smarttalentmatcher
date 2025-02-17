@@ -1,13 +1,9 @@
 // --------------------------------------------------------------------------------
-// SERVER.JS (ESM 버전) - 전체 코드 (MODIFIED FINAL)
+// SERVER.JS (ESM 버전) - 전체 코드 (WEBHOOK, extraTag 기능 제거)
 //  + 2주(TWO_WEEKS) 팔로업 메일 + 타이머 복원
 //  + Review (CRUD) 기능 추가
 //  + Paid 상태 재확인 (12h/24h 메일 발송 전) 수정 완료
 //  + [FIX] 결제 이전에는 대량 메일·2주 팔로업이 발송되지 않도록 수정
-//  + [ADDED] 웹훅 삭제 라우트 및 모든 최종 정리
-//  + [MODIFIED] extraTag를 category, X-ExtraTag 헤더로도 전송
-//  + [MODIFIED] 웹훅 삭제 시 ObjectId 변환 및 deletedEvents.json 기록
-//  + [MODIFIED] 서버 시작 시 syncDeletedWebhookEvents 호출
 // --------------------------------------------------------------------------------
 
 // ───────── [필요한 import들 & dotenv 설정] ─────────
@@ -100,14 +96,6 @@ const reviewSchema = new mongoose.Schema({
 });
 const Review = mongoose.model("Review", reviewSchema);
 
-// ───────── [EmailEvent 스키마 (웹훅)] ─────────
-const emailEventSchema = new mongoose.Schema({
-  eventType: { type: String, default: "" },
-  data: { type: mongoose.Schema.Types.Mixed },
-  receivedAt: { type: Date, default: Date.now }
-});
-const EmailEvent = mongoose.model("EmailEvent", emailEventSchema);
-
 // ───────── [Express 앱 설정] ─────────
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -132,7 +120,8 @@ function generateDateTimeOrderId() {
   return mm + dd + hh + min;
 }
 
-// ───────── [Elastic Email 메일발송 함수 (Reply-To, extraTag)] ─────────
+// ───────── [Elastic Email 메일발송 함수] ─────────
+// extraTag/merge_extratag/headers 제거
 async function sendEmailAPI({
   subject,
   from,
@@ -141,8 +130,7 @@ async function sendEmailAPI({
   bodyHtml,
   isTransactional = true,
   replyTo,
-  replyToName,
-  extraTag
+  replyToName
 }) {
   const url = "https://api.elasticemail.com/v2/email/send";
   const params = new URLSearchParams();
@@ -160,13 +148,6 @@ async function sendEmailAPI({
   }
   if (replyToName) {
     params.append("replyToName", replyToName);
-  }
-
-  // extraTag를 merge_extratag, X-ExtraTag, category 등에 설정
-  if (extraTag) {
-    params.append("merge_extratag", extraTag);
-    params.append("headers", `X-ExtraTag: ${extraTag}`);
-    params.append("category", extraTag);
   }
 
   try {
@@ -310,8 +291,7 @@ function sendReminder(order) {
         fromName: "Smart Talent Matcher",
         to: savedOrder.emailAddress,
         bodyHtml: reminderEmailHtml,
-        isTransactional: true,
-        extraTag: "12hrsReminder"
+        isTransactional: true
       };
 
       sendEmailAPI(mailData)
@@ -409,8 +389,7 @@ function autoCancelOrder(order) {
         fromName: "Smart Talent Matcher",
         to: order.emailAddress,
         bodyHtml: cancelHtml,
-        isTransactional: true,
-        extraTag: "24hrsAutoCancel+promo"
+        isTransactional: true
       };
       sendEmailAPI(mailData)
         .then(data => {
@@ -560,8 +539,7 @@ async function sendTwoWeekEmail(order) {
     fromName: "Smart Talent Matcher",
     to: order.emailAddress,
     bodyHtml: twoWeekHtml,
-    isTransactional: true,
-    extraTag: "2weeksFollowUp"
+    isTransactional: true
   };
   try {
     console.log(">>> [DEBUG] Sending 2-week follow-up email to:", order.emailAddress);
@@ -769,8 +747,7 @@ app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res)
       fromName: "Smart Talent Matcher",
       to: emailAddress,
       bodyHtml: emailHtml,
-      isTransactional: true,
-      extraTag: "TestEmail"
+      isTransactional: true
     };
     const result = await sendEmailAPI(mailData);
     console.log("Test Email sent:", result);
@@ -872,8 +849,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
           fromName: "Smart Talent Matcher",
           to: emailAddress,
           bodyHtml: cancelHtml,
-          isTransactional: true,
-          extraTag: "OrderCancel"
+          isTransactional: true
         });
         console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
 
@@ -941,8 +917,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       fromName: "Smart Talent Matcher",
       to: process.env.ELASTIC_EMAIL_USER,
       bodyHtml: adminEmailHtml,
-      isTransactional: true,
-      extraTag: "AdminActorInfo"
+      isTransactional: true
     });
     console.log("✅ Admin email sent.");
 
@@ -964,8 +939,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       fromName: "Smart Talent Matcher",
       to: draftOrder.emailAddress,
       bodyHtml: clientEmailHtml,
-      isTransactional: true,
-      extraTag: "ClientInvoice"
+      isTransactional: true
     });
     console.log("✅ Client Invoice email sent.");
 
@@ -1137,8 +1111,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
         fromName: "Smart Talent Matcher",
         to: order.emailAddress,
         bodyHtml: startedHtml,
-        isTransactional: true,
-        extraTag: "ServiceStarted"
+        isTransactional: true
       };
       console.log(">>> [DEBUG] Sending service-start email to:", order.emailAddress);
       const serviceStartResult = await sendEmailAPI(mailDataStart);
@@ -1197,8 +1170,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
           bodyHtml: emailHtml,
           isTransactional: false,
           replyTo: order.emailAddress,
-          replyToName: order.emailAddress,
-          extraTag: order.orderId
+          replyToName: order.emailAddress
         };
 
         console.log(">>> [DEBUG] Sending Bulk Emails in Chunks...");
@@ -1256,8 +1228,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
           fromName: "Smart Talent Matcher",
           to: `${order.emailAddress}, info@smarttalentmatcher.com`,
           bodyHtml: completedHtml,
-          isTransactional: true,
-          extraTag: "BulkAllSent"
+          isTransactional: true
         };
         console.log(">>> [DEBUG] Sending final 'all sent' email to:", order.emailAddress);
         await sendEmailAPI(mailDataCompleted);
@@ -1277,92 +1248,6 @@ app.get("/admin/toggle-payment", async (req, res) => {
   }
 });
 
-// ───────── [웹훅 라우트] ─────────
-app.all("/webhook", async (req, res) => {
-  let eventData;
-  if (req.method === "GET") {
-    eventData = req.query;
-    console.log(">>> [GET] Webhook from Elastic Email:", req.query);
-  } else if (req.method === "POST") {
-    eventData = req.body;
-    console.log(">>> [POST] Webhook from Elastic Email:", req.body);
-  }
-
-  try {
-    const eventType = eventData.event || "";
-    await EmailEvent.create({ eventType, data: eventData });
-    console.log("Webhook event saved to DB.");
-  } catch (err) {
-    console.error("Error saving webhook event:", err);
-  }
-
-  res.sendStatus(200);
-});
-
-// ───────── [웹훅 이벤트 조회 API] ─────────
-app.get("/api/webhook-events", async (req, res) => {
-  try {
-    const events = await EmailEvent.find({}).sort({ receivedAt: -1 });
-    res.json({ success: true, events });
-  } catch (err) {
-    console.error("Error fetching webhook events:", err);
-    res.status(500).json({ success: false, message: "Error fetching webhook events" });
-  }
-});
-
-// ───────── [웹훅 이벤트 삭제 API] ─────────
-app.post("/api/webhook-events/delete", async (req, res) => {
-  try {
-    const { ids } = req.body;
-    // 프론트엔드에서 { ids: ["63f935...", "63f936..."] } 형태로 보냄
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ success: false, message: "No IDs provided." });
-    }
-
-    // 문자열 → ObjectId 변환
-    const objectIds = ids.map(id => mongoose.Types.ObjectId(id));
-    await EmailEvent.deleteMany({ _id: { $in: objectIds } });
-
-    // 삭제된 이벤트 ID들을 "deletedEvents.json" 파일에 기록
-    const deletedFile = path.join(__dirname, "deletedEvents.json");
-    let deletedIds = [];
-    if (fs.existsSync(deletedFile)) {
-      try {
-        deletedIds = JSON.parse(fs.readFileSync(deletedFile, "utf8"));
-      } catch (e) {
-        deletedIds = [];
-      }
-    }
-    // 중복 추가 방지
-    const newDeletedIds = [...new Set([...deletedIds, ...ids])];
-    fs.writeFileSync(deletedFile, JSON.stringify(newDeletedIds));
-
-    return res.json({ success: true });
-  } catch (err) {
-    console.error("Error deleting events:", err);
-    return res.status(500).json({ success: false, message: "Internal Server Error" });
-  }
-});
-
-// 어드민에서 삭제한 이벤트를 DB와 동기화하는 함수
-async function syncDeletedWebhookEvents() {
-  const deletedFile = path.join(__dirname, "deletedEvents.json");
-  if (fs.existsSync(deletedFile)) {
-    try {
-      const deletedIds = JSON.parse(fs.readFileSync(deletedFile, "utf8"));
-      if (deletedIds.length > 0) {
-        const objectIds = deletedIds.map(id => mongoose.Types.ObjectId(id));
-        const result = await EmailEvent.deleteMany({ _id: { $in: objectIds } });
-        console.log(`Synced deleted events: ${result.deletedCount} events removed from DB.`);
-      }
-      // 파일 비우기
-      fs.writeFileSync(deletedFile, JSON.stringify([]));
-    } catch (e) {
-      console.error("Error syncing deleted webhook events:", e);
-    }
-  }
-}
-
 // ───────── [서버 시작 및 초기 작업] ─────────
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
@@ -1374,7 +1259,6 @@ app.listen(PORT, "0.0.0.0", () => {
       cleanUpIncompleteOrders();
       syncCloudinaryWithDB();
       cleanUpNonFinalOrders();
-      syncDeletedWebhookEvents();
     })
     .catch(err => {
       console.error("Error uploading CSV to DB:", err);
@@ -1382,6 +1266,5 @@ app.listen(PORT, "0.0.0.0", () => {
       cleanUpIncompleteOrders();
       syncCloudinaryWithDB();
       cleanUpNonFinalOrders();
-      syncDeletedWebhookEvents();
     });
 });
