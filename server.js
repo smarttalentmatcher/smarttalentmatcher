@@ -4,9 +4,13 @@
 //  + Review (CRUD) 기능 추가
 //  + Paid 상태 재확인 (12h/24h 메일 발송 전) 수정 완료
 //  + [FIX] 결제 이전에는 대량 메일·2주 팔로업이 발송되지 않도록 수정
-//  + [ADDED] 웹훅 삭제 라우트 및 삭제 동기화 기능 추가
+//  + [ADDED] 웹훅 삭제 라우트 및 모든 최종 정리
+//  + [MODIFIED] extraTag를 category, X-ExtraTag 헤더로도 전송
+//  + [MODIFIED] 웹훅 삭제 시 ObjectId 변환 및 deletedEvents.json 기록
+//  + [MODIFIED] 서버 시작 시 syncDeletedWebhookEvents 호출
 // --------------------------------------------------------------------------------
 
+// ───────── [필요한 import들 & dotenv 설정] ─────────
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -25,7 +29,7 @@ import FormData from "form-data";
 import https from "https";
 import { fileURLToPath } from "url";
 
-// __filename, __dirname 설정
+// __filename, __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -75,6 +79,8 @@ const orderSchema = new mongoose.Schema({
   venmoId: { type: String, default: "" },
   headshot: { type: String, default: "" },
   status: { type: String, default: "draft" },
+
+  // 대량 메일 완료 시점 & 2주 팔로업 여부
   bulkEmailsCompletedAt: { type: Date, default: null },
   twoWeekFollowUpSent: { type: Boolean, default: false }
 });
@@ -156,8 +162,8 @@ async function sendEmailAPI({
     params.append("replyToName", replyToName);
   }
 
+  // extraTag를 merge_extratag, X-ExtraTag, category 등에 설정
   if (extraTag) {
-    // [MODIFIED] extraTag 값을 merge_extratag, X-ExtraTag 헤더와 함께 category에도 설정
     params.append("merge_extratag", extraTag);
     params.append("headers", `X-ExtraTag: ${extraTag}`);
     params.append("category", extraTag);
@@ -195,15 +201,25 @@ function uploadCSVToDB() {
 
       console.log(`[CSV Import] Found ${csvFiles.length} CSV file(s):`, csvFiles);
 
+      // 전체 삭제 후 재업로드
       BulkEmailRecipient.deleteMany({})
         .then(() => {
           let filesProcessed = 0;
+
           csvFiles.forEach(file => {
             const filePath = path.join(csvFolderPath, file);
             const regionName = path.basename(file, ".csv");
+
             let insertedCountThisFile = 0;
+
             fs.createReadStream(filePath)
-              .pipe(csvParser({ headers: ["email"], skipLines: 1, bom: true }))
+              .pipe(
+                csvParser({
+                  headers: ["email"],
+                  skipLines: 1,
+                  bom: true
+                })
+              )
               .on("data", async (row) => {
                 const emailVal = row.email;
                 if (emailVal && emailVal.trim() !== "") {
@@ -221,6 +237,7 @@ function uploadCSVToDB() {
               .on("end", async () => {
                 filesProcessed++;
                 console.log(`[CSV DEBUG] File '${file}' => insertedCountThisFile = ${insertedCountThisFile}`);
+
                 if (filesProcessed === csvFiles.length) {
                   const totalDocs = await BulkEmailRecipient.countDocuments();
                   console.log(`CSV files uploaded to DB. Total BulkEmailRecipient docs = ${totalDocs}`);
@@ -244,6 +261,8 @@ app.get("/", (req, res) => {
 });
 
 // ───────── [타이머 관련 (테스트용 1/2/3분)] ─────────
+// 실제값: 12h / 24h / 48h / 2주
+// 여기서는 테스트 용도로 각각 1분 / 2분 / 3분 / 1분 설정
 const TWELVE_HOURS = 1 * 60 * 1000;    // 실제 12시간 → 테스트 1분
 const TWENTY_FOUR_HOURS = 2 * 60 * 1000; // 실제 24시간 → 테스트 2분
 const FORTY_EIGHT_HOURS = 3 * 60 * 1000; // 실제 48시간 → 테스트 3분
@@ -278,11 +297,13 @@ function sendReminder(order) {
         console.log(`>>> [Reminder] Order #${order.orderId} is paid or reminderSent=true. Skipping reminder.`);
         return;
       }
+
       const templatePath = path.join(__dirname, "email.html");
       let reminderEmailHtml = fs.existsSync(templatePath)
         ? fs.readFileSync(templatePath, "utf-8")
         : "<html><body><p>Invoice details not available.</p></body></html>";
       reminderEmailHtml = reminderEmailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
+
       const mailData = {
         subject: "**Reminder** [Smart Talent Matcher] Invoice for Your Submission",
         from: process.env.ELASTIC_EMAIL_USER,
@@ -292,6 +313,7 @@ function sendReminder(order) {
         isTransactional: true,
         extraTag: "12hrsReminder"
       };
+
       sendEmailAPI(mailData)
         .then(data => {
           console.log(`✅ Reminder email sent for #${savedOrder.orderId}:`, data);
@@ -328,6 +350,7 @@ function autoCancelOrder(order) {
         console.log(`>>> [AutoCancel] Order #${order.orderId} is paid. Skipping auto-cancel.`);
         return;
       }
+
       const cancelHtml = `
 <table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: Arial, sans-serif; background-color:#f9f9f9; color: #333; line-height:1.6;">
   <tr>
@@ -422,6 +445,8 @@ async function autoDeleteOrder(order) {
     return;
   }
   console.log(`>>> autoDeleteOrder called for order #${order.orderId}`);
+
+  // Cloudinary 이미지 삭제
   if (currentOrder.headshot) {
     const parts = currentOrder.headshot.split("/");
     const uploadIndex = parts.findIndex(part => part === "upload");
@@ -436,6 +461,7 @@ async function autoDeleteOrder(order) {
       }
     }
   }
+
   try {
     await Order.deleteOne({ orderId: currentOrder.orderId });
     console.log(`✅ Order #${currentOrder.orderId} auto-deleted from DB after 48 hours.`);
@@ -455,6 +481,7 @@ function scheduleTwoWeekFollowUpEmail(order) {
     clearTimeout(twoWeekTimers[order.orderId]);
     delete twoWeekTimers[order.orderId];
   }
+
   const timePassed = Date.now() - order.bulkEmailsCompletedAt.getTime();
   const timeLeft = TWO_WEEKS - timePassed;
   if (timeLeft <= 0) {
@@ -464,6 +491,7 @@ function scheduleTwoWeekFollowUpEmail(order) {
   twoWeekTimers[order.orderId] = setTimeout(() => {
     sendTwoWeekEmail(order);
   }, timeLeft);
+
   console.log(`⏰ Scheduled 2-week follow-up email for #${order.orderId} in ${Math.round(timeLeft / 1000 / 60)} minutes`);
 }
 
@@ -546,77 +574,707 @@ async function sendTwoWeekEmail(order) {
   }
 }
 
-// ───────── [웹훅 이벤트 삭제 API] ─────────
-app.post("/api/webhook-events/delete", async (req, res) => {
+// 서버 시작 시 타이머 복원
+async function restoreTimers() {
   try {
-    const { ids } = req.body;
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ success: false, message: "No IDs provided." });
-    }
-    // [MODIFIED] id 문자열들을 ObjectId로 변환 후 삭제
-    const objectIds = ids.map(id => mongoose.Types.ObjectId(id));
-    await EmailEvent.deleteMany({ _id: { $in: objectIds } });
+    const pendingOrders = await Order.find({ status: "final", paid: false });
+    console.log(`>>> [DEBUG] restoreTimers: found ${pendingOrders.length} final/pending orders (unpaid).`);
+    pendingOrders.forEach((order) => {
+      if (!order.reminderSent) scheduleReminder(order);
+      scheduleAutoCancel(order);
+      scheduleAutoDelete(order);
+    });
 
-    // [MODIFIED] 삭제된 이벤트 ID들을 "deletedEvents.json" 파일에 저장 (기록)
-    const deletedFile = path.join(__dirname, "deletedEvents.json");
-    let deletedIds = [];
-    if (fs.existsSync(deletedFile)) {
-      try {
-        deletedIds = JSON.parse(fs.readFileSync(deletedFile, "utf8"));
-      } catch (e) {
-        deletedIds = [];
+    const needTwoWeek = await Order.find({
+      status: "final",
+      paid: true,
+      bulkEmailsCompletedAt: { $ne: null },
+      twoWeekFollowUpSent: false
+    });
+    needTwoWeek.forEach((order) => {
+      scheduleTwoWeekFollowUpEmail(order);
+    });
+
+    console.log(`✅ Timers restored. (unpaid final=${pendingOrders.length}, 2-week=${needTwoWeek.length})`);
+  } catch (err) {
+    console.error("❌ Error restoring timers:", err);
+  }
+}
+
+// 미완성(draft) 24h 지나면 DB & Cloudinary 정리
+async function cleanUpIncompleteOrders() {
+  const cutoff = new Date(Date.now() - (24 * 60 * 60 * 1000));
+  const orders = await Order.find({ status: "draft", createdAt: { $lt: cutoff } });
+  for (const order of orders) {
+    if (order.headshot) {
+      const parts = order.headshot.split("/");
+      const uploadIndex = parts.findIndex(part => part === "upload");
+      if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
+        const fileNameWithExtension = parts.slice(uploadIndex + 2).join("/");
+        const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, "");
+        try {
+          await cloudinary.uploader.destroy(publicId);
+          console.log("Deleted Cloudinary image for incomplete order:", publicId);
+        } catch (err) {
+          console.error("Error deleting Cloudinary resource:", err);
+        }
       }
     }
-    const newDeletedIds = [...new Set([...deletedIds, ...ids])];
-    fs.writeFileSync(deletedFile, JSON.stringify(newDeletedIds));
+    await Order.deleteOne({ _id: order._id });
+    console.log("Deleted incomplete order from DB:", order.orderId);
+  }
+}
 
-    return res.json({ success: true });
+// DB와 Cloudinary 동기화 (오펜드 이미지 제거)
+async function syncCloudinaryWithDB() {
+  try {
+    const orders = await Order.find({ headshot: { $ne: "" } });
+    const dbHeadshots = orders
+      .map(order => {
+        const parts = order.headshot.split("/");
+        const uploadIndex = parts.findIndex(part => part === "upload");
+        if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
+          const fileNameWithExtension = parts.slice(uploadIndex + 2).join("/");
+          return fileNameWithExtension.replace(/\.[^/.]+$/, "");
+        }
+        return null;
+      })
+      .filter(id => id);
+
+    const result = await cloudinary.api.resources({
+      type: "upload",
+      prefix: "SmartTalentMatcher/headshots",
+      max_results: 500
+    });
+    for (const resource of result.resources) {
+      if (!dbHeadshots.includes(resource.public_id)) {
+        await cloudinary.uploader.destroy(resource.public_id);
+        console.log("Deleted orphan Cloudinary image:", resource.public_id);
+      }
+    }
+  } catch (error) {
+    console.error("Error syncing Cloudinary with DB:", error);
+  }
+}
+
+// 필요시 추가 정리
+const cleanUpNonFinalOrders = async () => {
+  // 필요에 따라 구현
+};
+
+// ───────── [리뷰(Review) 관련 라우트] ─────────
+
+// 1) 새 리뷰 제출
+app.post("/review-submission", async (req, res) => {
+  try {
+    const { reviewText } = req.body;
+    if (!reviewText || !reviewText.trim()) {
+      return res.status(400).json({ success: false, message: "Review text cannot be empty." });
+    }
+    const newReview = new Review({ reviewText: reviewText.trim() });
+    await newReview.save();
+    console.log(">>> [DEBUG] New review saved:", newReview);
+    return res.json({ success: true, message: "Review saved successfully!" });
   } catch (err) {
-    console.error("Error deleting events:", err);
+    console.error("❌ Error in /review-submission:", err);
     return res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 });
 
-// ───────── [서버 시작 및 초기 작업] ─────────
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ Server running on port ${PORT}`);
-  
-  // [MODIFIED] 어드민에서 삭제한 이벤트를 DB에서 동기화하는 함수
-  async function syncDeletedWebhookEvents() {
-    const deletedFile = path.join(__dirname, "deletedEvents.json");
-    if (fs.existsSync(deletedFile)) {
-      try {
-        const deletedIds = JSON.parse(fs.readFileSync(deletedFile, "utf8"));
-        if (deletedIds.length > 0) {
-          const objectIds = deletedIds.map(id => mongoose.Types.ObjectId(id));
-          const result = await EmailEvent.deleteMany({ _id: { $in: objectIds } });
-          console.log(`Synced deleted events: ${result.deletedCount} events removed from DB.`);
+// 2) 리뷰 목록 조회
+app.get("/admin/reviews", async (req, res) => {
+  try {
+    const reviews = await Review.find().sort({ createdAt: -1 });
+    return res.json({ success: true, reviews });
+  } catch (err) {
+    console.error("❌ Error in /admin/reviews:", err);
+    return res.status(500).json({ success: false, message: "Failed to load reviews." });
+  }
+});
+
+// 3) 리뷰 수정
+app.post("/admin/edit-review", async (req, res) => {
+  try {
+    const { reviewId, newText } = req.body;
+    if (!reviewId || !newText || !newText.trim()) {
+      return res.status(400).json({ success: false, message: "Invalid data." });
+    }
+    const updated = await Review.findByIdAndUpdate(
+      reviewId,
+      { reviewText: newText.trim() },
+      { new: true }
+    );
+    if (!updated) {
+      return res.status(404).json({ success: false, message: "Review not found." });
+    }
+    console.log(">>> [DEBUG] Review updated:", updated);
+    return res.json({ success: true, message: "Review updated successfully." });
+  } catch (err) {
+    console.error("❌ Error in /admin/edit-review:", err);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// 4) 리뷰 삭제
+app.post("/admin/delete-review", async (req, res) => {
+  try {
+    const { reviewId } = req.body;
+    if (!reviewId) {
+      return res.status(400).json({ success: false, message: "No reviewId provided." });
+    }
+    const deleted = await Review.findByIdAndDelete(reviewId);
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: "Review not found or already deleted." });
+    }
+    console.log(">>> [DEBUG] Review deleted:", deleted);
+    return res.json({ success: true, message: "Review deleted successfully." });
+  } catch (err) {
+    console.error("❌ Error in /admin/delete-review:", err);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// ───────── [주문(Order) 관련 라우트] ─────────
+
+// 기본 페이지
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "resume.html"));
+});
+
+// 테스트 이메일 전송 라우트
+app.post("/send-test-email", uploadHeadshot.single("headshot"), async (req, res) => {
+  try {
+    const { emailAddress, emailSubject, actingReel, resumeLink, introduction } = req.body;
+    const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
+    let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
+    if (req.file) {
+      emailHtml += `
+        <div>
+          <img src="${req.file.path}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
+        </div>
+        <br>
+      `;
+    }
+    emailHtml += `
+      <p><strong>Acting Reel:</strong> <a href="${actingReel}" target="_blank">${actingReel}</a></p>
+      <p><strong>Resume:</strong> <a href="${resumeLink}" target="_blank">${resumeLink}</a></p>
+      <br>
+      <p>${formattedIntro}</p>
+    `;
+    emailHtml += `</div>`;
+
+    const mailData = {
+      subject: emailSubject,
+      from: process.env.ELASTIC_EMAIL_USER,
+      fromName: "Smart Talent Matcher",
+      to: emailAddress,
+      bodyHtml: emailHtml,
+      isTransactional: true,
+      extraTag: "TestEmail"
+    };
+    const result = await sendEmailAPI(mailData);
+    console.log("Test Email sent:", result);
+    res.json({ success: true, message: "Test email sent successfully!" });
+  } catch (error) {
+    console.error("Error sending test email:", error);
+    res.status(500).json({ error: "Failed to send test email" });
+  }
+});
+
+// 주문 생성: Draft
+app.post("/submit-order", async (req, res) => {
+  try {
+    const { emailAddress, invoice, subtotal, baseDiscount, promoDiscount, finalCost } = req.body;
+    const orderId = generateDateTimeOrderId();
+    const createdAt = Date.now();
+
+    const cleanSubtotal = isNaN(parseFloat(subtotal)) ? 0 : parseFloat(subtotal);
+    const cleanBaseDiscount = isNaN(parseFloat(baseDiscount)) ? 0 : parseFloat(baseDiscount);
+    const cleanPromoDiscount = isNaN(parseFloat(promoDiscount)) ? 0 : parseFloat(promoDiscount);
+    const cleanFinalCost = isNaN(parseFloat(finalCost)) ? 0 : parseFloat(finalCost);
+
+    const invoiceData = invoice && invoice.trim() !== "" ? invoice : "<p>Invoice details not available.</p>";
+
+    const newOrder = new Order({
+      orderId,
+      emailAddress: emailAddress || "",
+      invoice: invoiceData,
+      subtotal: cleanSubtotal,
+      baseDiscount: cleanBaseDiscount,
+      promoDiscount: cleanPromoDiscount,
+      finalCost: cleanFinalCost,
+      createdAt,
+      status: "draft"
+    });
+    await newOrder.save();
+    console.log("✅ Draft order saved to MongoDB:", newOrder);
+    res.json({ success: true, message: "Draft order saved to MongoDB", orderId: newOrder.orderId });
+  } catch (err) {
+    console.error("Error in /submit-order:", err);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// 주문 수정 (Draft 상태)
+app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) => {
+  try {
+    const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice } = req.body;
+    const order = await Order.findOne({ orderId, status: "draft" });
+    if (!order) {
+      console.error("Draft order not found for orderId:", orderId);
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    if (emailAddress !== undefined) order.emailAddress = emailAddress;
+    if (emailSubject !== undefined) order.emailSubject = emailSubject;
+    if (actingReel !== undefined) order.actingReel = actingReel;
+    if (resumeLink !== undefined) order.resumeLink = resumeLink;
+    if (introduction !== undefined) order.introduction = introduction;
+    if (invoice && invoice.trim() !== "") order.invoice = invoice;
+    if (req.file) order.headshot = req.file.path;
+    await order.save();
+    console.log("✅ Draft order updated in MongoDB:", order);
+    res.json({ success: true, message: "Draft order updated", updatedOrder: order });
+  } catch (err) {
+    console.error("Error in /update-order:", err);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// 최종 제출 (Draft -> Final)
+// => 인보이스 이메일, 관리자 보고 이메일, 12/24/48h 타이머 스케줄 (미결제)
+// => 대량 메일은 결제 후
+app.post("/final-submit", multer().none(), async (req, res) => {
+  try {
+    console.log(">>> [final-submit] Step 0: Endpoint called");
+    const { orderId, emailAddress, emailSubject, actingReel, resumeLink, introduction, invoice, venmoId } = req.body;
+    console.log(">>> [final-submit] Step 1: Request body received:", req.body);
+
+    // 1) 동일 이메일(미결제) final 주문 모두 삭제
+    console.log(">>> [final-submit] Step 2: Checking for old final (unpaid) orders with same emailAddress");
+    const oldFinals = await Order.find({ emailAddress, status: "final", paid: false });
+    if (oldFinals.length > 0) {
+      console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Deleting them...`);
+      for (const oldOrder of oldFinals) {
+        console.log(`>>> Canceling old final order #${oldOrder.orderId}`);
+        const cancelHtml = `
+          <div style="font-family: Arial, sans-serif;">
+            <p>Hello,</p>
+            <p>Your previous invoice (Order #${oldOrder.orderId}) has been <strong>canceled</strong> because a new order was submitted.</p>
+            <p>Only the new invoice will remain valid. If you have any questions, please contact us.</p>
+            <br>
+            <p>Regards,<br>Smart Talent Matcher</p>
+          </div>
+        `;
+        console.log(">>> Sending cancellation email for old order:", oldOrder.orderId);
+        await sendEmailAPI({
+          subject: "[Smart Talent Matcher] Previous Invoice Canceled",
+          from: process.env.ELASTIC_EMAIL_USER,
+          fromName: "Smart Talent Matcher",
+          to: emailAddress,
+          bodyHtml: cancelHtml,
+          isTransactional: true,
+          extraTag: "OrderCancel"
+        });
+        console.log(`Cancellation email sent for old order #${oldOrder.orderId}.`);
+
+        // 헤드샷 삭제
+        if (oldOrder.headshot) {
+          const parts = oldOrder.headshot.split("/");
+          const uploadIndex = parts.findIndex((part) => part === "upload");
+          if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
+            const fileNameWithExtension = parts.slice(uploadIndex + 2).join("/");
+            const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, "");
+            console.log("Deleting Cloudinary resource with public_id:", publicId);
+            await cloudinary.uploader.destroy(publicId);
+          }
         }
-        // 파일 비우기
-        fs.writeFileSync(deletedFile, JSON.stringify([]));
-      } catch (e) {
-        console.error("Error syncing deleted webhook events:", e);
+        console.log(">>> Deleting old final order from DB:", oldOrder.orderId);
+        await Order.deleteOne({ _id: oldOrder._id });
+        console.log(`Deleted old final order #${oldOrder.orderId} from MongoDB.`);
+        console.log(">>> Waiting 3 seconds before next old order...");
+        await new Promise((resolve) => setTimeout(resolve, 3000));
       }
     }
-  }
-  
-  uploadCSVToDB()
-    .then(() => {
-      console.log("Bulk email recipients updated from CSV (Full Refresh).");
-      restoreTimers();
-      cleanUpIncompleteOrders();
-      syncCloudinaryWithDB();
-      cleanUpNonFinalOrders();
-      syncDeletedWebhookEvents(); // [MODIFIED] 삭제 동기화 실행
-    })
-    .catch(err => {
-      console.error("Error uploading CSV to DB:", err);
-      restoreTimers();
-      cleanUpIncompleteOrders();
-      syncCloudinaryWithDB();
-      cleanUpNonFinalOrders();
-      syncDeletedWebhookEvents(); // [MODIFIED] 에러 발생 시에도 삭제 동기화 실행
+
+    // 2) Draft → Final
+    console.log(">>> [final-submit] Step 3: Finding draftOrder by orderId:", orderId);
+    const draftOrder = await Order.findOne({ orderId, status: "draft" });
+    if (!draftOrder) {
+      console.error("Draft order not found for orderId:", orderId);
+      return res.status(404).json({ success: false, message: "Draft order not found" });
+    }
+    if (invoice && invoice.trim() !== "") {
+      draftOrder.invoice = invoice;
+    }
+    draftOrder.emailSubject = emailSubject || "";
+    draftOrder.actingReel = actingReel || "";
+    draftOrder.resumeLink = resumeLink || "";
+    draftOrder.introduction = introduction || "";
+    draftOrder.venmoId = venmoId || "";
+    draftOrder.status = "final";
+    console.log(">>> [final-submit] Step 4: Saving order with status=final to DB");
+    await draftOrder.save();
+    console.log("✅ Final submission order updated in MongoDB (status=final):", draftOrder);
+
+    // 3) 관리자에게 배우 자료 이메일
+    console.log(">>> [final-submit] Step 5: Sending admin email with actor info");
+    const formattedIntro = introduction ? introduction.replace(/\r?\n/g, "<br>") : "";
+    let adminEmailHtml = `<div style="font-family: Arial, sans-serif;">`;
+    if (draftOrder.headshot) {
+      adminEmailHtml += `
+        <div>
+          <img src="${draftOrder.headshot}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
+        </div>
+        <br>
+      `;
+    }
+    adminEmailHtml += `
+      <p><strong>Acting Reel:</strong> <a href="${actingReel}" target="_blank">${actingReel}</a></p>
+      <p><strong>Resume:</strong> <a href="${resumeLink}" target="_blank">${resumeLink}</a></p>
+      <br>
+      <p>${formattedIntro}</p>
+    `;
+    adminEmailHtml += `</div>`;
+    await sendEmailAPI({
+      subject: `#${draftOrder.orderId} ${emailSubject || "[No Subject Provided]"}`,
+      from: process.env.ELASTIC_EMAIL_USER,
+      fromName: "Smart Talent Matcher",
+      to: process.env.ELASTIC_EMAIL_USER,
+      bodyHtml: adminEmailHtml,
+      isTransactional: true,
+      extraTag: "AdminActorInfo"
     });
+    console.log("✅ Admin email sent.");
+
+    // 4) 클라이언트 인보이스 이메일
+    console.log(">>> [final-submit] Step 6: Sending client invoice email");
+    const templatePath = path.join(__dirname, "email.html");
+    let clientEmailHtml;
+    if (fs.existsSync(templatePath)) {
+      console.log(">>> email.html found:", templatePath);
+      clientEmailHtml = fs.readFileSync(templatePath, "utf-8");
+    } else {
+      console.error(">>> email.html NOT found at:", templatePath);
+      clientEmailHtml = "<html><body><p>Invoice details not available.</p></body></html>";
+    }
+    clientEmailHtml = clientEmailHtml.replace(/{{\s*invoice\s*}}/g, draftOrder.invoice);
+    await sendEmailAPI({
+      subject: "[Smart Talent Matcher] Invoice for Your Submission",
+      from: process.env.ELASTIC_EMAIL_USER,
+      fromName: "Smart Talent Matcher",
+      to: draftOrder.emailAddress,
+      bodyHtml: clientEmailHtml,
+      isTransactional: true,
+      extraTag: "ClientInvoice"
+    });
+    console.log("✅ Client Invoice email sent.");
+
+    // 5) 12h/24h/48h 타이머
+    console.log(">>> [final-submit] Step 7: Scheduling timers for reminder, auto-cancel, and auto-delete");
+    scheduleReminder(draftOrder);
+    scheduleAutoCancel(draftOrder);
+    scheduleAutoDelete(draftOrder);
+
+    // 아직 미결제이므로 대량 메일/2주 팔로업은 여기서 안 함 (결제 후 진행)
+    console.log(">>> [final-submit] Step 8: Returning success response");
+    return res.json({
+      success: true,
+      message: "Final submission complete! Admin/client emails sent, timers scheduled (no bulk mail yet).",
+      order: draftOrder
+    });
+  } catch (error) {
+    console.error("❌ Error in final submission:", error);
+    return res.status(500).json({ success: false, error: "Failed to process final submission." });
+  }
+});
+
+// 관리자: 주문 목록 조회
+app.get("/admin/orders", async (req, res) => {
+  try {
+    console.log(">>> [DEBUG] /admin/orders called.");
+    const orders = await Order.find({});
+    console.log(">>> [DEBUG] /admin/orders - orders found:", orders);
+    return res.json({ success: true, orders });
+  } catch (error) {
+    console.error("Error in /admin/orders:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// 관리자: 주문 삭제
+app.post("/admin/delete-order", async (req, res) => {
+  try {
+    const { orderId } = req.body;
+    const order = await Order.findOne({ orderId });
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    // Cloudinary 삭제
+    if (order.headshot) {
+      const parts = order.headshot.split("/");
+      const uploadIndex = parts.findIndex((part) => part === "upload");
+      if (uploadIndex !== -1 && parts.length > uploadIndex + 2) {
+        const fileNameWithExtension = parts.slice(uploadIndex + 2).join("/");
+        const publicId = fileNameWithExtension.replace(/\.[^/.]+$/, "");
+        await cloudinary.uploader.destroy(publicId);
+      }
+    }
+    await Order.deleteOne({ orderId });
+    res.json({ success: true, message: `Order #${orderId} deleted.` });
+  } catch (err) {
+    console.error("Error in /admin/delete-order:", err);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// 인보이스 내 국가명 파싱
+function parseSelectedNames(invoiceHtml) {
+  if (!invoiceHtml) return [];
+  const countryList = [
+    "Africa",
+    "Asia",
+    "Australia",
+    "South America",
+    "United Kingdom (+EU)",
+    "United States (+Canada)",
+  ];
+  const lowerHtml = invoiceHtml.toLowerCase();
+  const selected = [];
+  for (const country of countryList) {
+    if (lowerHtml.includes(country.toLowerCase())) {
+      selected.push(country);
+    }
+  }
+  return selected;
+}
+
+// 대량 메일(Chunk) 발송
+async function sendBulkEmailsInChunks(emails, mailDataTemplate, chunkSize = 20, delayMs = 1000) {
+  console.log(">>> [DEBUG] sendBulkEmailsInChunks() called");
+  console.log(">>> [DEBUG] total emails to send:", emails.length);
+  if (emails.length === 0) {
+    console.log(">>> [DEBUG] No emails to send. Exiting sendBulkEmailsInChunks.");
+    return;
+  }
+  let sentCount = 0;
+
+  for (let i = 0; i < emails.length; i += chunkSize) {
+    const chunk = emails.slice(i, i + chunkSize);
+    console.log(`>>> [DEBUG] Sending chunk from index ${i} to ${i + chunkSize - 1} (chunk size = ${chunk.length})`);
+
+    const promises = chunk.map(recipientEmail => {
+      const mailData = { ...mailDataTemplate, to: recipientEmail };
+      return sendEmailAPI(mailData)
+        .then(() => {
+          sentCount++;
+          console.log(`✅ [DEBUG] Sent to ${recipientEmail} [${sentCount}/${emails.length}]`);
+        })
+        .catch(err => {
+          console.error(`❌ [DEBUG] Failed to send to ${recipientEmail}`, err);
+        });
+    });
+
+    await Promise.all(promises);
+
+    if (i + chunkSize < emails.length) {
+      console.log(`>>> [DEBUG] Waiting ${delayMs}ms before next chunk...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+
+  console.log("✅ [DEBUG] All bulk emails sent with chunk approach!");
+}
+
+// 전역 큐 (대량 메일 순차화)
+let bulkEmailQueue = Promise.resolve();
+
+// 결제 토글 → 결제(true) 후 대량 메일 & 2주 팔로업
+app.get("/admin/toggle-payment", async (req, res) => {
+  try {
+    const { orderId } = req.query;
+    console.log(">>> [DEBUG] /admin/toggle-payment called. orderId =", orderId);
+
+    const order = await Order.findOne({ orderId });
+    if (!order) {
+      console.error(">>> [DEBUG] Order not found for orderId:", orderId);
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    console.log(">>> [DEBUG] Found order:", order);
+
+    const oldPaid = order.paid;
+    order.paid = !oldPaid;
+    await order.save();
+    console.log(`>>> [DEBUG] Toggled paid from ${oldPaid} to ${order.paid}`);
+
+    // 결제가 false → true 로 전환되면 대량 메일 로직 수행
+    if (!oldPaid && order.paid) {
+      console.log(">>> [DEBUG] Payment changed from false -> true. Will send 'service started' email AND then trigger bulk emailing.");
+
+      // (A) "서비스 시작" 이메일
+      const startedHtml = `
+      <html>
+      <body style="font-family: Arial, sans-serif; line-height:1.6;">
+        <h2>🎉 Your service has started! 🎉</h2>
+        <p>Dear Customer,</p><br><br>
+        <p>
+          We are pleased to inform you that your payment has been successfully processed,
+          and your service has now begun.
+        </p>
+         <p>
+          Thank you for trusting our service. We are committed to helping you find the right people.
+        </p><br>
+        <p>
+          Once all emails corresponding to your selected region have been sent,
+          you will receive a confirmation email.
+        </p><br><br>
+        <p>Best Regards,<br>Smart Talent Matcher Team</p>
+      </body>
+      </html>
+      `;
+      const mailDataStart = {
+        subject: "[Smart Talent Matcher] Your Service Has Started!",
+        from: process.env.ELASTIC_EMAIL_USER,
+        fromName: "Smart Talent Matcher",
+        to: order.emailAddress,
+        bodyHtml: startedHtml,
+        isTransactional: true,
+        extraTag: "ServiceStarted"
+      };
+      console.log(">>> [DEBUG] Sending service-start email to:", order.emailAddress);
+      const serviceStartResult = await sendEmailAPI(mailDataStart);
+      if (serviceStartResult && serviceStartResult.success) {
+        console.log("✅ [DEBUG] Service start email sent.");
+      }
+
+      // (B) Bulk 이메일 발송 (순차 큐에 등록)
+      bulkEmailQueue = bulkEmailQueue.then(async () => {
+        console.log(">>> [DEBUG] Starting Bulk Email Logic for order", order.orderId);
+
+        const selectedCountries = parseSelectedNames(order.invoice);
+        console.log(">>> [DEBUG] selectedCountries =", selectedCountries);
+
+        if (selectedCountries.length === 0) {
+          console.log(">>> [DEBUG] No selected countries. Skipping bulk emailing.");
+          return;
+        }
+
+        // 이메일 목록 모으기
+        let allEmails = [];
+        for (const country of selectedCountries) {
+          const recipients = await BulkEmailRecipient.find({ countryOrSource: country });
+          console.log(`>>> [DEBUG] found ${recipients.length} for countryOrSource="${country}"`);
+          recipients.forEach(r => {
+            if (r.email) {
+              allEmails.push(r.email.trim().toLowerCase());
+            }
+          });
+        }
+        const uniqueEmails = [...new Set(allEmails)];
+        console.log(">>> [DEBUG] uniqueEmails after dedup =", uniqueEmails.length);
+
+        const formattedIntro = order.introduction ? order.introduction.replace(/\r?\n/g, "<br>") : "";
+        let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
+        if (order.headshot) {
+          emailHtml += `
+            <div>
+              <img src="${order.headshot}" style="max-width:600px; width:100%; height:auto;" alt="Headshot" />
+            </div>
+            <br>
+          `;
+        }
+        emailHtml += `
+          <p><strong>Acting Reel:</strong> <a href="${order.actingReel}" target="_blank">${order.actingReel}</a></p>
+          <p><strong>Resume:</strong> <a href="${order.resumeLink}" target="_blank">${order.resumeLink}</a></p>
+          <br>
+          <p>${formattedIntro}</p>
+        `;
+        emailHtml += `</div>`;
+
+        const bulkMailDataTemplate = {
+          subject: order.emailSubject || "[No Subject Provided]",
+          from: process.env.ELASTIC_EMAIL_USER,
+          fromName: "",
+          bodyHtml: emailHtml,
+          isTransactional: false,
+          replyTo: order.emailAddress,
+          replyToName: order.emailAddress,
+          extraTag: order.orderId
+        };
+
+        console.log(">>> [DEBUG] Sending Bulk Emails in Chunks...");
+        await sendBulkEmailsInChunks(uniqueEmails, bulkMailDataTemplate, 20, 1000);
+        console.log("✅ [DEBUG] Bulk emailing completed for order", order.orderId);
+
+        order.bulkEmailsCompletedAt = new Date();
+        await order.save();
+
+        // (C) "All Emails Sent" 안내
+        const completedHtml = `
+<html>
+  <body style="font-family: Arial, sans-serif; line-height:1.6;">
+    <h2 style="margin-bottom: 0;">🚀 All Emails Have Been Sent! 🚀</h2><br><br>
+    <p>Dear Customer,</p><br><br>
+    <p>
+      We are thrilled to inform you that all bulk emails for your selected region(s)
+      <br><strong>${selectedCountries.join(", ")}</strong> have been successfully delivered!
+    </p><br>
+    <p>
+      Thank you for trusting our service. We are committed to helping you find the right people.
+    </p><br>
+    <p>
+      ✅ Now that your introduction has reached Talent Agents, Casting Directors, and Managers in
+      <strong>${selectedCountries.join(", ")}</strong>.
+    </p>
+    <p>
+      ✅ Replies will be sent directly to the email you provided.
+    </p>
+    <p>
+      ✅ Some may respond with rejections (e.g., roster is full, only working with locals, etc.). This is completely normal, so please don't be discouraged.
+    </p>
+    <p>
+      ✅ A 10% discount for the long-targeting emails adjustment is already reflected in your invoice.
+    </p>
+    <p>
+      ✅ Please note that our responsibility at Smart Talent Matcher ends here.
+    </p>
+    <p>
+      ✅ You may be invited to phone calls or Zoom meetings. Present yourself professionally to leave a great impression and seize the opportunity!
+    </p>
+    <p>
+      ✅ You'll receive a 2-week follow-up email in two weeks! Stay tuned!
+    </p><br><br>
+    <p>
+      Best Regards,<br>
+      Smart Talent Matcher Team
+    </p>
+  </body>
+</html>
+`;
+        const mailDataCompleted = {
+          subject: `[Smart Talent Matcher] #${order.orderId} All Emails Sent!`,
+          from: process.env.ELASTIC_EMAIL_USER,
+          fromName: "Smart Talent Matcher",
+          to: `${order.emailAddress}, info@smarttalentmatcher.com`,
+          bodyHtml: completedHtml,
+          isTransactional: true,
+          extraTag: "BulkAllSent"
+        };
+        console.log(">>> [DEBUG] Sending final 'all sent' email to:", order.emailAddress);
+        await sendEmailAPI(mailDataCompleted);
+        console.log("✅ [DEBUG] Final confirmation email sent.");
+
+        // (D) 2주 후 팔로업
+        scheduleTwoWeekFollowUpEmail(order);
+      });
+
+      await bulkEmailQueue;
+    }
+
+    res.json({ success: true, order });
+  } catch (err) {
+    console.error("❌ [DEBUG] Error in /admin/toggle-payment:", err);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
 });
 
 // ───────── [웹훅 라우트] ─────────
@@ -629,6 +1287,7 @@ app.all("/webhook", async (req, res) => {
     eventData = req.body;
     console.log(">>> [POST] Webhook from Elastic Email:", req.body);
   }
+
   try {
     const eventType = eventData.event || "";
     await EmailEvent.create({ eventType, data: eventData });
@@ -636,6 +1295,7 @@ app.all("/webhook", async (req, res) => {
   } catch (err) {
     console.error("Error saving webhook event:", err);
   }
+
   res.sendStatus(200);
 });
 
@@ -648,4 +1308,80 @@ app.get("/api/webhook-events", async (req, res) => {
     console.error("Error fetching webhook events:", err);
     res.status(500).json({ success: false, message: "Error fetching webhook events" });
   }
+});
+
+// ───────── [웹훅 이벤트 삭제 API] ─────────
+app.post("/api/webhook-events/delete", async (req, res) => {
+  try {
+    const { ids } = req.body;
+    // 프론트엔드에서 { ids: ["63f935...", "63f936..."] } 형태로 보냄
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: "No IDs provided." });
+    }
+
+    // 문자열 → ObjectId 변환
+    const objectIds = ids.map(id => mongoose.Types.ObjectId(id));
+    await EmailEvent.deleteMany({ _id: { $in: objectIds } });
+
+    // 삭제된 이벤트 ID들을 "deletedEvents.json" 파일에 기록
+    const deletedFile = path.join(__dirname, "deletedEvents.json");
+    let deletedIds = [];
+    if (fs.existsSync(deletedFile)) {
+      try {
+        deletedIds = JSON.parse(fs.readFileSync(deletedFile, "utf8"));
+      } catch (e) {
+        deletedIds = [];
+      }
+    }
+    // 중복 추가 방지
+    const newDeletedIds = [...new Set([...deletedIds, ...ids])];
+    fs.writeFileSync(deletedFile, JSON.stringify(newDeletedIds));
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("Error deleting events:", err);
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+});
+
+// 어드민에서 삭제한 이벤트를 DB와 동기화하는 함수
+async function syncDeletedWebhookEvents() {
+  const deletedFile = path.join(__dirname, "deletedEvents.json");
+  if (fs.existsSync(deletedFile)) {
+    try {
+      const deletedIds = JSON.parse(fs.readFileSync(deletedFile, "utf8"));
+      if (deletedIds.length > 0) {
+        const objectIds = deletedIds.map(id => mongoose.Types.ObjectId(id));
+        const result = await EmailEvent.deleteMany({ _id: { $in: objectIds } });
+        console.log(`Synced deleted events: ${result.deletedCount} events removed from DB.`);
+      }
+      // 파일 비우기
+      fs.writeFileSync(deletedFile, JSON.stringify([]));
+    } catch (e) {
+      console.error("Error syncing deleted webhook events:", e);
+    }
+  }
+}
+
+// ───────── [서버 시작 및 초기 작업] ─────────
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Server running on port ${PORT}`);
+
+  uploadCSVToDB()
+    .then(() => {
+      console.log("Bulk email recipients updated from CSV (Full Refresh).");
+      restoreTimers();
+      cleanUpIncompleteOrders();
+      syncCloudinaryWithDB();
+      cleanUpNonFinalOrders();
+      syncDeletedWebhookEvents();
+    })
+    .catch(err => {
+      console.error("Error uploading CSV to DB:", err);
+      restoreTimers();
+      cleanUpIncompleteOrders();
+      syncCloudinaryWithDB();
+      cleanUpNonFinalOrders();
+      syncDeletedWebhookEvents();
+    });
 });
