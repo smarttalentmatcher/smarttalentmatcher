@@ -235,10 +235,10 @@ app.get("/", (req, res) => {
 // ───────── [타이머 관련 (테스트용 1/2/3분)] ─────────
 // 실제값: 12h / 24h / 48h / 2주
 // 여기서는 테스트 용도로 각각 1분 / 2분 / 3분 / 1분 설정
-const TWELVE_HOURS = 2 * 60 * 1000;    // 실제 12시간 → 테스트 1분
-const TWENTY_FOUR_HOURS = 4 * 60 * 1000; // 실제 24시간 → 테스트 2분
+const TWELVE_HOURS = 12 * 60 * 60 * 1000;    // 실제 12시간 → 테스트 1분
+const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000; // 실제 24시간 → 테스트 2분
 const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000; // 실제 48시간 → 테스트 3분
-const TWO_WEEKS = 2 * 60 * 1000;       // 실제 2주 → 테스트 1분
+const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000;       // 실제 2주 → 테스트 1분
 
 const reminderTimers = {};
 const autoCancelTimers = {};
@@ -482,12 +482,12 @@ async function sendTwoWeekEmail(order) {
             </p>
             <br>
             <p style="margin:0 0 15px 0;">
-              We hope you've found <span style="color:royalblue;">the Right Person</span>.<br><br>
+              We hope you've found <span style="color:royalblue; font-weight: bold;">the Right Person</span>.<br><br>
               💡 Check which <strong>platform</strong> they use and the <strong>regions</strong> they have access to for breakdown services.<br>
               💡 Verify whether the contract is <strong>Exclusive</strong> or <strong>Non-Exclusive</strong>.<br>
               💡 Always <strong>REVIEW</strong> any contracts before signing<br>
               (ask ChatGPT for help if needed)!<br><br><br>
-              However, <strong>if not,</strong> <span style="color:royalblue;">Don't Be Discouraged!</span><br>
+              However, <strong>if not,</strong> <span style="color:royalblue; font-weight: bold;">Don't Be Discouraged!</span><br>
               You can always <strong>update your materials and try again.</strong><br>
               (I personally tried <strong>2 times</strong> before success!)
             </p>
@@ -500,7 +500,7 @@ async function sendTwoWeekEmail(order) {
             </div>
             <br><br>
             <p style="margin:15px 0 20px 0;">
-              We’d also love to hear your <span style="color:royalblue;">Feedback!</span><br>
+              We’d also love to hear your <span style="color:royalblue; font-weight: bold;">Feedback!</span><br>
               Whether you succeeded or faced challenges,<br>
               your thoughts help us improve.
             </p>
