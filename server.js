@@ -235,10 +235,10 @@ app.get("/", (req, res) => {
 // ───────── [타이머 관련 (테스트용 1/2/3분)] ─────────
 // 실제값: 12h / 24h / 48h / 2주
 // 여기서는 테스트 용도로 각각 1분 / 2분 / 3분 / 1분 설정
-const TWELVE_HOURS = 1 * 60 * 1000;    // 실제 12시간 → 테스트 1분
-const TWENTY_FOUR_HOURS = 2 * 60 * 1000; // 실제 24시간 → 테스트 2분
-const FORTY_EIGHT_HOURS = 3 * 60 * 1000; // 실제 48시간 → 테스트 3분
-const TWO_WEEKS = 1 * 60 * 1000;       // 실제 2주 → 테스트 1분
+const TWELVE_HOURS = 2 * 60 * 1000;    // 실제 12시간 → 테스트 1분
+const TWENTY_FOUR_HOURS = 4 * 60 * 1000; // 실제 24시간 → 테스트 2분
+const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000; // 실제 48시간 → 테스트 3분
+const TWO_WEEKS = 2 * 60 * 1000;       // 실제 2주 → 테스트 1분
 
 const reminderTimers = {};
 const autoCancelTimers = {};
@@ -1224,26 +1224,18 @@ app.get("/admin/toggle-payment", async (req, res) => {
     res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 });
-
+//=== [Webhook 라우트 추가] ===
+app.all("/webhook", (req, res) => {
+  console.log(">>> [DEBUG] Received a webhook event...");
+  return res.sendStatus(200);
+});
 // ───────── [서버 시작 및 초기 작업] ─────────
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
-
-  // +++ [CHANGED] 여기서부터: CSV를 DB에 업로드하는 로직 제거 +++
-  //
-  //   기존엔 app.listen에서 uploadCSVToDB()를 실행해 BulkEmailRecipient를
-  //   초기화했지만, 이제는 그 과정을 없앴습니다.
-  //
-  //   대신 바로 타이머, 불완료 주문 정리, 클라우드 동기화 등을 진행합니다.
-  //
-  // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-  
-  // uploadCSVToDB()  <-- 삭제됨
   
   restoreTimers();
   cleanUpIncompleteOrders();
   syncCloudinaryWithDB();
   cleanUpNonFinalOrders();
   
-  // +++ [CHANGED] 여기까지 +++
 });
