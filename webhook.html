@@ -37,8 +37,6 @@
       border-radius: 4px;
       cursor: pointer;
     }
-
-    /* 테이블 고정 레이아웃 + row 높이 고정 & 스크롤 */
     table {
       width: 100%;
       border-collapse: collapse;
@@ -69,52 +67,51 @@
 
   <h1>Webhook Events</h1>
 
-  <!-- 필터 & 삭제 버튼들 -->
+  <!-- 필터 & 삭제 버튼들 (여기서는 Category 기준 필터) -->
   <div class="filter-container">
-    <label for="nonOrderExtraTagFilter">Filter by Extra Tag (Non-Order):</label>
-    <select id="nonOrderExtraTagFilter">
+    <label for="categoryFilter">Filter by Category:</label>
+    <select id="categoryFilter">
       <option value="all">All</option>
     </select>
-
-    <label for="orderIdFilter">Filter by Order ID:</label>
-    <select id="orderIdFilter">
-      <option value="all">All</option>
-    </select>
-
     <button class="delete-selected-button" id="deleteSelectedBtn">Delete Selected</button>
   </div>
 
   <table id="eventsTable">
     <colgroup>
       <col style="width: 4%;">
-      <col style="width: 9%;">
-      <col style="width: 9%;">
-      <col style="width: 9%;">
-      <col style="width: 9%;">
-      <col style="width: 9%;">
-      <col style="width: 9%;">
-      <col style="width: 9%;">
-      <col style="width: 9%;">
-      <col style="width: 9%;">
-      <col style="width: 9%;">
-      <col style="width: 9%;">
+      <col style="width: 8%;">
+      <col style="width: 8%;">
+      <col style="width: 8%;">
+      <col style="width: 8%;">
+      <col style="width: 8%;">
+      <col style="width: 8%;">
+      <col style="width: 8%;">
+      <col style="width: 8%;">
+      <col style="width: 8%;">
+      <col style="width: 8%;">
+      <col style="width: 8%;">
+      <col style="width: 8%;">
+      <col style="width: 8%;">
     </colgroup>
     <thead>
       <tr>
         <th>
           <input type="checkbox" id="selectAllCheckbox" />
         </th>
-        <th>Received At</th>
-        <th>Extra Tag</th>
-        <th>Email</th>
+        <th>Date</th>
+        <th>Category</th>
+        <th>Account</th>
+        <th>Subject</th>
         <th>Sent</th>
         <th>Opened</th>
         <th>Clicked</th>
         <th>Unsubscribed</th>
         <th>Complaints</th>
         <th>Bounce/Error</th>
-        <th>Other Info</th>
+        <th>Transaction</th>
+        <th>Channel</th>
         <th>ID</th>
+        <th>Other Info</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -123,10 +120,14 @@
   <script>
     let allEvents = [];
 
-    // ExtraTag 파싱 함수: merge_extratag → extratag → headers 내 X-ExtraTag
-    function getFinalExtraTag(data) {
+    // ExtraTag 파싱 함수 (여기서는 X-ExtraTag 관련은 사용하지 않고, category 필드 사용)
+    function getFinalCategory(data) {
+      // 우선, Elastic Email에서 전송된 category 필드를 사용
+      if (data.category) return data.category;
+      // fallback: merge_extratag 또는 extratag 사용
       if (data.merge_extratag) return data.merge_extratag;
       if (data.extratag) return data.extratag;
+      // headers 내 X-ExtraTag 확인 (대소문자 무시)
       if (data.headers && typeof data.headers === 'string') {
         const lines = data.headers.split('\n');
         for (const line of lines) {
@@ -142,12 +143,10 @@
       try {
         const response = await fetch('/api/webhook-events');
         const result = await response.json();
-
         if (!result.success) {
           console.error('Failed to fetch events:', result);
           return;
         }
-
         allEvents = result.events;
         updateFilterOptions(allEvents);
         renderEvents();
@@ -156,69 +155,72 @@
       }
     }
 
+    // 여기서는 필터 옵션은 category 기준으로 설정
     function updateFilterOptions(events) {
-      const nonOrderTagSet = new Set();
-      const orderIdSet = new Set();
-
+      const categorySet = new Set();
       events.forEach(event => {
         const data = event.data || {};
-        const tag = getFinalExtraTag(data);
-        if (/^\d{8}$/.test(tag)) {
-          orderIdSet.add(tag);
-        } else {
-          nonOrderTagSet.add(tag);
-        }
+        const cat = data.category || getFinalCategory(data);
+        categorySet.add(cat);
       });
-
-      const nonOrderFilter = document.getElementById('nonOrderExtraTagFilter');
-      const orderIdFilter = document.getElementById('orderIdFilter');
-
-      while (nonOrderFilter.options.length > 1) {
-        nonOrderFilter.remove(1);
+      const categoryFilter = document.getElementById('categoryFilter');
+      while (categoryFilter.options.length > 1) {
+        categoryFilter.remove(1);
       }
-      while (orderIdFilter.options.length > 1) {
-        orderIdFilter.remove(1);
-      }
-
-      nonOrderTagSet.forEach(tag => {
+      categorySet.forEach(cat => {
         const option = document.createElement('option');
-        option.value = tag;
-        option.textContent = tag;
-        nonOrderFilter.appendChild(option);
-      });
-
-      orderIdSet.forEach(tag => {
-        const option = document.createElement('option');
-        option.value = tag;
-        option.textContent = tag;
-        orderIdFilter.appendChild(option);
+        option.value = cat;
+        option.textContent = cat;
+        categoryFilter.appendChild(option);
       });
     }
 
     function renderEvents() {
-      const nonOrderFilter = document.getElementById('nonOrderExtraTagFilter');
-      const orderIdFilter = document.getElementById('orderIdFilter');
-      const nonOrderSelected = nonOrderFilter.value;
-      const orderSelected = orderIdFilter.value;
-
+      const categoryFilter = document.getElementById('categoryFilter');
+      const selectedCategory = categoryFilter.value;
+      
       const filtered = allEvents.filter(event => {
         const data = event.data || {};
-        const finalTag = getFinalExtraTag(data);
-        if (nonOrderSelected === 'all' && orderSelected === 'all') return true;
-        if (nonOrderSelected !== 'all' && finalTag === nonOrderSelected) return true;
-        if (orderSelected !== 'all' && finalTag === orderSelected) return true;
-        return false;
+        const cat = data.category || getFinalCategory(data);
+        if (selectedCategory === 'all') return true;
+        return cat === selectedCategory;
       });
 
       const tbody = document.querySelector('#eventsTable tbody');
       tbody.innerHTML = '';
 
+      // Other Info에서 중복을 피할 필드 목록
+      const excludedKeys = ['date', 'category', 'account', 'subject', 'transaction', 'channel', 'messageid', 'status', 'merge_extratag', 'extratag', 'event'];
+
       filtered.forEach(event => {
         const eventId = event._id;
         const data = event.data || {};
-        const { to, from, status, messageid, ...rest } = data;
+
+        // 각 열의 데이터 (없으면 fallback 처리)
+        const dateField = data.date || new Date(event.receivedAt).toLocaleString();
+        const categoryField = data.category || getFinalCategory(data);
+        const accountField = data.account || 'N/A';
+        const subjectField = data.subject || 'N/A';
+        const transactionField = data.transaction || 'N/A';
+        const channelField = data.channel || 'N/A';
+        const idField = data.messageid || 'N/A';
+
+        // 이벤트 타입 처리
         const eventType = (event.eventType || "").toLowerCase();
-        const finalExtraTag = getFinalExtraTag(data);
+        const sentVal = (eventType === 'sent' || data.status === 'Sent') ? '✓' : '';
+        const openedVal = (eventType === 'opened' || data.status === 'Opened') ? '✓' : '';
+        const clickedVal = (eventType === 'clicked') ? '✓' : '';
+        const unsubVal = (eventType === 'unsubscribed') ? '✓' : '';
+        const complaintVal = (eventType === 'complaint' || eventType === 'spamreport') ? '✓' : '';
+        const bounceVal = (["bounce", "error", "failed"].includes(eventType)) ? '✓' : '';
+
+        // Other Info: 나머지 필드 중, excludedKeys에 없는 값들만 출력
+        let otherInfoHTML = "";
+        Object.entries(data).forEach(([key, value]) => {
+          if (!excludedKeys.includes(key.toLowerCase())) {
+            otherInfoHTML += `<strong>${key}</strong>: ${value}<br>`;
+          }
+        });
 
         const row = document.createElement('tr');
 
@@ -231,64 +233,62 @@
         checkboxCell.appendChild(checkbox);
         row.appendChild(checkboxCell);
 
-        // Received At
-        const receivedCell = document.createElement('td');
-        receivedCell.textContent = new Date(event.receivedAt).toLocaleString();
-        row.appendChild(receivedCell);
+        // 각 열 생성
+        const dateCell = document.createElement('td');
+        dateCell.textContent = dateField;
+        row.appendChild(dateCell);
 
-        // Extra Tag
-        const tagCell = document.createElement('td');
-        tagCell.textContent = finalExtraTag;
-        row.appendChild(tagCell);
+        const categoryCell = document.createElement('td');
+        categoryCell.textContent = categoryField;
+        row.appendChild(categoryCell);
 
-        // Email
-        const emailCell = document.createElement('td');
-        emailCell.textContent = to || 'N/A';
-        row.appendChild(emailCell);
+        const accountCell = document.createElement('td');
+        accountCell.textContent = accountField;
+        row.appendChild(accountCell);
 
-        // Sent
+        const subjectCell = document.createElement('td');
+        subjectCell.textContent = subjectField;
+        row.appendChild(subjectCell);
+
         const sentCell = document.createElement('td');
-        sentCell.textContent = (eventType === 'sent' || status === 'Sent') ? '✓' : '';
+        sentCell.textContent = sentVal;
         row.appendChild(sentCell);
 
-        // Opened
         const openedCell = document.createElement('td');
-        openedCell.textContent = (eventType === 'opened' || status === 'Opened') ? '✓' : '';
+        openedCell.textContent = openedVal;
         row.appendChild(openedCell);
 
-        // Clicked
         const clickedCell = document.createElement('td');
-        clickedCell.textContent = (eventType === 'clicked') ? '✓' : '';
+        clickedCell.textContent = clickedVal;
         row.appendChild(clickedCell);
 
-        // Unsubscribed
         const unsubCell = document.createElement('td');
-        unsubCell.textContent = (eventType === 'unsubscribed') ? '✓' : '';
+        unsubCell.textContent = unsubVal;
         row.appendChild(unsubCell);
 
-        // Complaints
         const complaintCell = document.createElement('td');
-        complaintCell.textContent = (eventType === 'complaint' || eventType === 'spamreport') ? '✓' : '';
+        complaintCell.textContent = complaintVal;
         row.appendChild(complaintCell);
 
-        // Bounce/Error
         const bounceCell = document.createElement('td');
-        bounceCell.textContent = (["bounce", "error", "failed"].includes(eventType)) ? '✓' : '';
+        bounceCell.textContent = bounceVal;
         row.appendChild(bounceCell);
 
-        // Other Info: 각 key-value 쌍으로 분리하여 줄바꿈 처리
-        const otherInfoCell = document.createElement('td');
-        let infoHTML = "";
-        Object.entries(rest).forEach(([key, value]) => {
-          infoHTML += `<strong>${key}</strong>: ${value}<br>`;
-        });
-        otherInfoCell.innerHTML = infoHTML;
-        row.appendChild(otherInfoCell);
+        const transactionCell = document.createElement('td');
+        transactionCell.textContent = transactionField;
+        row.appendChild(transactionCell);
 
-        // ID (messageid)
+        const channelCell = document.createElement('td');
+        channelCell.textContent = channelField;
+        row.appendChild(channelCell);
+
         const idCell = document.createElement('td');
-        idCell.textContent = messageid || 'N/A';
+        idCell.textContent = idField;
         row.appendChild(idCell);
+
+        const otherInfoCell = document.createElement('td');
+        otherInfoCell.innerHTML = otherInfoHTML;
+        row.appendChild(otherInfoCell);
 
         tbody.appendChild(row);
       });
@@ -301,9 +301,7 @@
         return;
       }
       if (!confirm(`Delete ${checkboxes.length} selected event(s)?`)) return;
-
       const idsToDelete = Array.from(checkboxes).map(cb => cb.value);
-
       try {
         const resp = await fetch('/api/webhook-events/delete', {
           method: 'POST',

@@ -159,13 +159,14 @@ async function sendEmailAPI({
     params.append("replyToName", replyToName);
   }
 
-  // 기존에는 merge_extratag만 설정했지만, 현재는 커스텀 헤더도 함께 전송.
   if (extraTag) {
-    // extraTag → merge_extratag + 커스텀 헤더 (X-ExtraTag)
-    params.append("merge_extratag", extraTag);
-    // Elastic Email에서 "Custom headers" 기능을 활성화해야 웹훅에서 X-ExtraTag를 확인 가능
-    params.append("headers", `X-ExtraTag: ${extraTag}`);
-  }
+    -     params.append("merge_extratag", extraTag);
+    -     params.append("headers", `X-ExtraTag: ${extraTag}`);
+    +     // [MODIFIED] extraTag 값을 merge_extratag, X-ExtraTag 헤더와 함께 category에도 설정
+    +     params.append("merge_extratag", extraTag);
+    +     params.append("headers", `X-ExtraTag: ${extraTag}`);
+    +     params.append("category", extraTag);
+        }
 
   try {
     const response = await fetch(url, { method: "POST", body: params });
