@@ -1,9 +1,5 @@
 // --------------------------------------------------------------------------------
-// SERVER.JS (ESM 버전) - 전체 코드 (WEBHOOK, extraTag 기능 제거)
-//  + 2주(TWO_WEEKS) 팔로업 메일 + 타이머 복원
-//  + Review (CRUD) 기능 추가
-//  + Paid 상태 재확인 (12h/24h 메일 발송 전) 수정 완료
-//  + [FIX] 결제 이전에는 대량 메일·2주 팔로업이 발송되지 않도록 수정
+// SERVER.JS 
 // --------------------------------------------------------------------------------
 
 // ───────── [필요한 import들 & dotenv 설정] ─────────
@@ -121,7 +117,6 @@ function generateDateTimeOrderId() {
 }
 
 // ───────── [Elastic Email 메일발송 함수] ─────────
-// extraTag/merge_extratag/headers 제거
 async function sendEmailAPI({
   subject,
   from,
