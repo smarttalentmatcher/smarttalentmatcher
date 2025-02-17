@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------------
-// SERVER.JS 
+// SERVER.JS
 // --------------------------------------------------------------------------------
 
 // ───────── [필요한 import들 & dotenv 설정] ─────────
@@ -78,19 +78,30 @@ const orderSchema = new mongoose.Schema({
 });
 const Order = mongoose.model("Order", orderSchema);
 
-// ───────── [BulkEmailRecipient 스키마 정의] ─────────
-const bulkEmailRecipientSchema = new mongoose.Schema({
-  email: { type: String, required: true },
-  countryOrSource: { type: String, default: "" }
-});
-const BulkEmailRecipient = mongoose.model("BulkEmailRecipient", bulkEmailRecipientSchema);
-
 // ───────── [Review 스키마 정의] ─────────
 const reviewSchema = new mongoose.Schema({
   reviewText: { type: String, default: "" },
   createdAt: { type: Date, default: Date.now },
 });
 const Review = mongoose.model("Review", reviewSchema);
+
+// +++ [CHANGED] 여기서부터: BulkEmailRecipient 스키마 관련 부분 삭제 +++
+//
+//   기존에는 CSV를 DB에 저장하기 위해 BulkEmailRecipient라는 스키마를 만들어
+//   업로드 후 조회했으나, 이제는 로컬 CSV 파일에서 직접 읽어올 것이므로
+//   BulkEmailRecipient 관련 정의 및 사용 코드를 제거했습니다.
+//
+//   (아래 주석 처리 예시)
+// 
+// ----------------------------------------------------------------------
+// // ───────── [BulkEmailRecipient 스키마 정의] ─────────
+// const bulkEmailRecipientSchema = new mongoose.Schema({
+//   email: { type: String, required: true },
+//   countryOrSource: { type: String, default: "" }
+// });
+// const BulkEmailRecipient = mongoose.model("BulkEmailRecipient", bulkEmailRecipientSchema);
+// ----------------------------------------------------------------------
+// +++ [CHANGED] 여기까지 +++
 
 // ───────── [Express 앱 설정] ─────────
 const app = express();
@@ -155,81 +166,65 @@ async function sendEmailAPI({
   }
 }
 
-// ───────── [CSV 파일 → BulkEmailRecipient DB 업로드] ─────────
-function uploadCSVToDB() {
-  return new Promise((resolve, reject) => {
-    const csvFolderPath = path.join(__dirname, "csv");
-    console.log(">>> [CSV Import] Target folder =", csvFolderPath);
+// +++ [CHANGED] 여기서부터: 로컬 CSV에서 이메일을 읽어오는 함수 추가 +++
+//
+//   /Users/kimsungah/Desktop/SmartTalentMatcher/csv/ 경로의
+//   Africa.csv, Asia.csv, Australia.csv, South America.csv,
+//   United Kingdom (+EU).csv, United States (+Canada).csv
+//   파일에서 직접 이메일을 파싱하여 배열로 반환합니다.
+//
+//   아래 경로는 사용 환경에 맞게 수정할 수 있습니다.
+//
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-    if (!fs.existsSync(csvFolderPath)) {
-      console.log(`No CSV folder found at: ${csvFolderPath}. Skipping CSV import.`);
-      return resolve();
+async function getLocalEmailsForCountries(countries) {
+  // CSV 파일 이름을 매핑하기 위한 객체
+  const csvFileMap = {
+    "Africa": "Africa.csv",
+    "Asia": "Asia.csv",
+    "Australia": "Australia.csv",
+    "South America": "South America.csv",
+    "United Kingdom (+EU)": "United Kingdom (+EU).csv",
+    "United States (+Canada)": "United States (+Canada).csv"
+  };
+
+  let allEmails = [];
+
+  for (const country of countries) {
+    const fileName = csvFileMap[country];
+    if (!fileName) {
+      console.warn(`>>> [WARNING] No CSV file mapping found for country: ${country}`);
+      continue;
     }
 
-    fs.readdir(csvFolderPath, (err, files) => {
-      if (err) return reject(err);
+    const filePath = `/Users/kimsungah/Desktop/SmartTalentMatcher/csv/${fileName}`;
+    if (!fs.existsSync(filePath)) {
+      console.warn(`>>> [WARNING] CSV file does not exist at: ${filePath}`);
+      continue;
+    }
 
-      const csvFiles = files.filter(file => file.toLowerCase().endsWith(".csv"));
-      if (csvFiles.length === 0) {
-        console.log("No CSV files found in folder:", csvFolderPath);
-        return resolve();
-      }
-
-      console.log(`[CSV Import] Found ${csvFiles.length} CSV file(s):`, csvFiles);
-
-      // 전체 삭제 후 재업로드
-      BulkEmailRecipient.deleteMany({})
-        .then(() => {
-          let filesProcessed = 0;
-
-          csvFiles.forEach(file => {
-            const filePath = path.join(csvFolderPath, file);
-            const regionName = path.basename(file, ".csv");
-
-            let insertedCountThisFile = 0;
-
-            fs.createReadStream(filePath)
-              .pipe(
-                csvParser({
-                  headers: ["email"],
-                  skipLines: 1,
-                  bom: true
-                })
-              )
-              .on("data", async (row) => {
-                const emailVal = row.email;
-                if (emailVal && emailVal.trim() !== "") {
-                  try {
-                    await BulkEmailRecipient.create({
-                      email: emailVal.trim(),
-                      countryOrSource: regionName,
-                    });
-                    insertedCountThisFile++;
-                  } catch (err) {
-                    console.error("Error inserting email:", err);
-                  }
-                }
-              })
-              .on("end", async () => {
-                filesProcessed++;
-                console.log(`[CSV DEBUG] File '${file}' => insertedCountThisFile = ${insertedCountThisFile}`);
-
-                if (filesProcessed === csvFiles.length) {
-                  const totalDocs = await BulkEmailRecipient.countDocuments();
-                  console.log(`CSV files uploaded to DB. Total BulkEmailRecipient docs = ${totalDocs}`);
-                  resolve();
-                }
-              })
-              .on("error", (err) => {
-                console.error("Error reading CSV file:", file, err);
-                reject(err);
-              });
-          });
+    // 파일을 읽어와서 CSV 파싱
+    const emails = await new Promise((resolve, reject) => {
+      let results = [];
+      fs.createReadStream(filePath)
+        .pipe(csvParser({ headers: ["email"], skipLines: 1, bom: true }))
+        .on("data", row => {
+          if (row.email && row.email.trim() !== "") {
+            results.push(row.email.trim().toLowerCase());
+          }
         })
-        .catch(err => reject(err));
+        .on("end", () => resolve(results))
+        .on("error", err => reject(err));
     });
-  });
+
+    allEmails = allEmails.concat(emails);
+  }
+
+  // 중복 제거 후 반환
+  return [...new Set(allEmails)];
 }
+
+// +++ [CHANGED] 여기까지 +++
 
 // ───────── [테스트 라우트] ─────────
 app.get("/", (req, res) => {
@@ -326,8 +321,8 @@ function autoCancelOrder(order) {
         return;
       }
 
-      const cancelHtml = `
-<table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: Arial, sans-serif; background-color:#f9f9f9; color: #333; line-height:1.6;">
+      const cancelHtml = 
+`<table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: Arial, sans-serif; background-color:#f9f9f9; color: #333; line-height:1.6;">
   <tr>
     <td align="center" style="padding: 30px;">
       <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color:#ffffff; border-radius:8px; padding:20px;">
@@ -376,8 +371,8 @@ function autoCancelOrder(order) {
       </table>
     </td>
   </tr>
-</table>
-      `;
+</table>`;
+
       const mailData = {
         subject: "[Smart Talent Matcher] Invoice Auto-Canceled (24h) - Enjoy 10% Off with WELCOME10",
         from: process.env.ELASTIC_EMAIL_USER,
@@ -470,8 +465,8 @@ function scheduleTwoWeekFollowUpEmail(order) {
 }
 
 async function sendTwoWeekEmail(order) {
-  const twoWeekHtml = `
-<table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: Arial, sans-serif; background-color:#f9f9f9; color:#333; line-height:1.6;">
+  const twoWeekHtml = 
+`<table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: Arial, sans-serif; background-color:#f9f9f9; color:#333; line-height:1.6;">
   <tr>
     <td align="center" style="padding: 30px;">
       <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color:#ffffff; border-radius:8px; padding:20px;">
@@ -526,8 +521,8 @@ async function sendTwoWeekEmail(order) {
       </table>
     </td>
   </tr>
-</table>
-  `;
+</table>`;
+
   const mailDataFollowUp = {
     subject: "[Smart Talent Matcher] Two-Week Follow-Up",
     from: process.env.ELASTIC_EMAIL_USER,
@@ -813,8 +808,6 @@ app.post("/update-order", uploadHeadshot.single("headshot"), async (req, res) =>
 });
 
 // 최종 제출 (Draft -> Final)
-// => 인보이스 이메일, 관리자 보고 이메일, 12/24/48h 타이머 스케줄 (미결제)
-// => 대량 메일은 결제 후
 app.post("/final-submit", multer().none(), async (req, res) => {
   try {
     console.log(">>> [final-submit] Step 0: Endpoint called");
@@ -828,15 +821,14 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       console.log(`Found ${oldFinals.length} old final orders for ${emailAddress}. Deleting them...`);
       for (const oldOrder of oldFinals) {
         console.log(`>>> Canceling old final order #${oldOrder.orderId}`);
-        const cancelHtml = `
-          <div style="font-family: Arial, sans-serif;">
+        const cancelHtml = 
+        `<div style="font-family: Arial, sans-serif;">
             <p>Hello,</p>
             <p>Your previous invoice (Order #${oldOrder.orderId}) has been <strong>canceled</strong> because a new order was submitted.</p>
             <p>Only the new invoice will remain valid. If you have any questions, please contact us.</p>
             <br>
             <p>Regards,<br>Smart Talent Matcher</p>
-          </div>
-        `;
+        </div>`;
         console.log(">>> Sending cancellation email for old order:", oldOrder.orderId);
         await sendEmailAPI({
           subject: "[Smart Talent Matcher] Previous Invoice Canceled",
@@ -1080,8 +1072,8 @@ app.get("/admin/toggle-payment", async (req, res) => {
       console.log(">>> [DEBUG] Payment changed from false -> true. Will send 'service started' email AND then trigger bulk emailing.");
 
       // (A) "서비스 시작" 이메일
-      const startedHtml = `
-      <html>
+      const startedHtml = 
+      `<html>
       <body style="font-family: Arial, sans-serif; line-height:1.6;">
         <h2>🎉 Your service has started! 🎉</h2>
         <p>Dear Customer,</p><br><br>
@@ -1098,8 +1090,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
         </p><br><br>
         <p>Best Regards,<br>Smart Talent Matcher Team</p>
       </body>
-      </html>
-      `;
+      </html>`;
       const mailDataStart = {
         subject: "[Smart Talent Matcher] Your Service Has Started!",
         from: process.env.ELASTIC_EMAIL_USER,
@@ -1126,19 +1117,10 @@ app.get("/admin/toggle-payment", async (req, res) => {
           return;
         }
 
-        // 이메일 목록 모으기
-        let allEmails = [];
-        for (const country of selectedCountries) {
-          const recipients = await BulkEmailRecipient.find({ countryOrSource: country });
-          console.log(`>>> [DEBUG] found ${recipients.length} for countryOrSource="${country}"`);
-          recipients.forEach(r => {
-            if (r.email) {
-              allEmails.push(r.email.trim().toLowerCase());
-            }
-          });
-        }
-        const uniqueEmails = [...new Set(allEmails)];
-        console.log(">>> [DEBUG] uniqueEmails after dedup =", uniqueEmails.length);
+        // +++ [CHANGED] 여기서부터: 로컬 CSV에서 메일 목록을 읽어오도록 변경 +++
+        const uniqueEmails = await getLocalEmailsForCountries(selectedCountries);
+        console.log(">>> [DEBUG] uniqueEmails after reading local CSV =", uniqueEmails.length);
+        // +++ [CHANGED] 여기까지 +++
 
         const formattedIntro = order.introduction ? order.introduction.replace(/\r?\n/g, "<br>") : "";
         let emailHtml = `<div style="font-family: Arial, sans-serif;">`;
@@ -1176,8 +1158,8 @@ app.get("/admin/toggle-payment", async (req, res) => {
         await order.save();
 
         // (C) "All Emails Sent" 안내
-        const completedHtml = `
-<html>
+        const completedHtml = 
+`<html>
   <body style="font-family: Arial, sans-serif; line-height:1.6;">
     <h2 style="margin-bottom: 0;">🚀 All Emails Have Been Sent! 🚀</h2><br><br>
     <p>Dear Customer,</p><br><br>
@@ -1215,8 +1197,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
       Smart Talent Matcher Team
     </p>
   </body>
-</html>
-`;
+</html>`;
         const mailDataCompleted = {
           subject: `[Smart Talent Matcher] #${order.orderId} All Emails Sent!`,
           from: process.env.ELASTIC_EMAIL_USER,
@@ -1247,19 +1228,21 @@ app.get("/admin/toggle-payment", async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
 
-  uploadCSVToDB()
-    .then(() => {
-      console.log("Bulk email recipients updated from CSV (Full Refresh).");
-      restoreTimers();
-      cleanUpIncompleteOrders();
-      syncCloudinaryWithDB();
-      cleanUpNonFinalOrders();
-    })
-    .catch(err => {
-      console.error("Error uploading CSV to DB:", err);
-      restoreTimers();
-      cleanUpIncompleteOrders();
-      syncCloudinaryWithDB();
-      cleanUpNonFinalOrders();
-    });
+  // +++ [CHANGED] 여기서부터: CSV를 DB에 업로드하는 로직 제거 +++
+  //
+  //   기존엔 app.listen에서 uploadCSVToDB()를 실행해 BulkEmailRecipient를
+  //   초기화했지만, 이제는 그 과정을 없앴습니다.
+  //
+  //   대신 바로 타이머, 불완료 주문 정리, 클라우드 동기화 등을 진행합니다.
+  //
+  // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+  
+  // uploadCSVToDB()  <-- 삭제됨
+  
+  restoreTimers();
+  cleanUpIncompleteOrders();
+  syncCloudinaryWithDB();
+  cleanUpNonFinalOrders();
+  
+  // +++ [CHANGED] 여기까지 +++
 });
