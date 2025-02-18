@@ -277,7 +277,7 @@ function sendReminder(order) {
       reminderEmailHtml = reminderEmailHtml.replace(/{{\s*invoice\s*}}/g, savedOrder.invoice);
 
       const mailData = {
-        subject: "**Reminder** [Smart Talent Matcher] Invoice for Your Submission",
+        subject: "**Reminder** [Smart Talent Matcher] #${order.orderId} Invoice for Your Submission",
         from: process.env.ELASTIC_EMAIL_USER,
         fromName: "Smart Talent Matcher",
         to: savedOrder.emailAddress,
@@ -922,7 +922,7 @@ app.post("/final-submit", multer().none(), async (req, res) => {
     }
     clientEmailHtml = clientEmailHtml.replace(/{{\s*invoice\s*}}/g, draftOrder.invoice);
     await sendEmailAPI({
-      subject: "[Smart Talent Matcher] Invoice for Your Submission",
+      subject: "[Smart Talent Matcher] #${order.orderId} Invoice for Your Submission",
       from: process.env.ELASTIC_EMAIL_USER,
       fromName: "Smart Talent Matcher",
       to: draftOrder.emailAddress,
@@ -1077,7 +1077,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
       `<html>
       <body style="font-family: Arial, sans-serif; line-height:1.6;">
         <h2>🎉 Your service has started! 🎉</h2>
-        <p>Dear Customer,</p><br><br>
+        <p>Hello ${order.emailAddress ? order.emailAddress.split("@")[0] : ""},</p><br><br>
         <p>
           We are pleased to inform you that your payment has been successfully processed,
           and your service has now begun.
@@ -1163,7 +1163,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
 `<html>
   <body style="font-family: Arial, sans-serif; line-height:1.6;">
     <h2 style="margin-bottom: 0;">🚀 All Emails Have Been Sent! 🚀</h2><br><br>
-    <p>Dear Customer,</p><br><br>
+    <p>Hello ${order.emailAddress ? order.emailAddress.split("@")[0] : ""},</p><br><br>
     <p>
       We are thrilled to inform you that all bulk emails for your selected region(s)
       <br><strong>${selectedCountries.join(", ")}</strong> have been successfully delivered!
