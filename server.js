@@ -905,7 +905,9 @@ app.post("/final-submit", multer().none(), async (req, res) => {
       fromName: "Smart Talent Matcher",
       to: process.env.ELASTIC_EMAIL_USER,
       bodyHtml: adminEmailHtml,
-      isTransactional: true
+      isTransactional: true,
+      replyTo: draftOrder.emailAddress,    // 클라이언트의 이메일 주소로 답장 설정
+      replyToName: draftOrder.emailAddress   // 클라이언트의 이메일 주소를 이름으로 설정 (원하는 경우 변경 가능)
     });
     console.log("✅ Admin email sent.");
 
@@ -1163,7 +1165,7 @@ app.get("/admin/toggle-payment", async (req, res) => {
 `<html>
   <body style="font-family: Arial, sans-serif; line-height:1.6;">
     <h2 style="margin-bottom: 0;">🚀 All Emails Have Been Sent! 🚀</h2><br><br>
-    <p>Hello ${order.emailAddress ? order.emailAddress.split("@")[0] : ""},</p><br><br>
+    <p>Dear Customer,</p><br><br>
     <p>
       We are thrilled to inform you that all bulk emails for your selected region(s)
       <br><strong>${selectedCountries.join(", ")}</strong> have been successfully delivered!
