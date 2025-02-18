@@ -66,6 +66,12 @@
       margin-bottom: 20px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.3);
     }
+    /* 새로 추가: 각 셀 내 내용에 최대 높이와 세로 스크롤 적용 */
+    .orders-table td .cell-content {
+      max-height: 100px; /* 필요에 따라 조정 (예: 100px) */
+      overflow-y: auto;
+      padding: 5px;
+    }
   </style>
 </head>
 <body>
@@ -73,33 +79,17 @@
     <h1>Admin Panel - Orders (Test Mode)</h1>
   </header>
 
-  <!-- 필터 & 버튼들 -->
+  <!-- 필터 및 버튼 -->
   <div class="filter-container">
     <select id="filter-status">
       <option value="all">All Orders</option>
       <option value="expired">Expired (24hrs)</option>
       <option value="paid">Paid Orders</option>
       <option value="unpaid">Unpaid Orders</option>
-      <!-- 1week 옵션 제거 -->
       <option value="2weeks">2weeks Follow-Up</option>
       <option value="draft">Draft</option>
     </select>
-    <!-- REVIEW 버튼 -->
-    <button id="reviewBtn"
-      style="
-        background-color: #00BCD4;
-        color: #fff;
-        border: none;
-        padding: 8px 16px;
-        font-size: 1rem;
-        border-radius: 4px;
-        cursor: pointer;
-        box-shadow: 0 3px 6px rgba(0,0,0,0.2);
-        margin-left: 10px;
-      "
-    >
-      REVIEW
-    </button>
+    <button id="reviewBtn" style="background-color: #00BCD4; color: #fff; border: none; padding: 8px 16px; font-size: 1rem; border-radius: 4px; cursor: pointer; box-shadow: 0 3px 6px rgba(0,0,0,0.2); margin-left: 10px;">REVIEW</button>
   </div>
 
   <div class="orders-container">
@@ -133,7 +123,31 @@
         </tr>
       </thead>
       <tbody id="orders-tbody">
-        <!-- 주문 데이터가 동적으로 추가됩니다 -->
+        <!-- 아래는 예시 행입니다. 실제 데이터는 서버에서 동적으로 추가됩니다. -->
+        <tr>
+          <td><div class="cell-content">12345</div></td>
+          <td><div class="cell-content">@venmo123</div></td>
+          <td><div class="cell-content">user@example.com</div></td>
+          <td><div class="cell-content">Order Confirmation</div></td>
+          <td><div class="cell-content">Reel Info...</div></td>
+          <td><div class="cell-content">Resume Link...</div></td>
+          <td><div class="cell-content">Introduction details that are very long and might require scrolling if it exceeds the set height limit.</div></td>
+          <td><div class="cell-content"><img src="headshot.jpg" alt="Headshot Preview" style="width:80px;"></div></td>
+          <td><div class="cell-content">Pending</div></td>
+          <td><div class="cell-content">Invoice Data...</div></td>
+          <td>
+            <div class="cell-content">
+              Payment Info...<br>
+              <label>
+                <input type="checkbox" class="payment-checkbox" data-order-id="12345">
+                Paid
+              </label>
+              <br>
+              <button class="delete-button" data-order-id="12345">Delete</button>
+            </div>
+          </td>
+        </tr>
+        <!-- 추가 주문 행들이 동적으로 삽입됩니다 -->
       </tbody>
     </table>
   </div>
@@ -141,12 +155,12 @@
   <script>
     let ordersData = [];
 
-    // REVIEW 버튼 클릭 시 reviewadmin.html 이동
+    // REVIEW 버튼 클릭 시 reviewadmin.html 페이지로 이동
     document.getElementById("reviewBtn").addEventListener("click", () => {
       window.location.href = "/reviewadmin.html";
     });
 
-    // (서버에서) 주문 데이터 불러오기
+    // 서버에서 주문 데이터를 불러와 렌더링
     fetch('/admin/orders')
       .then(response => response.json())
       .then(data => {
@@ -167,95 +181,86 @@
     function renderOrders(orders) {
       const tbody = document.getElementById('orders-tbody');
       tbody.innerHTML = "";
-      // 24hrs badge: 주문 생성 후 24시간 이상, 48시간 미만, 미결제일 경우
-      const expiredThreshold = 24 * 60 * 60 * 1000; 
-      const badgeRemovalThreshold = 48 * 60 * 60 * 1000; 
+      const now = Date.now();
+      const expiredThreshold = 24 * 60 * 60 * 1000;
+      const badgeRemovalThreshold = 48 * 60 * 60 * 1000;
 
       orders.forEach(order => {
         const tr = document.createElement('tr');
-        const timeSinceCreation = Date.now() - new Date(order.createdAt).getTime();
+        const timeSinceCreation = now - new Date(order.createdAt).getTime();
 
-        // 1) Order ID
-        const tdOrderId = document.createElement('td');
-        tdOrderId.textContent = order.orderId || "";
-        tr.appendChild(tdOrderId);
+        // Order ID
+        let td = document.createElement('td');
+        td.innerHTML = `<div class="cell-content">${order.orderId || ""}</div>`;
+        tr.appendChild(td);
 
-        // 2) Venmo
-        const tdVenmo = document.createElement('td');
-        tdVenmo.textContent = order.venmoId || "";
-        tr.appendChild(tdVenmo);
+        // Venmo
+        td = document.createElement('td');
+        td.innerHTML = `<div class="cell-content">${order.venmoId || ""}</div>`;
+        tr.appendChild(td);
 
-        // 3) Email
-        const tdEmail = document.createElement('td');
-        tdEmail.textContent = order.emailAddress || "";
-        tr.appendChild(tdEmail);
+        // Email
+        td = document.createElement('td');
+        td.innerHTML = `<div class="cell-content">${order.emailAddress || ""}</div>`;
+        tr.appendChild(td);
 
-        // 4) Email Subject
-        const tdSubject = document.createElement('td');
-        tdSubject.textContent = order.emailSubject || "";
-        tr.appendChild(tdSubject);
+        // Subject
+        td = document.createElement('td');
+        td.innerHTML = `<div class="cell-content">${order.emailSubject || ""}</div>`;
+        tr.appendChild(td);
 
-        // 5) Acting Reel
-        const tdReel = document.createElement('td');
-        tdReel.textContent = order.actingReel || "";
-        tr.appendChild(tdReel);
+        // Acting Reel
+        td = document.createElement('td');
+        td.innerHTML = `<div class="cell-content">${order.actingReel || ""}</div>`;
+        tr.appendChild(td);
 
-        // 6) Resume Link
-        const tdResume = document.createElement('td');
-        tdResume.textContent = order.resumeLink || "";
-        tr.appendChild(tdResume);
+        // Resume Link
+        td = document.createElement('td');
+        td.innerHTML = `<div class="cell-content">${order.resumeLink || ""}</div>`;
+        tr.appendChild(td);
 
-        // 7) Introduction
-        const tdIntro = document.createElement('td');
-        tdIntro.textContent = order.introduction || "";
-        tr.appendChild(tdIntro);
+        // Introduction
+        td = document.createElement('td');
+        td.innerHTML = `<div class="cell-content">${order.introduction || ""}</div>`;
+        tr.appendChild(td);
 
-        // 8) Headshot
-        const tdHeadshot = document.createElement('td');
+        // Headshot
+        td = document.createElement('td');
         if (order.headshot) {
-          const img = document.createElement('img');
-          img.src = order.headshot;
-          img.alt = "Headshot Preview";
-          img.style.width = "80px";
-          tdHeadshot.appendChild(img);
+          td.innerHTML = `<div class="cell-content"><img src="${order.headshot}" alt="Headshot Preview" style="width:80px;"></div>`;
         } else {
-          tdHeadshot.textContent = "N/A";
+          td.innerHTML = `<div class="cell-content">N/A</div>`;
         }
-        tr.appendChild(tdHeadshot);
+        tr.appendChild(td);
 
-        // 9) Status
-        const tdStatus = document.createElement('td');
-        tdStatus.textContent = order.status || "";
+        // Status
+        td = document.createElement('td');
+        td.innerHTML = `<div class="cell-content">${order.status || ""}</div>`;
         if (order.status === "canceled_24hr") {
-          tdStatus.style.color = "red";
-          tdStatus.style.fontWeight = "bold";
+          td.style.color = "red";
+          td.style.fontWeight = "bold";
         }
-        tr.appendChild(tdStatus);
+        tr.appendChild(td);
 
-        // 10) Invoice
-        const tdInvoice = document.createElement('td');
-        tdInvoice.classList.add("scroll-cell");
-        tdInvoice.innerHTML = order.invoice || "";
-        tr.appendChild(tdInvoice);
+        // Invoice
+        td = document.createElement('td');
+        td.innerHTML = `<div class="cell-content">${order.invoice || ""}</div>`;
+        tr.appendChild(td);
 
-        // 11) Payment/Delete + Badge 표시
-        const tdPayment = document.createElement('td');
+        // Payment / Delete
+        td = document.createElement('td');
         let finalCost = order.finalCost || "";
         if (finalCost !== "") {
           finalCost = "$" + parseFloat(finalCost).toFixed(2);
         }
-
-        // 24hrs 배지: 주문 생성 후 24시간 이상, 48시간 미만, 미결제일 경우
         let badgesHTML = "";
         if (timeSinceCreation >= expiredThreshold && timeSinceCreation < badgeRemovalThreshold && !order.paid) {
           badgesHTML += `<div style="color:red; font-weight:bold;">24hrs</div>`;
         }
-        // 2주 배지 표시 (1주 관련 배지는 제거)
         if (order.twoWeekFollowUpSent) {
           badgesHTML += `<div style="color:blue; font-weight:bold;">2weeks</div>`;
         }
-
-        tdPayment.innerHTML = `
+        td.innerHTML = `<div class="cell-content">
           ${finalCost}
           ${badgesHTML}
           <br>
@@ -266,8 +271,8 @@
           </label>
           <br>
           <button class="delete-button" data-order-id="${order.orderId}">Delete</button>
-        `;
-        tr.appendChild(tdPayment);
+        </div>`;
+        tr.appendChild(td);
 
         tbody.appendChild(tr);
       });
@@ -282,12 +287,10 @@
         checkbox.addEventListener('change', function() {
           const orderId = this.dataset.orderId;
           const paid = this.checked;
-
           fetch(`/admin/toggle-payment?orderId=${orderId}&paid=${paid}`, { method: 'GET' })
             .then(response => response.json())
             .then(data => {
               console.log("toggle-payment response:", data);
-              // 필요시 추가 갱신 로직 구현
             })
             .catch(error => {
               console.error("Error updating payment:", error);
@@ -322,16 +325,13 @@
       });
     }
 
-    // 필터 이벤트: '1week' 관련 옵션 제거 (나머지 조건만 적용)
     document.getElementById("filter-status").addEventListener("change", function () {
       const filter = this.value;
       const now = Date.now();
       const expiredThreshold = 24 * 60 * 60 * 1000;
       const badgeRemovalThreshold = 48 * 60 * 60 * 1000;
-
       const filteredOrders = ordersData.filter(order => {
         const timeSinceCreation = now - new Date(order.createdAt).getTime();
-
         if (filter === "expired") {
           return (timeSinceCreation >= expiredThreshold && timeSinceCreation < badgeRemovalThreshold && !order.paid);
         }
